@@ -8,7 +8,7 @@ import (
 
 func TestValidateStateWv(t *testing.T) {
 	wv := &Worldview{}
-	assert.True(t, ValidateStateWv(wv), "Expected invalid Worldview state")
+	assert.False(t, ValidateStateWv(wv), "Expected invalid Worldview state")
 }
 
 func TestValidateStateRemote(t *testing.T) {
