@@ -3,7 +3,7 @@ package elevator
 import (
 	"fmt"
 
-	"SingleElevator/elevio"
+	"Heisern/pkg/elevio"
 )
 
 func HasOrders(e *ElevState) bool {

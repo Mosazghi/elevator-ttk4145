@@ -3,12 +3,12 @@ package remoteelevator
 import (
 	"time"
 
-	"SingleElevator/pkg/elevator"
-	"SingleElevator/pkg/elevio"
+	"Heisern/pkg/elevator"
+	"Heisern/pkg/elevio"
 )
 
 type RemoteElevatorState struct {
-	Id           int
+	ID           int
 	TargetFloor  int
 	PrevFloor    int
 	CurrentFloor int

@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 
-	. "SingleElevator/elevator"
-	"SingleElevator/elevio"
+	. "Heisern/pkg/elevator"
+	"Heisern/pkg/elevio"
 )
 
 var numFloors = 4
