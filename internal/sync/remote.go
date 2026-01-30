@@ -18,3 +18,18 @@ type RemoteElevatorState struct {
 	Behavior     elevator.Behavior
 	LastSeenAt   time.Time
 }
+
+// Helper to create a RemoteElevatorState
+func NewRemoteElevatorState(id, floor, numFloors int) RemoteElevatorState {
+	return RemoteElevatorState{
+		ID:           id,
+		TargetFloor:  floor,
+		PrevFloor:    floor - 1,
+		CurrentFloor: floor,
+		Direction:    elevio.Stop,
+		DoorState:    elevator.DSClosed,
+		CabCalls:     make([]bool, numFloors),
+		Behavior:     elevator.BIdle,
+		LastSeenAt:   time.Now(),
+	}
+}

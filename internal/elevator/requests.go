@@ -63,14 +63,14 @@ func ChooseDirection(e *ElevState) (elevio.MotorDirection, Behavior) {
 	case elevio.Down:
 	case elevio.Stop:
 		if HasOrdersAbove(e) {
-			return elevio.Up, Moving
+			return elevio.Up, BMoving
 		}
 
 		if HasOrdersBelow(e) {
-			return elevio.Down, Moving
+			return elevio.Down, BMoving
 		}
 	}
-	return elevio.Stop, Idle
+	return elevio.Stop, BIdle
 }
 
 func ClearAtCurrentFloor(e *ElevState) {

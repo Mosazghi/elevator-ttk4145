@@ -14,24 +14,42 @@ type (
 )
 
 const (
-	Idle Behavior = iota
-	Moving
-	DoorOpen
+	BIdle Behavior = iota
+	BMoving
+	BDoorOpen
 )
 
 const (
-	Stuck DoorState = iota
-	Open
-	Closed
+	DSStuck DoorState = iota
+	DSClosing
+	DSClosed
+	DSOpening
+	DSOpen
 )
+
+func (d DoorState) String() string {
+	switch d {
+	case DSStuck:
+		return "STUCK"
+	case DSClosing:
+		return "CLOSING"
+	case DSClosed:
+		return "CLOSED"
+	case DSOpening:
+		return "OPENING"
+	case DSOpen:
+		return "OPEN"
+	}
+	return "UNKNOWN"
+}
 
 func (b Behavior) String() string {
 	switch b {
-	case Idle:
+	case BIdle:
 		return "IDLE"
-	case Moving:
+	case BMoving:
 		return "MOVING"
-	case DoorOpen:
+	case BDoorOpen:
 		return "DOOR_OPEN"
 	}
 	return "UNKNOWN"
@@ -73,7 +91,7 @@ func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) *E
 		CurrFloor: initFloor,
 		PrevFloor: -1,
 		Dir:       elevio.Stop,
-		Behavior:  Idle,
+		Behavior:  BIdle,
 		Orders:    orders,
 	}
 }
@@ -88,7 +106,7 @@ func (e *ElevState) String() string {
 func (e *ElevState) OnInitBetweenFloors() {
 	fmt.Println("Initializing: Between floors")
 	e.SetDir(elevio.Down)
-	e.Behavior = Moving
+	e.Behavior = BMoving
 }
 
 func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
@@ -96,7 +114,7 @@ func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
 	e.io.SetButtonLamp(order.Button, order.Floor, true)
 	e.Orders[order.Floor][order.Button] = true
 	switch e.Behavior {
-	case Idle:
+	case BIdle:
 		// Mark as active
 
 		// Set Target floor
@@ -107,8 +125,8 @@ func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
 
 		e.io.SetMotorDirection(e.Dir)
 
-	case Moving:
-	case DoorOpen:
+	case BMoving:
+	case BDoorOpen:
 	}
 
 	fmt.Printf("State: %v\n", e)
@@ -127,7 +145,7 @@ func (e *ElevState) OnNewFloorArrival(floor int) {
 	e.io.SetFloorIndicator(e.CurrFloor)
 
 	switch e.Behavior {
-	case Moving:
+	case BMoving:
 		if ShouldStop(e) {
 			// stop
 			e.Dir = elevio.Stop
