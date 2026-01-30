@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"SingleElevator/pkg/elevio"
+	"Heisern/pkg/elevio"
 )
 
 type (
