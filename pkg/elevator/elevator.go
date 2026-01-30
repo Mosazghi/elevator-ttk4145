@@ -5,17 +5,24 @@ import (
 	"fmt"
 	"time"
 
-	"SingleElevator/elevio"
+	"SingleElevator/pkg/elevio"
 )
 
 type (
-	Behavior int
+	Behavior  int
+	DoorState int
 )
 
 const (
 	Idle Behavior = iota
 	Moving
 	DoorOpen
+)
+
+const (
+	Stuck DoorState = iota
+	Open
+	Closed
 )
 
 func (b Behavior) String() string {
