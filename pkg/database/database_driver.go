@@ -1,13 +1,17 @@
 package dbdriver
 
 import (
-	"SingleElevator/pkg/elevator"
-	"SingleElevator/pkg/elevio"
+	_ "SingleElevator/pkg/elevator"
+	_ "SingleElevator/pkg/elevio"
+	"database/sql"
+	_ "fmt"
 	"log"
-	"fmt"
-	"time"
-	_ "github.com/mattn/go-sqlite3"
+	_ "log"
+	_ "time"
+	_"github.com/mattn/go-sqlite3"
 )
+
+type state interface{}
 
 type DatabaseDriver interface{
 	InitDataBase()
@@ -15,3 +19,15 @@ type DatabaseDriver interface{
 	Loadstate() state
 }
 
+func DBInit(){
+	// Connect to SQLite database, or create one if nonexsistant
+	db, err := sql.Open("sqlite3", "./elev.db")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	defer db.Close()
+	log.Println("SQLite database connection established.")
+	
+}
