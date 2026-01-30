@@ -1,10 +1,10 @@
-package remoteelevator
+package sync
 
 import (
 	"time"
 
-	"Heisern/pkg/elevator"
-	"Heisern/pkg/elevio"
+	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
 
 type RemoteElevatorState struct {

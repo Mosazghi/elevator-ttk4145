@@ -3,7 +3,7 @@ package elevator
 import (
 	"fmt"
 
-	"Heisern/pkg/elevio"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
 
 func HasOrders(e *ElevState) bool {
