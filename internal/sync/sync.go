@@ -1,9 +1,7 @@
-package statesync
+package sync
 
 import (
 	"sync"
-
-	remote "Heisern/pkg/remote-elevator"
 )
 
 type HallCallPair struct {
@@ -13,10 +11,10 @@ type HallCallPair struct {
 
 type Worldview struct {
 	localID             int
-	elevatorStates      map[int]remote.RemoteElevatorState
+	elevatorStates      map[int]RemoteElevatorState
 	hallCalls           map[int]HallCallPair
-	syncLocalRemoteChan chan remote.RemoteElevatorState
-	localRemoteState    remote.RemoteElevatorState
+	syncLocalRemoteChan chan RemoteElevatorState
+	localRemoteState    RemoteElevatorState
 	numFloors           int
 	mtx                 *sync.Mutex
 }

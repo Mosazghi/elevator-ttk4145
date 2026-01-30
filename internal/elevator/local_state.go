@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"Heisern/pkg/elevio"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
 
 type (
@@ -66,8 +66,8 @@ func (e *ElevState) SetDir(dir elevio.MotorDirection) {
 	e.io.SetMotorDirection(dir)
 }
 
-func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) ElevState {
-	return ElevState{
+func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) *ElevState {
+	return &ElevState{
 		io:        io,
 		Target:    Order{-1, elevio.Cab},
 		CurrFloor: initFloor,
