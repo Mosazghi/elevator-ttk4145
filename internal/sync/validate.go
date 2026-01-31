@@ -1,4 +1,4 @@
-package sync
+package statesync
 
 func ValidateStateWv(wv *Worldview) bool {
 	return false

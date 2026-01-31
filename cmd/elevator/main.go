@@ -42,7 +42,6 @@ func main() {
 }
 
 func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState) {
-
 	prevBehavior := elevator.BIdle
 
 	for {

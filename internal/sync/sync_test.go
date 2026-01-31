@@ -1,4 +1,4 @@
-package sync
+package statesync
 
 import (
 	"sync"
@@ -43,11 +43,12 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	// Add elevator state to wv2
 	wv2.elevatorStates[2] = NewRemoteElevatorState(2, 2, 4)
-	wv2.hallCalls[1] = HallCallPair{Up: HallCallPairState{
-		State: HSAvailable, By: 2,
-	}, Down: HallCallPairState{
-		State: HSNone, By: 0,
-	},
+	wv2.hallCalls[1] = HallCallPair{
+		Up: HallCallPairState{
+			State: HSAvailable, By: 2,
+		}, Down: HallCallPairState{
+			State: HSNone, By: 0,
+		},
 	}
 	require.NoError(t, wv2.updateChecksum())
 	err := wv1.Merge(wv2)
@@ -56,7 +57,6 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	assert.Equal(t, wv1.hallCalls[1].Up.State, HSAvailable, "hall call from wv2 should be merged into wv1")
 	assert.Equal(t, wv1.hallCalls[1].Up.By, 2, "hall call from wv2 should be merged into wv1")
-
 }
 
 // Test 4: Merge with empty worldview
