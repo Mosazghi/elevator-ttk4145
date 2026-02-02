@@ -53,7 +53,6 @@ package elevator
 // 	case elevio.MDStop:
 // 		return true
 // 	}
-
 // 	return true
 // }
 
