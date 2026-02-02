@@ -85,7 +85,6 @@ func (wv *Worldview) Merge(other *Worldview) error {
 	}
 
 	calculatedChecksum, err := checksum.CalculateChecksum(other)
-
 	if err != nil {
 		return fmt.Errorf("failed to calculate checksum: %w", err)
 	}
@@ -130,5 +129,16 @@ func (wv *Worldview) Merge(other *Worldview) error {
 
 	}
 
+	return nil
+}
+
+func (wv *Worldview) AddElevator(elevator RemoteElevatorState) {}
+func (wv *Worldview) AddHallCall(floor int, call HallCallPair) {}
+
+func (wv *Worldview) GetElevators() map[int]RemoteElevatorState {
+	return nil
+}
+
+func (wv *Worldview) GetHallCalls() []HallCallPair {
 	return nil
 }
