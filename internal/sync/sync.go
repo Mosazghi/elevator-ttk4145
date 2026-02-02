@@ -49,7 +49,7 @@ func NewTestWorldview(localID, numFloors int) *Worldview {
 		localRemoteState: RemoteElevatorState{
 			ID:           localID,
 			CurrentFloor: 0,
-			Direction:    elevio.Up,
+			Direction:    elevio.MDUp,
 			DoorState:    elevator.DSClosed,
 			CabCalls:     make([]bool, numFloors),
 			Behavior:     elevator.BIdle,
