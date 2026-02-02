@@ -134,6 +134,8 @@ func (wv *Worldview) Merge(other *Worldview) error {
 
 func (wv *Worldview) AddElevator(elevator RemoteElevatorState) {}
 func (wv *Worldview) AddHallCall(floor int, call HallCallPair) {}
+func (wv *Worldview) SetCabCall(id int, floor int, set bool)   {}
+func (wv *Worldview) SetElevatorPosition(id int, floor int)    {}
 
 func (wv *Worldview) GetElevators() map[int]RemoteElevatorState {
 	return nil

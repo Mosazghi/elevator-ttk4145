@@ -16,19 +16,15 @@ const (
 )
 
 func TestGetNextOrder(t *testing.T) {
-	wv := statesync.NewTestWorldview(0, NumFloors)
-	state := statesync.NewRemoteElevatorState(ID, 1, NumFloors)
-	wv.AddElevator(state)
-	ctx := OrdersContext{*wv}
-
-	TestGetNextOrder_HallCall(t, &ctx, wv)
-	TestGetNextOrder_CabCall(t, &ctx, wv)
-	TestGetNextOrder_Arrival_CabCall(t, &ctx, wv)
-	TestGetNextOrder_Arrival_HallCall(t, &ctx, wv)
-	TestGetNextOrder_CabCall_Direction(t, &ctx, wv)
-	TestGetNextOrder_Two_Elevators(t, &ctx, wv)
+	TestGetNextOrder_HallCall(t)
+	TestGetNextOrder_CabCall(t)
+	TestGetNextOrder_Arrival_CabCall(t)
+	TestGetNextOrder_Arrival_HallCall(t)
+	TestGetNextOrder_CabCall_Direction(t)
+	TestGetNextOrder_Two_Elevators(t)
 }
 
+// Helper
 func resetHallCalls(wv *statesync.Worldview) {
 	hallCalls := wv.GetHallCalls()
 	emptyHallCall := statesync.HallCallPair{}
@@ -37,6 +33,7 @@ func resetHallCalls(wv *statesync.Worldview) {
 	}
 }
 
+// Helper
 func resetCabCalls(wv *statesync.Worldview) {
 	elevators := wv.GetElevators()
 	for elevatorIndex := range elevators {
@@ -46,10 +43,19 @@ func resetCabCalls(wv *statesync.Worldview) {
 	}
 }
 
-// CASE 1: Given a Hall-Call
-func TestGetNextOrder_HallCall(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
+// Helper
+func newTestCtx() (wv *statesync.Worldview, ctx OrdersContext) {
+	worldview := statesync.NewTestWorldview(0, NumFloors)
+	state := statesync.NewRemoteElevatorState(ID, 1, NumFloors)
+	wv.AddElevator(state)
 	resetHallCalls(wv)
 	resetCabCalls(wv)
+	return worldview, OrdersContext{*worldview}
+}
+
+// CASE 1: Given a Hall-Call
+func TestGetNextOrder_HallCall(t *testing.T) {
+	wv, ctx := newTestCtx()
 
 	hallCall := statesync.HallCallPair{
 		Up: statesync.HallCallPairState{State: statesync.HSAvailable},
@@ -65,13 +71,10 @@ func TestGetNextOrder_HallCall(t *testing.T, ctx *OrdersContext, wv *statesync.W
 }
 
 // CASE 2: Given a Cab-call
-func TestGetNextOrder_CabCall(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
-	resetHallCalls(wv)
-	resetCabCalls(wv)
+func TestGetNextOrder_CabCall(t *testing.T) {
+	wv, ctx := newTestCtx()
 
-	elevators := wv.GetElevators()
-	elevator1 := elevators[0]
-	elevator1.CabCalls[2] = true
+	wv.SetCabCall(ID, 2, true)
 
 	behavior, dir := ctx.GetNextOrder(ID)
 	assert.Equal(t, dir, elevio.MDUp, "Expected elevator 1 to move up")
@@ -79,14 +82,13 @@ func TestGetNextOrder_CabCall(t *testing.T, ctx *OrdersContext, wv *statesync.Wo
 }
 
 // CASE 3: Arrived at Cab-call floor
-func TestGetNextOrder_Arrival_CabCall(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
-	resetHallCalls(wv)
-	resetCabCalls(wv)
+func TestGetNextOrder_Arrival_CabCall(t *testing.T) {
+	wv, ctx := newTestCtx()
 
 	elevators := wv.GetElevators()
 	elevator1 := elevators[0]
-	elevator1.CabCalls[2] = true
-	elevator1.CurrentFloor = 3
+	wv.SetCabCall(ID, 2, true)
+	wv.SetElevatorPosition(ID, 3)
 
 	behavior, dir := ctx.GetNextOrder(ID)
 	require.Equal(t, elevator1.CabCalls[2], false, "Cab-call should be set to false, arrived at floor")
@@ -95,19 +97,16 @@ func TestGetNextOrder_Arrival_CabCall(t *testing.T, ctx *OrdersContext, wv *stat
 }
 
 // CASE 4: Arrived at Hall-call floor
-func TestGetNextOrder_Arrival_HallCall(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
-	resetHallCalls(wv)
-	resetCabCalls(wv)
+func TestGetNextOrder_Arrival_HallCall(t *testing.T) {
+	wv, ctx := newTestCtx()
 
 	hallCall := statesync.HallCallPair{
 		Up: statesync.HallCallPairState{State: statesync.HSProcessing, By: ID},
 	}
 	wv.AddHallCall(4, hallCall)
 
-	elevators := wv.GetElevators()
 	hallCalls := wv.GetHallCalls()
-	elevator1 := elevators[0]
-	elevator1.CurrentFloor = 4
+	wv.SetElevatorPosition(ID, 4)
 
 	behavior, dir := ctx.GetNextOrder(ID)
 	require.Equal(t, hallCalls[3].Up, nil, "Hall call should be set to nil, arrived at floor")
@@ -116,15 +115,14 @@ func TestGetNextOrder_Arrival_HallCall(t *testing.T, ctx *OrdersContext, wv *sta
 }
 
 // CASE 5: Moving while there are Cab-calls both above and under
-func TestGetNextOrder_CabCall_Direction(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
-	resetHallCalls(wv)
-	resetCabCalls(wv)
+func TestGetNextOrder_CabCall_Direction(t *testing.T) {
+	wv, ctx := newTestCtx()
 
 	elevators := wv.GetElevators()
 	elevator1 := elevators[0]
-	elevator1.CurrentFloor = 3
-	elevator1.CabCalls[3] = true
-	elevator1.CabCalls[0] = true
+	wv.SetElevatorPosition(ID, 3)
+	wv.SetCabCall(ID, 3, true)
+	wv.SetCabCall(ID, 1, true)
 	elevator1.Direction = elevio.MDDown
 
 	behavior, dir := ctx.GetNextOrder(ID)
@@ -133,9 +131,8 @@ func TestGetNextOrder_CabCall_Direction(t *testing.T, ctx *OrdersContext, wv *st
 }
 
 // CASE 6: Two elevators gets order and you're not supposed to perform it
-func TestGetNextOrder_Two_Elevators(t *testing.T, ctx *OrdersContext, wv *statesync.Worldview) {
-	resetHallCalls(wv)
-	resetCabCalls(wv)
+func TestGetNextOrder_Two_Elevators(t *testing.T) {
+	wv, ctx := newTestCtx()
 
 	state := statesync.NewRemoteElevatorState(ID+1, 3, NumFloors)
 	wv.AddElevator(state)
