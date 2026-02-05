@@ -63,6 +63,63 @@ func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
 	wv1 := NewWorldView(1, 4)
 	wv2 := NewWorldView(2, 4)
 
+	// wv2 is empty (no elevator states, no hall calls)
+	require.NoError(t, wv2.updateChecksum())
+
+	err := wv1.Merge(wv2)
+
+	require.NoError(t, err)
+}
+
+// Test 5: Merge with complex nested data (multiple elevators)
+func TestMerge_MultipleElevators_ShouldSucceed(t *testing.T) {
+	wv1 := NewTestWorldview(1, 4)
+	wv2 := NewTestWorldview(2, 4)
+
+	// Add multiple elevator states with different states
+	state1 := NewRemoteElevatorState(1, 0, 4)
+	state1.Direction = elevio.MDUp
+	state1.Behavior = elevator.BMoving
+	state1.CabCalls[2] = true
+	state1.CabCalls[3] = true
+	wv2.elevatorStates[1] = state1
+
+	state2 := NewRemoteElevatorState(2, 3, 4)
+	state2.DoorState = elevator.DSOpen
+	state2.Behavior = elevator.BDoorOpen
+	wv2.elevatorStates[2] = state2
+
+	state3 := NewRemoteElevatorState(3, 1, 4)
+	state3.Direction = elevio.MDDown
+	state3.Behavior = elevator.BMoving
+	state3.CabCalls[0] = true
+	wv2.elevatorStates[3] = state3
+
+	// Add all hall calls
+	for floor := 0; floor < 4; floor++ {
+		wv2.hallCalls[floor] = HallCallPair{
+			Up: HallCallPairState{
+				State: func() HallCallState {
+					if floor < 3 {
+						return HSAvailable
+					}
+					return HSNone
+				}(),
+				By: 2,
+			},
+			Down: HallCallPairState{
+				State: func() HallCallState {
+					if floor > 0 {
+						return HSAvailable
+					}
+					return HSNone
+				}(),
+				By: 2,
+			},
+		}
+	}
+>>>>>>> 0ce3d3b (feat: interface)
+
 	require.NoError(t, wv2.updateChecksum())
 
 	err := wv1.Merge(wv2)
@@ -102,6 +159,143 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 }
 
 // Test merge nil worldview
+// Test 8: Merge with all motor directions
+func TestMerge_AllDirections_ShouldSucceed(t *testing.T) {
+	directions := []elevio.MotorDirection{
+		elevio.MDStop,
+		elevio.MDUp,
+		elevio.MDDown,
+	}
+
+	for i, dir := range directions {
+		t.Run(dir.String(), func(t *testing.T) {
+			wv1 := NewTestWorldview(1, 4)
+			wv2 := NewTestWorldview(2, 4)
+
+			state := NewRemoteElevatorState(i+200, 1, 4)
+			state.Direction = dir
+			wv2.elevatorStates[i+200] = state
+
+			require.NoError(t, wv2.updateChecksum())
+
+			err := wv1.Merge(wv2)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// Test 9: Merge with all behaviors
+func TestMerge_AllBehaviors_ShouldSucceed(t *testing.T) {
+	behaviors := []elevator.Behavior{
+		elevator.BIdle,
+		elevator.BDoorOpen,
+		elevator.BMoving,
+	}
+
+	for i, behavior := range behaviors {
+		t.Run(behavior.String(), func(t *testing.T) {
+			wv1 := NewTestWorldview(1, 4)
+			wv2 := NewTestWorldview(2, 4)
+
+			state := NewRemoteElevatorState(i+300, 1, 4)
+			state.Behavior = behavior
+			wv2.elevatorStates[i+300] = state
+
+			require.NoError(t, wv2.updateChecksum())
+
+			err := wv1.Merge(wv2)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// Test 10: Merge with various cab call patterns
+func TestMerge_CabCallPatterns_ShouldSucceed(t *testing.T) {
+	testCases := []struct {
+		name     string
+		cabCalls []bool
+	}{
+		{"no calls", []bool{false, false, false, false}},
+		{"all calls", []bool{true, true, true, true}},
+		{"odd floors", []bool{false, true, false, true}},
+		{"even floors", []bool{true, false, true, false}},
+		{"top only", []bool{false, false, false, true}},
+		{"bottom only", []bool{true, false, false, false}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			wv1 := NewTestWorldview(1, 4)
+			wv2 := NewTestWorldview(2, 4)
+
+			state := NewRemoteElevatorState(400, 1, 4)
+			state.CabCalls = tc.cabCalls
+			wv2.elevatorStates[400] = state
+
+			require.NoError(t, wv2.updateChecksum())
+
+			err := wv1.Merge(wv2)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// Test 11: Merge with timestamp variations
+func TestMerge_Timestamps_ShouldSucceed(t *testing.T) {
+	wv1 := NewTestWorldview(1, 4)
+	wv2 := NewTestWorldview(2, 4)
+
+	now := time.Now()
+
+	// Old timestamp
+	state1 := NewRemoteElevatorState(1, 0, 4)
+	state1.LastSeenAt = now.Add(-5 * time.Minute)
+	wv2.elevatorStates[1] = state1
+
+	// Current timestamp
+	state2 := NewRemoteElevatorState(2, 1, 4)
+	state2.LastSeenAt = now
+	wv2.elevatorStates[2] = state2
+
+	// Future timestamp (clock skew)
+	state3 := NewRemoteElevatorState(3, 2, 4)
+	state3.LastSeenAt = now.Add(2 * time.Second)
+	wv2.elevatorStates[3] = state3
+
+	require.NoError(t, wv2.updateChecksum())
+
+	err := wv1.Merge(wv2)
+	require.NoError(t, err)
+}
+
+// Test 12: Concurrent merge operations (thread safety)
+func TestMerge_Concurrent_ShouldNotRace(t *testing.T) {
+	wv1 := NewTestWorldview(1, 4)
+
+	var wg sync.WaitGroup
+
+	// Launch 20 concurrent merge operations
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			wv := NewTestWorldview(id, 4)
+			state := NewRemoteElevatorState(id, id%4, 4)
+			state.CabCalls[id%4] = true
+			wv.elevatorStates[id] = state
+			_ = wv.updateChecksum()
+
+			_ = wv1.Merge(wv)
+		}(i + 2)
+	}
+
+	wg.Wait()
+	// If we get here without panic, thread safety works
+}
+
+// Test 13: Merge nil worldview
+>>>>>>> 0ce3d3b (feat: interface)
 func TestMerge_NilWorldview_ShouldError(t *testing.T) {
 	wv1 := NewWorldView(1, 4)
 
@@ -140,7 +334,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 		TargetFloor:  3,
 		PrevFloor:    1,
 		CurrentFloor: 2,
-		Direction:    elevio.Up,
+		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     []bool{false, false, false, true},
 		Behavior:     elevator.BMoving,

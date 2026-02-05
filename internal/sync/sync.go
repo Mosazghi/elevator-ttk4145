@@ -34,7 +34,7 @@ func NewWorldView(localID, numFloors int) *Worldview {
 		localRemoteState: RemoteElevatorState{
 			ID:           localID,
 			CurrentFloor: 0,
-			Direction:    elevio.Up,
+			Direction:    elevio.MDUp,
 			DoorState:    elevator.DSClosed,
 			CabCalls:     make([]bool, numFloors),
 			Behavior:     elevator.BIdle,
@@ -196,4 +196,12 @@ func (wv *Worldview) updateChecksum() error {
 	wv.checksum = cs
 
 	return nil
+}
+
+func (wv *Worldview) UpdateLocalElevatorFloor(floor int) {
+	wv.localRemoteState.CurrentFloor = floor
+}
+
+func (wv *Worldview) UpdateLocalElevatorBehavior(behavior elevator.Behavior) {
+	wv.localRemoteState.Behavior = behavior
 }

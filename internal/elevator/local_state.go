@@ -2,8 +2,7 @@
 package elevator
 
 import (
-	"fmt"
-	"time"
+	"errors"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
@@ -17,11 +16,12 @@ const (
 	BIdle Behavior = iota
 	BMoving
 	BDoorOpen
+	BObstructed
+	BSize
 )
 
 const (
-	DSStuck DoorState = iota
-	DSClosing
+	DSClosing DoorState = iota
 	DSClosed
 	DSOpening
 	DSOpen
@@ -29,8 +29,6 @@ const (
 
 func (d DoorState) String() string {
 	switch d {
-	case DSStuck:
-		return "STUCK"
 	case DSClosing:
 		return "CLOSING"
 	case DSClosed:
@@ -55,142 +53,171 @@ func (b Behavior) String() string {
 	return "UNKNOWN"
 }
 
-type Order struct {
-	Floor int
-	RType elevio.ButtonType
+type ElevatorState struct {
+	io       elevio.ElevatorDriver
+	Dir      elevio.MotorDirection
+	Behavior Behavior
 }
 
-type ElevState struct {
-	io        elevio.ElevatorDriver
-	Target    Order
-	CurrFloor int
-	PrevFloor int
-	Dir       elevio.MotorDirection
-	Behavior  Behavior
-	Orders    [4][3]bool
+type ElevatorCallbacks interface {
+	OnStopSignal(signal bool)
+	SetAction(behavior Behavior, direction elevio.MotorDirection)
+
+	OnInitBetweenFloors()
 }
 
-func (e *ElevState) ClearAllOrders() {
-	for f := range e.Orders {
-		for b := range e.Orders[f] {
-			e.Orders[f][b] = false
-			e.io.SetButtonLamp(elevio.ButtonType(b), f, false)
-		}
+func (e *ElevatorState) SetAction(behavior Behavior, direction elevio.MotorDirection) error {
+	if behavior < 0 || behavior >= BSize {
+		return errors.New("got an invalid behavior")
+	}
+
+	if direction != elevio.MDDown && direction != elevio.MDUp && direction != elevio.MDStop {
+		return errors.New("got an invalid direction")
+	}
+
+	e.Behavior = behavior
+	e.Dir = direction
+	e.io.SetMotorDirection(direction)
+	return nil
+}
+
+func (e *ElevatorState) OnStopSignal(signal bool) {
+}
+
+func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver *elevio.ElevIoDriver) ElevatorState {
+	return ElevatorState{
+		driver,
+		direction,
+		behavior,
 	}
 }
 
-func (e *ElevState) SetDir(dir elevio.MotorDirection) {
-	e.Dir = dir
-	e.io.SetMotorDirection(dir)
-}
+// type Order struct {
+// 	Floor int
+// 	RType elevio.ButtonType
+// }
 
-func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) *ElevState {
-	return &ElevState{
-		io:        io,
-		Target:    Order{-1, elevio.Cab},
-		CurrFloor: initFloor,
-		PrevFloor: -1,
-		Dir:       elevio.Stop,
-		Behavior:  BIdle,
-		Orders:    orders,
-	}
-}
-
-func (e *ElevState) String() string {
-	return fmt.Sprintf("{ Target: %+v, CurrFloor: %d, PrevFloor: %d, Dir: %v, Behavior: %s, Orders: %+v }",
-		e.Target, e.CurrFloor, e.PrevFloor, e.Dir, e.Behavior, e.Orders)
-}
-
-// ---- Event Handlers ----//
-
-func (e *ElevState) OnInitBetweenFloors() {
-	fmt.Println("Initializing: Between floors")
-	e.SetDir(elevio.Down)
-	e.Behavior = BMoving
-}
-
-func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
-	fmt.Printf("[ORDER] %+v\n", order)
-	e.io.SetButtonLamp(order.Button, order.Floor, true)
-	e.Orders[order.Floor][order.Button] = true
-	switch e.Behavior {
-	case BIdle:
-		// Mark as active
-
-		// Set Target floor
-		e.Target.RType = order.Button
-		e.Target.Floor = order.Floor
-
-		e.Dir, e.Behavior = ChooseDirection(e)
-
-		e.io.SetMotorDirection(e.Dir)
-
-	case BMoving:
-	case BDoorOpen:
-	}
-
-	fmt.Printf("State: %v\n", e)
-}
-
-func (e *ElevState) OnNewFloorArrival(floor int) {
-	fmt.Printf("[FLOOR] %+v\n", floor)
-	fmt.Printf("STATE: %+v\n", e)
-	// if floor == e.io.GetTotalFloors()-1 {
-	// 	e.Dir = elevio.MD_Down
-	// } else if floor == 0 {
-	// 	e.Dir = elevio.MD_Up
-	// }
-
-	e.CurrFloor = floor
-	e.io.SetFloorIndicator(e.CurrFloor)
-
-	switch e.Behavior {
-	case BMoving:
-		if ShouldStop(e) {
-			// stop
-			e.Dir = elevio.Stop
-			e.io.SetMotorDirection(e.Dir)
-			ClearAtCurrentFloor(e)
-			e.SetAllLights()
-			e.io.SetDoorOpenLamp(true)
-			time.Sleep(3 * time.Second)
-			e.io.SetDoorOpenLamp(false)
-			e.Dir, e.Behavior = ChooseDirection(e)
-		}
-	}
-}
-
-func (e *ElevState) OnObstructionSignal(obstructed bool) {
-	fmt.Printf("[OBSTR] %+v\n", obstructed)
-	if obstructed {
-		e.io.SetMotorDirection(elevio.Stop)
-	} else {
-		e.io.SetMotorDirection(e.Dir)
-	}
-
-	fmt.Printf("State: %v\n", e)
-}
-
-func (e *ElevState) OnStopSignal(stop bool) {
-	fmt.Printf("[STOP] %+v\n", stop)
-	for f := range e.Orders {
-		for b := range e.Orders[f] {
-			e.io.SetButtonLamp(elevio.ButtonType(b), f, false)
-		}
-	}
-
-	fmt.Printf("State: %v\n", e)
-}
-
-func (e *ElevState) SetAllLights() {
-	for f := range e.Orders {
-		for b := range e.Orders[f] {
-			fmt.Printf("F: %v, B: %v, on: %v ", elevio.ButtonType(b), f, e.Orders[f][b])
-			e.io.SetButtonLamp(elevio.ButtonType(b), f, e.Orders[f][b])
-		}
-		fmt.Println()
-	}
-}
+// func (e *ElevState) ClearAllOrders() {
+// 	for f := range e.Orders {
+// 		for b := range e.Orders[f] {
+// 			e.Orders[f][b] = false
+// 			e.io.SetButtonLamp(elevio.ButtonType(b), f, false)
+// 		}
+// 	}
+// }
+//
+// func (e *ElevState) SetDir(dir elevio.MotorDirection) {
+// 	e.Dir = dir
+// 	e.io.SetMotorDirection(dir)
+// }
+//
+// func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) *ElevState {
+// 	return &ElevState{
+// 		io:        io,
+// 		Target:    Order{-1, elevio.Cab},
+// 		CurrFloor: initFloor,
+// 		PrevFloor: -1,
+// 		Dir:       elevio.Stop,
+// 		Behavior:  BIdle,
+// 		Orders:    orders,
+// 	}
+// }
+//
+// func (e *ElevState) String() string {
+// 	return fmt.Sprintf("{ Target: %+v, CurrFloor: %d, PrevFloor: %d, Dir: %v, Behavior: %s, Orders: %+v }",
+// 		e.Target, e.CurrFloor, e.PrevFloor, e.Dir, e.Behavior, e.Orders)
+// }
+//
+// // ---- Event Handlers ----//
+//
+// func (e *ElevState) OnInitBetweenFloors() {
+// 	fmt.Println("Initializing: Between floors")
+// 	e.SetDir(elevio.Down)
+// 	e.Behavior = BMoving
+// }
+//
+// func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
+// 	fmt.Printf("[ORDER] %+v\n", order)
+// 	e.io.SetButtonLamp(order.Button, order.Floor, true)
+// 	e.Orders[order.Floor][order.Button] = true
+// 	switch e.Behavior {
+// 	case BIdle:
+// 		// Mark as active
+//
+// 		// Set Target floor
+// 		e.Target.RType = order.Button
+// 		e.Target.Floor = order.Floor
+//
+// 		e.Dir, e.Behavior = ChooseDirection(e)
+//
+// 		e.io.SetMotorDirection(e.Dir)
+//
+// 	case BMoving:
+// 	case BDoorOpen:
+// 	}
+//
+// 	fmt.Printf("State: %v\n", e)
+// }
+//
+// func (e *ElevState) OnNewFloorArrival(floor int) {
+// 	fmt.Printf("[FLOOR] %+v\n", floor)
+// 	fmt.Printf("STATE: %+v\n", e)
+// 	// if floor == e.io.GetTotalFloors()-1 {
+// 	// 	e.Dir = elevio.MD_Down
+// 	// } else if floor == 0 {
+// 	// 	e.Dir = elevio.MD_Up
+// 	// }
+//
+// 	e.CurrFloor = floor
+// 	e.io.SetFloorIndicator(e.CurrFloor)
+//
+// 	switch e.Behavior {
+// 	case BMoving:
+// 		if ShouldStop(e) {
+// 			// stop
+// 			e.Dir = elevio.Stop
+// 			e.io.SetMotorDirection(e.Dir)
+// 			ClearAtCurrentFloor(e)
+// 			e.SetAllLights()
+// 			e.io.SetDoorOpenLamp(true)
+// 			time.Sleep(3 * time.Second)
+// 			e.io.SetDoorOpenLamp(false)
+// 			e.Dir, e.Behavior = ChooseDirection(e)
+// 		}
+// 	}
+// }
+//
+// func (e *ElevState) OnObstructionSignal(obstructed bool) {
+// 	fmt.Printf("[OBSTR] %+v\n", obstructed)
+// 	if obstructed {
+// 		e.io.SetMotorDirection(elevio.Stop)
+// 	} else {
+// 		e.io.SetMotorDirection(e.Dir)
+// 	}
+//
+// 	fmt.Printf("State: %v\n", e)
+// }
+//
+// func (e *ElevState) OnStopSignal(stop bool) {
+// 	fmt.Printf("[STOP] %+v\n", stop)
+// 	for f := range e.Orders {
+// 		for b := range e.Orders[f] {
+// 			e.io.SetButtonLamp(elevio.ButtonType(b), f, false)
+// 		}
+// 	}
+//
+// 	fmt.Printf("State: %v\n", e)
+// }
+//
+// func (e *ElevState) SetAllLights() {
+// 	for f := range e.Orders {
+// 		for b := range e.Orders[f] {
+// 			fmt.Printf("F: %v, B: %v, on: %v ", elevio.ButtonType(b), f, e.Orders[f][b])
+// 			e.io.SetButtonLamp(elevio.ButtonType(b), f, e.Orders[f][b])
+// 		}
+// 		fmt.Println()
+// 	}
+// }
 
 // <-ticker.C:
 // 		switch elev.Behavior {
