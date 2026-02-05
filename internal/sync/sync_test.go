@@ -79,7 +79,7 @@ func TestMerge_MultipleElevators_ShouldSucceed(t *testing.T) {
 
 	// Add multiple elevator states with different states
 	state1 := NewRemoteElevatorState(1, 0, 4)
-	state1.Direction = elevio.Up
+	state1.Direction = elevio.MDUp
 	state1.Behavior = elevator.BMoving
 	state1.CabCalls[2] = true
 	state1.CabCalls[3] = true
@@ -91,7 +91,7 @@ func TestMerge_MultipleElevators_ShouldSucceed(t *testing.T) {
 	wv2.elevatorStates[2] = state2
 
 	state3 := NewRemoteElevatorState(3, 1, 4)
-	state3.Direction = elevio.Down
+	state3.Direction = elevio.MDDown
 	state3.Behavior = elevator.BMoving
 	state3.CabCalls[0] = true
 	wv2.elevatorStates[3] = state3
@@ -174,9 +174,9 @@ func TestMerge_AllDoorStates_ShouldSucceed(t *testing.T) {
 // Test 8: Merge with all motor directions
 func TestMerge_AllDirections_ShouldSucceed(t *testing.T) {
 	directions := []elevio.MotorDirection{
-		elevio.Stop,
-		elevio.Up,
-		elevio.Down,
+		elevio.MDStop,
+		elevio.MDUp,
+		elevio.MDDown,
 	}
 
 	for i, dir := range directions {
@@ -343,7 +343,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 		TargetFloor:  3,
 		PrevFloor:    1,
 		CurrentFloor: 2,
-		Direction:    elevio.Up,
+		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     []bool{false, false, false, true},
 		Behavior:     elevator.BMoving,

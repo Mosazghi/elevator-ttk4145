@@ -90,7 +90,7 @@ func NewElevState(initFloor int, orders [4][3]bool, io elevio.ElevatorDriver) *E
 		Target:    Order{-1, elevio.Cab},
 		CurrFloor: initFloor,
 		PrevFloor: -1,
-		Dir:       elevio.Stop,
+		Dir:       elevio.MDStop,
 		Behavior:  BIdle,
 		Orders:    orders,
 	}
@@ -105,7 +105,7 @@ func (e *ElevState) String() string {
 
 func (e *ElevState) OnInitBetweenFloors() {
 	fmt.Println("Initializing: Between floors")
-	e.SetDir(elevio.Down)
+	e.SetDir(elevio.MDDown)
 	e.Behavior = BMoving
 }
 
@@ -148,7 +148,7 @@ func (e *ElevState) OnNewFloorArrival(floor int) {
 	case BMoving:
 		if ShouldStop(e) {
 			// stop
-			e.Dir = elevio.Stop
+			e.Dir = elevio.MDStop
 			e.io.SetMotorDirection(e.Dir)
 			ClearAtCurrentFloor(e)
 			e.SetAllLights()
@@ -163,7 +163,7 @@ func (e *ElevState) OnNewFloorArrival(floor int) {
 func (e *ElevState) OnObstructionSignal(obstructed bool) {
 	fmt.Printf("[OBSTR] %+v\n", obstructed)
 	if obstructed {
-		e.io.SetMotorDirection(elevio.Stop)
+		e.io.SetMotorDirection(elevio.MDStop)
 	} else {
 		e.io.SetMotorDirection(e.Dir)
 	}

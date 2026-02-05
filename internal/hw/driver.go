@@ -36,18 +36,18 @@ type ElevIoDriver struct {
 type MotorDirection int
 
 const (
-	Up   MotorDirection = 1
-	Down MotorDirection = -1
-	Stop MotorDirection = 0
+	MDUp   MotorDirection = 1
+	MDDown MotorDirection = -1
+	MDStop MotorDirection = 0
 )
 
 func (md MotorDirection) String() string {
 	switch md {
-	case Up:
-		return "Up"
-	case Down:
+	case MDUp:
+		return "MDUP"
+	case MDDown:
 		return "Down"
-	case Stop:
+	case MDStop:
 		return "Stop"
 	default:
 		return "Unknown"

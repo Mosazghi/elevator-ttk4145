@@ -41,16 +41,16 @@ func HasOrdersBelow(e *ElevState) bool {
 
 func ShouldStop(e *ElevState) bool {
 	switch e.Dir {
-	case elevio.Down:
+	case elevio.MDDown:
 		return e.Orders[e.CurrFloor][elevio.HallDown] ||
 			e.Orders[e.CurrFloor][elevio.Cab] ||
 			!HasOrdersBelow(e) // Reached "dead-end"
-	case elevio.Up:
+	case elevio.MDUp:
 
 		return e.Orders[e.CurrFloor][elevio.HallUp] ||
 			e.Orders[e.CurrFloor][elevio.Cab] ||
 			!HasOrdersAbove(e) // Reached "dead-end"
-	case elevio.Stop:
+	case elevio.MDStop:
 		return true
 	}
 
@@ -59,18 +59,18 @@ func ShouldStop(e *ElevState) bool {
 
 func ChooseDirection(e *ElevState) (elevio.MotorDirection, Behavior) {
 	switch e.Dir {
-	case elevio.Up:
-	case elevio.Down:
-	case elevio.Stop:
+	case elevio.MDUp:
+	case elevio.MDDown:
+	case elevio.MDStop:
 		if HasOrdersAbove(e) {
-			return elevio.Up, BMoving
+			return elevio.MDUp, BMoving
 		}
 
 		if HasOrdersBelow(e) {
-			return elevio.Down, BMoving
+			return elevio.MDDown, BMoving
 		}
 	}
-	return elevio.Stop, BIdle
+	return elevio.MDStop, BIdle
 }
 
 func ClearAtCurrentFloor(e *ElevState) {
