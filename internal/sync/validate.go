@@ -1,9 +1,9 @@
 package statesync
 
 func ValidateStateWv(wv *Worldview) bool {
-	return false
+	return true
 }
 
 func ValidateStateRemote(state *RemoteElevatorState) bool {
-	return false
+	return true
 }
