@@ -7,14 +7,11 @@ import (
 	"os"
 	"time"
 
-	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
-	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	"github.com/lmittmann/tint"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
 )
 
 // var numFloors = 4
@@ -51,14 +48,10 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	initFloor := elevIoDriver.GetFloor()
+	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
+	wv := statesync.NewTestWorldview(*id, 4)
 
 	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
-
-	if initFloor == -1 {
-		slog.Info("Elevator initialized between floors")
-		elev.OnInitBetweenFloors()
-	}
 
 	// Start network
 	txChan, rxChan, errChan, err := network.Start(prodMode)
@@ -68,45 +61,90 @@ func main() {
 	}
 	wvChan := make(chan statesync.Worldview, 10)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
-
 	go wv.StartSyncing(txChan, rxChan, errChan)
-
 	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
 }
 
-func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState, wv *statesync.Worldview) {
-	prevBehavior := elevator.BIdle
+func stateMachine(
+	drvButtons chan eIO.ButtonEvent,
+	drvFloors chan int,
+	drvObst chan bool,
+	drvStop chan bool,
+	elev *elevator.ElevatorState,
+	worldView *statesync.Worldview,
+) {
+	local_elv := worldView.GetLocalElevator()
+
+	if prevBehavior != elev.Behavior {
+		fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
+		prevBehavior = elev.Behavior
+	}
 
 	for {
-
-		if prevBehavior != elev.Behavior {
-			slog.Info("State Trans", "from", prevBehavior, "to", elev.Behavior)
-			prevBehavior = elev.Behavior
-		}
-
 		select {
-		case a := <-drvButtons:
-			slog.Debug("Button event received", "event", a)
-			var err error
-			switch a.Button {
-			case elevio.Cab:
-				err = wv.SetCabCall(a.Floor, true)
-			case elevio.HallUp:
-				err = wv.SetHallCall(a.Floor, statesync.HDUp, statesync.HSAvailable)
-			default:
-				err = wv.SetHallCall(a.Floor, statesync.HDDown, statesync.HSAvailable)
-			}
-			if err != nil {
-				slog.Error("Failed to set call in worldview", "error", err)
+		case msg := <-rxChan:
+			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+
+		case err := <-errChan:
+			fmt.Printf("Network error: %v\n", err)
+
+		case <-ticker.C:
+			txChan <- network.UDPMessage{Data: []byte("Hello from A")}
+			fmt.Println("Sent broadcast message")
+		case order := <-drvButtons:
+			fmt.Println("Got new order!")
+			if order.Button == elevio.Cab {
+				fmt.Println("Cab call!")
+				if order.Floor > local_elv.CurrentFloor {
+					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
+				} else {
+					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
+				}
+
+				if order.Floor == local_elv.CurrentFloor {
+					fmt.Println("Allready on floor")
+				}
+				// worldView.SetCabCall(order.Floor, true)
 			}
 
-			elev.OnOrderRequest(a)
-		case a := <-drvFloors:
-			elev.OnNewFloorArrival(a)
-		case a := <-drvObst:
-			elev.OnObstructionSignal(a)
-		case a := <-drvStop:
-			elev.OnStopSignal(a)
+			if order.Button == elevio.HallUp {
+				fmt.Println("Hall call up")
+				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
+
+				if order.Floor == local_elv.CurrentFloor {
+					fmt.Println("Allready on floor")
+				}
+
+				// worldView.SetHallCall(order.Floor, statesync.HDUp, statesync.HSAvailable)
+			}
+
+			if order.Button == elevio.HallDown {
+				fmt.Println("Hall call down")
+				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
+
+				if order.Floor == local_elv.CurrentFloor {
+					fmt.Println("Allready on floor")
+				}
+				// worldView.SetHallCall(order.Floor, statesync.HDDown, statesync.HSAvailable)
+			}
+
+		case floor := <-drvFloors:
+			worldView.UpdateLocalElevatorFloor(floor)
+
+		case isObstructed := <-drvObst:
+			if isObstructed {
+				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
+				elev.Stop()
+			} else {
+				elev.Continue()
+			}
+
+		case shouldStop := <-drvStop:
+			if shouldStop {
+				elev.Stop()
+			} else {
+				elev.Continue()
+			}
 		}
 	}
 }
