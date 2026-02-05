@@ -3,7 +3,7 @@ package orders
 import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 )
 
 type OrdersContext struct {
@@ -14,8 +14,7 @@ type OrdersHandler interface {
 	GetNextOrder(id int) (elevator.Behavior, elevio.MotorDirection)
 }
 
-func (context OrdersContext) findCost() int { return 0 }
 func (context OrdersContext) GetNextOrder(id int) (elevator.Behavior, elevio.MotorDirection) {
-	context.findCost()
 	return elevator.BIdle, elevio.MDStop
 }
+func (context OrdersContext) findCost() int { return 0 }
