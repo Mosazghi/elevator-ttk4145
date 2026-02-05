@@ -14,8 +14,7 @@ type OrdersHandler interface {
 	GetNextOrder(id int) (elevator.Behavior, elevio.MotorDirection)
 }
 
-func (context OrdersContext) findCost() int { return 0 }
 func (context OrdersContext) GetNextOrder(id int) (elevator.Behavior, elevio.MotorDirection) {
-	context.findCost()
 	return elevator.BIdle, elevio.MDStop
 }
+func (context OrdersContext) findCost() int { return 0 }
