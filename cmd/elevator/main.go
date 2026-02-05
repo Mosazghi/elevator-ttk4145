@@ -14,9 +14,8 @@ func main() {
 	portNum := flag.String("port", "15657", "specify port number")
 	id := flag.Int("id", 1, "specify elevator ID")
 
-	fmt.Println("ID: ", *id)
-
 	flag.Parse()
+	fmt.Println("ID: ", *id)
 
 	drvButtons := make(chan eIO.ButtonEvent)
 	drvFloors := make(chan int)
