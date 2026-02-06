@@ -1,0 +1,17 @@
+{
+    "nodeA": {
+        "id": "A",
+        "listen_ports": [30001, 30002],
+        "broadcast_port": 30000
+    },
+    "nodeB": {
+        "id": "B",
+        "listen_ports": [30000, 30002],
+        "broadcast_port": 30001
+    },
+    "nodeC": {
+        "id": "C",
+        "listen_ports": [30000, 30001],
+        "broadcast_port": 30002
+    }
+}
