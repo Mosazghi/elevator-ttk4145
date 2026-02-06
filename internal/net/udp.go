@@ -5,11 +5,11 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"strings"
 )
 
 const (
 	BROADCAST_IP = "255.255.255.255"
-	LISTEN_IP    = "0.0.0.0"
 	THE_ONE_PORT = 30000
 )
 
@@ -18,22 +18,35 @@ type UDPMessage struct {
 	Address *net.UDPAddr
 }
 
-/* Creates a UDP socket with SO_REUSEADDR enabled */
+var localIP string
+
+func LocalIP() (string, error) {
+	if localIP == "" {
+		conn, err := net.DialTCP("tcp4", nil, &net.TCPAddr{IP: []byte{8, 8, 8, 8}, Port: 53})
+		if err != nil {
+			return "", err
+		}
+		defer conn.Close()
+		localIP = strings.Split(conn.LocalAddr().String(), ":")[0]
+	}
+	return localIP, nil
+}
+
+/* Creates a UDP socket with SO_REUSEADDR, SO_BROADCAST enabled.
+Allows multiple programs to bind to the same port. */
 func UDPCreateSocket() (*net.UDPConn, error) {
-	// Create raw socket
+
 	s, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 	if err != nil {
 		return nil, fmt.Errorf("[UDPCreateSocket] Socket creation failed: %v", err)
 	}
 
-	// Enable SO_REUSEADDR - allows multiple programs to bind to same port
 	err = syscall.SetsockoptInt(s, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	if err != nil {
 		syscall.Close(s)
 		return nil, fmt.Errorf("[UDPCreateSocket] SO_REUSEADDR failed: %v", err)
 	}
 
-	// Enable SO_BROADCAST - allows sending to broadcast address
 	err = syscall.SetsockoptInt(s, syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
 	if err != nil {
 		syscall.Close(s)
@@ -70,22 +83,21 @@ func UDPCreateSocket() (*net.UDPConn, error) {
 func UDPrx(connection *net.UDPConn, receiveChannel chan<- UDPMessage, errorChannel chan<- error) {
 	buffer := make([]byte, 1024)
 
-	// Get local address to filter out own messages
-	localAddr := connection.LocalAddr().(*net.UDPAddr)
+	localAddrStr, _ := LocalIP()
+	localAddr := net.ParseIP(localAddrStr)
 
 	for {
 		n, remoteAddress, err := connection.ReadFromUDP(buffer)
 		if err != nil {
-			errorChannel <- fmt.Errorf("[ReadFromUDP] Read error:", err)
+			errorChannel <- fmt.Errorf("[ReadFromUDP] Read error:%v", err)
 			continue
 		}
 
-		// Copy data since buffer is reused
 		data := make([]byte, n)
 		copy(data, buffer[:n])
 
-		// Filter out messages from same machine (loopback)
-		if remoteAddress.IP.Equal(localAddr.IP) && remoteAddress.Port == localAddr.Port {
+		if remoteAddress.IP.Equal(localAddr) {
+			//fmt.Println("[UDPrx] Echo spotted") // For testing purposes
 			continue
 		}
 
@@ -96,40 +108,28 @@ func UDPrx(connection *net.UDPConn, receiveChannel chan<- UDPMessage, errorChann
 	}
 }
 
-// /* UDP transmission */
-// func UDPtx(connection *net.UDPConn, transmitChannel <-chan UDPMessage, errorChannel chan<- error) {
-// 	for msg := range transmitChannel {
-// 		_, err := connection.WriteToUDP(msg.Data, msg.Address)
-// 		if err != nil {
-// 			errorChannel <- fmt.Errorf("[UDP] Write error: %v", err)
-// 		}
-// 	}
-// }
-
-/* Function to call from main */
+/* Initializes & runs the UDP network. */
 func UDPRunNetwork() (chan<- UDPMessage, <-chan UDPMessage, <-chan error, error) {
 
-	// Initialize channels
-	rxChan := make(chan UDPMessage, 1024)
-	txChan := make(chan UDPMessage, 1024)
-	errChan := make(chan error, 1024)
 
-	// Create single socket for both send and receive
+	rxChan := make(chan UDPMessage, 20)
+	txChan := make(chan UDPMessage, 20)
+	errChan := make(chan error, 10)
+
+
 	conn, err := UDPCreateSocket()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("Failed to create socket: %v", err)
 	}
 
-	// Spawn rx goroutine
 	go UDPrx(conn, rxChan, errChan)
 
-	// Define broadcast address
 	broadcastAddr := &net.UDPAddr{
 		IP:   net.ParseIP(BROADCAST_IP),
 		Port: THE_ONE_PORT,
 	}
 
-	// tx goroutine that broadcasts messages
+	// Broadcast
 	go func() {
 		for msg := range txChan {
 			_, err := conn.WriteToUDP(msg.Data, broadcastAddr)
