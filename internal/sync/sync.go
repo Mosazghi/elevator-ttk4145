@@ -82,6 +82,7 @@ func (wv *Worldview) SetCabCall(floor int, state bool) bool {
 	return true
 }
 
+// SetLocalElevator updates the local elevator state in the worldview
 func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
@@ -93,12 +94,14 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	return nil
 }
 
+// GetRemoteElevaator returns the local elevator state from the worldview
 func (wv *Worldview) GetRemoteElevaator() RemoteElevatorState {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 	return *wv.localRemoteState
 }
 
+// GetAllHallCalls returns a copy of the current hall calls in the worldview
 func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
