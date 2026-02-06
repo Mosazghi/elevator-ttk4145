@@ -227,5 +227,4 @@ func TestSetHallCall_Fail(t *testing.T) {
 	err = wv.SetHallCall(3, HDUp, HSNone)
 
 	assert.NoError(t, err, "should be able to transition from Processing to None")
-
 }

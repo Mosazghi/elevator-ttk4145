@@ -19,6 +19,7 @@ type Worldview struct {
 	localRemoteState    RemoteElevatorState
 	numFloors           int
 	checksum            uint64
+	wvChan              chan Worldview
 	mu                  *sync.Mutex
 }
 
@@ -29,6 +30,7 @@ func NewWorldView(localID, numFloors int) *Worldview {
 		hallCalls:           make([][2]HallCallPairState, numFloors),
 		numFloors:           numFloors,
 		syncLocalRemoteChan: make(chan RemoteElevatorState, 10),
+		wvChan:              make(chan Worldview),
 		localRemoteState: RemoteElevatorState{
 			ID:           localID,
 			CurrentFloor: 0,
@@ -44,11 +46,7 @@ func NewWorldView(localID, numFloors int) *Worldview {
 	return wv
 }
 
-// Helper to update checksum after modifying worldview
-func (wv *Worldview) updateChecksum() error {
-	cs, _ := checksum.CalculateChecksum(wv)
-	wv.checksum = cs
-
+func (wv *Worldview) StartSyncing(port, id int) error {
 	return nil
 }
 
@@ -90,6 +88,22 @@ func (wv *Worldview) SetCabCall(floor int, state bool) bool {
 	wv.updateChecksum()
 
 	return true
+}
+
+func (wv *Worldview) SetLocalElevator(remoteElev *RemoteElevatorState) error {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+	return nil
+}
+
+func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+
+	result := make([][2]HallCallPairState, len(wv.hallCalls))
+	copy(result, wv.hallCalls)
+
+	return result
 }
 
 // Merge merges incoming Worldview into the current one
@@ -171,8 +185,15 @@ func (wv *Worldview) Merge(other *Worldview) error {
 			// 	}
 			// }
 		}
-
 	}
+
+	return nil
+}
+
+// updateChecksum recalculates the worldview's checksum
+func (wv *Worldview) updateChecksum() error {
+	cs, _ := checksum.CalculateChecksum(wv)
+	wv.checksum = cs
 
 	return nil
 }
