@@ -41,7 +41,6 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 	wv2 := NewWorldView(2, 4)
 
 	// Add elevator state to wv2
-	wv2.elevatorStates[2] = NewRemoteElevatorState(2, 2, 4)
 	wv2.hallCalls[1][HDUp] = HallCallPairState{
 		State: HSAvailable, By: 2,
 	}
@@ -78,7 +77,7 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 	// Test all valid floor positions
 	for floor := 0; floor < 4; floor++ {
 		elevatorID := floor + 1
-		state := NewRemoteElevatorState(elevatorID, floor, 4)
+		state := NewRemoteElevatorState(elevatorID, 4)
 		wv2.elevatorStates[elevatorID] = state
 	}
 
@@ -118,7 +117,7 @@ func TestMerge_PreservesLocalState(t *testing.T) {
 	originalLocalState := wv1.localRemoteState
 
 	wv2 := NewWorldView(10, 4)
-	wv2.elevatorStates[10] = NewRemoteElevatorState(10, 2, 4)
+	wv2.elevatorStates[10] = NewRemoteElevatorState(10, 4)
 	require.NoError(t, wv2.updateChecksum())
 
 	err := wv1.Merge(wv2)
@@ -135,18 +134,17 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 
 	wv2 := NewWorldView(wv2ID, 4)
 
-	state := RemoteElevatorState{
+	wv2.localRemoteState = &RemoteElevatorState{
 		ID:           wv2ID,
 		TargetFloor:  3,
-		PrevFloor:    1,
 		CurrentFloor: 2,
 		Direction:    elevio.Up,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     []bool{false, false, false, true},
 		Behavior:     elevator.BMoving,
 		LastSeenAt:   time.Now(),
+		NumFloors:    4,
 	}
-	wv2.elevatorStates[wv2ID] = state
 
 	require.NoError(t, wv2.updateChecksum())
 
@@ -156,7 +154,6 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	// Verify floor transition fields were merged correctly
 	assert.Contains(t, wv1.elevatorStates, wv2ID, "elevator should be in wv1")
 	assert.Equal(t, 3, wv1.elevatorStates[wv2ID].TargetFloor, "target floor should match")
-	assert.Equal(t, 1, wv1.elevatorStates[wv2ID].PrevFloor, "previous floor should match")
 	assert.Equal(t, 2, wv1.elevatorStates[wv2ID].CurrentFloor, "current floor should match")
 	assert.Equal(t, elevio.Up, wv1.elevatorStates[wv2ID].Direction, "direction should match")
 	assert.True(t, wv1.elevatorStates[wv2ID].CabCalls[3], "cab call for floor 3 should be set")
@@ -205,7 +202,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 	}
 }
 
-func TestSetHallCall_Fail(t *testing.T) {
+func TestSetHallCall(t *testing.T) {
 	wv := NewWorldView(1, 4)
 
 	err := wv.SetHallCall(3, HDUp, HSAvailable)
@@ -227,4 +224,47 @@ func TestSetHallCall_Fail(t *testing.T) {
 	err = wv.SetHallCall(3, HDUp, HSNone)
 
 	assert.NoError(t, err, "should be able to transition from Processing to None")
+}
+
+func TestSetCabCall(t *testing.T) {
+	wv := NewWorldView(1, 4)
+
+	success := wv.SetCabCall(2, true)
+
+	assert.True(t, success, "should be able to set valid cab call")
+	assert.True(t, wv.localRemoteState.CabCalls[2], "cab call state should be updated")
+
+	success = wv.SetCabCall(2, false)
+
+	assert.True(t, success, "should be able to set valid cab call")
+	assert.False(t, wv.localRemoteState.CabCalls[2], "cab call state should be updated")
+
+	success = wv.SetCabCall(5, true)
+
+	assert.False(t, success, "should not be able to set cab call for invalid floor")
+}
+
+func TestSetLocalElevator(t *testing.T) {
+	wv := NewWorldView(1, 4)
+
+	validState := NewRemoteElevatorState(1, 4)
+
+	err := wv.SetLocalElevator(validState)
+
+	assert.NoError(t, err, "should be able to set valid local elevator state")
+
+	invalidState := RemoteElevatorState{
+		ID:           1,
+		TargetFloor:  5, // invalid floor
+		CurrentFloor: 2,
+		Direction:    elevio.Up,
+		DoorState:    elevator.DSOpen,
+		CabCalls:     []bool{false, false, false, false},
+		Behavior:     elevator.BMoving,
+		LastSeenAt:   time.Now(),
+	}
+
+	err = wv.SetLocalElevator(&invalidState)
+
+	assert.Error(t, err, "should not be able to set invalid local elevator state")
 }

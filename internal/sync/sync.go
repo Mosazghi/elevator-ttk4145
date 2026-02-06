@@ -5,47 +5,39 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 )
 
 type Worldview struct {
 	localID             int
-	elevatorStates      map[int]RemoteElevatorState
-	lostElevatorsState  map[int]RemoteElevatorState
+	elevatorStates      map[int]*RemoteElevatorState
+	lostElevatorsState  map[int]*RemoteElevatorState
 	hallCalls           [][2]HallCallPairState
 	syncLocalRemoteChan chan RemoteElevatorState
-	localRemoteState    RemoteElevatorState
+	localRemoteState    *RemoteElevatorState
 	numFloors           int
 	checksum            uint64
 	wvChan              chan Worldview
 	mu                  *sync.Mutex
 }
 
+// NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int) *Worldview {
 	wv := &Worldview{
 		localID:             localID,
-		elevatorStates:      make(map[int]RemoteElevatorState),
+		elevatorStates:      make(map[int]*RemoteElevatorState),
 		hallCalls:           make([][2]HallCallPairState, numFloors),
 		numFloors:           numFloors,
 		syncLocalRemoteChan: make(chan RemoteElevatorState, 10),
 		wvChan:              make(chan Worldview),
-		localRemoteState: RemoteElevatorState{
-			ID:           localID,
-			CurrentFloor: 0,
-			Direction:    elevio.Up,
-			DoorState:    elevator.DSClosed,
-			CabCalls:     make([]bool, numFloors),
-			Behavior:     elevator.BIdle,
-			LastSeenAt:   time.Now(),
-		},
-		mu: &sync.Mutex{},
+		localRemoteState:    NewRemoteElevatorState(localID, numFloors),
+		mu:                  &sync.Mutex{},
 	}
 	wv.updateChecksum()
 	return wv
 }
 
+// StartSyncing creates listeners and transmitters for synchroizations with other elevators
 func (wv *Worldview) StartSyncing(port, id int) error {
 	return nil
 }
@@ -90,10 +82,21 @@ func (wv *Worldview) SetCabCall(floor int, state bool) bool {
 	return true
 }
 
-func (wv *Worldview) SetLocalElevator(remoteElev *RemoteElevatorState) error {
+func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
+	if err := ValidateStateRemote(elev); err != nil {
+		return err
+	}
+
+	wv.localRemoteState = elev
 	return nil
+}
+
+func (wv *Worldview) GetRemoteElevaator() RemoteElevatorState {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+	return *wv.localRemoteState
 }
 
 func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
@@ -136,16 +139,15 @@ func (wv *Worldview) Merge(other *Worldview) error {
 	}
 
 	// -- Validate Elevator State --
-	remoteElevState := other.elevatorStates[other.localID]
-	if !ValidateStateRemote(&remoteElevState) {
-		return fmt.Errorf("%v's local state is invalid", other.localID)
+	if err = ValidateStateRemote(other.localRemoteState); err != nil {
+		return fmt.Errorf("%v's local state is invalid: %w", other.localID, err)
 	}
 
-	wv.elevatorStates[other.localID] = remoteElevState
+	wv.elevatorStates[other.localID] = other.localRemoteState
 
 	// NOTE!: Approp. place to clean up old elevator states?
 	for id, state := range wv.elevatorStates {
-		if time.Since(state.LastSeenAt) > 5*time.Second {
+		if time.Since(state.LastSeenAt) > NodeTimeoutDelay {
 			delete(wv.elevatorStates, id)
 		}
 	}
@@ -192,7 +194,11 @@ func (wv *Worldview) Merge(other *Worldview) error {
 
 // updateChecksum recalculates the worldview's checksum
 func (wv *Worldview) updateChecksum() error {
-	cs, _ := checksum.CalculateChecksum(wv)
+	cs, err := checksum.CalculateChecksum(wv)
+	if err != nil {
+		return err
+	}
+
 	wv.checksum = cs
 
 	return nil
