@@ -19,12 +19,12 @@ type RemoteElevatorState struct {
 	LastSeenAt   time.Time
 }
 
-// Helper to create a RemoteElevatorState
+// NewRemoteElevatorState creates a new instance of  RemoteElevatorState
 func NewRemoteElevatorState(id, floor, numFloors int) RemoteElevatorState {
 	return RemoteElevatorState{
 		ID:           id,
 		TargetFloor:  floor,
-		PrevFloor:    floor - 1,
+		PrevFloor:    floor - 1, // TODO!: fix this
 		CurrentFloor: floor,
 		Direction:    elevio.Stop,
 		DoorState:    elevator.DSClosed,
