@@ -16,9 +16,8 @@ func main() {
 	// 	portNum := flag.String("port", "15657", "specify port number")
 	// 	id := flag.Int("id", 1, "specify elevator ID")
 
-	// 	fmt.Println("ID: ", *id)
-
-	// 	flag.Parse()
+	flag.Parse()
+	fmt.Println("ID: ", *id)
 
 	// 	drvButtons := make(chan eIO.ButtonEvent)
 	// 	drvFloors := make(chan int)
@@ -49,6 +48,8 @@ func main() {
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState) {
+	prevBehavior := elevator.BIdle
 
 	// Handle all channels
 	for {

@@ -1,3 +1,4 @@
+// checksum - utils
 package checksum
 
 import (
@@ -6,13 +7,13 @@ import (
 	"fmt"
 )
 
-// Computes sha256 checksum of the given data structure.
+// CalculateChecksum computes sha256 checksum of the given data structure.
 // The data structure is first marshaled to JSON format.
 // Returns the checksum as a byte slice or an error if marshalling fails.
-func CalculateChecksum(data interface{}) (uint64, error) {
+func CalculateChecksum(data any) (uint64, error) {
 	byteSlice, err := json.Marshal(data)
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal to JSON: %w\n", err)
+		return 0, fmt.Errorf("failed to marshal to JSON: %w", err)
 	}
 
 	h := sha256.New()
@@ -24,7 +25,7 @@ func CalculateChecksum(data interface{}) (uint64, error) {
 	}
 
 	var result uint64
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		result = (result << 8) | uint64(sum[i])
 	}
 
