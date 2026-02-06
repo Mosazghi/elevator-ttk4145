@@ -7,62 +7,63 @@ import (
 
 	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	"github.com/Mosazghi/elevator-ttk4145/internal/net"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 )
 
 //var numFloors = 4
 
- func main() {
-// 	portNum := flag.String("port", "15657", "specify port number")
-// 	id := flag.Int("id", 1, "specify elevator ID")
+func main() {
+	// 	portNum := flag.String("port", "15657", "specify port number")
+	// 	id := flag.Int("id", 1, "specify elevator ID")
 
-// 	fmt.Println("ID: ", *id)
+	// 	fmt.Println("ID: ", *id)
 
-// 	flag.Parse()
+	// 	flag.Parse()
 
-// 	drvButtons := make(chan eIO.ButtonEvent)
-// 	drvFloors := make(chan int)
-// 	drvObstr := make(chan bool)
-// 	drvStop := make(chan bool)
+	// 	drvButtons := make(chan eIO.ButtonEvent)
+	// 	drvFloors := make(chan int)
+	// 	drvObstr := make(chan bool)
+	// 	drvStop := make(chan bool)
 
-// 	elevIoDriver := eIO.NewElevIoDriver("localhost:"+*portNum, 4)
+	// 	elevIoDriver := eIO.NewElevIoDriver("localhost:"+*portNum, 4)
 
-// 	go elevIoDriver.PollButtons(drvButtons)
-// 	go elevIoDriver.PollFloorSensor(drvFloors)
-// 	go elevIoDriver.PollObstructionSwitch(drvObstr)
-// 	go elevIoDriver.PollStopButton(drvStop)
+	// 	go elevIoDriver.PollButtons(drvButtons)
+	// 	go elevIoDriver.PollFloorSensor(drvFloors)
+	// 	go elevIoDriver.PollObstructionSwitch(drvObstr)
+	// 	go elevIoDriver.PollStopButton(drvStop)
 
-// 	initFloor := elevIoDriver.GetFloor()
+	// 	initFloor := elevIoDriver.GetFloor()
 
-// 	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
+	// 	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
 
-// 	if initFloor == -1 {
-// 		elev.OnInitBetweenFloors()
-// 	}
+	// 	if initFloor == -1 {
+	// 		elev.OnInitBetweenFloors()
+	// 	}
 
 	// Start network
-    txChan, rxChan, errChan, err := network.UDPRunNetwork("nodeA")
-    if err != nil {
-        fmt.Printf("Failed to start network: %v\n", err)
-        return
-    }
+	txChan, rxChan, errChan, err := network.UDPRunNetwork()
+	if err != nil {
+		fmt.Printf("Failed to start network: %v\n", err)
+		return
+	}
 
-	ticker := time.NewTicker(2* time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-    // Handle all channels
-    for {
-        select {
-        case msg := <-rxChan:
-            fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
-            
-        case err := <-errChan:
-            fmt.Printf("Network error: %v\n", err)
-            
-        case <-ticker.C:
-            // Send a message
-            txChan <- network.UDPMessage{Data: []byte("Hello from A")}
-        }
-    }
+
+	// Handle all channels
+	for {
+		select {
+		case msg := <-rxChan:
+			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+
+		case err := <-errChan:
+			fmt.Printf("Network error: %v\n", err)
+
+		case <-ticker.C:
+			txChan <- network.UDPMessage{Data: []byte("Hello from A")}
+			fmt.Println("Sent broadcast message")
+		}
+	}
 
 	//stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
 }
