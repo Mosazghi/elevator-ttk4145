@@ -7,6 +7,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 )
 
+// TODO: add validation functions for the worldview
 func ValidateStateWv(wv *Worldview) error {
 	return nil
 }
