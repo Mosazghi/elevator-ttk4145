@@ -84,7 +84,7 @@ func (e *ElevatorState) SetAction(behavior Behavior, direction elevio.MotorDirec
 func (e *ElevatorState) OnStopSignal(signal bool) {
 }
 
-func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver *elevio.ElevIoDriver) ElevatorState {
+func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
 	return ElevatorState{
 		driver,
 		direction,

@@ -7,17 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type FakeDriver struct {
-	numFloors int
-}
-
-type FakeElevator struct {
-	io  FakeDriver
-	Dir elevio.Mot
-}
-
-func setupTestElevator() (e ElevatorState) {
-	elevIoDriver := FakeDriver{4}
+func setupTestElevator() ElevatorState {
+	elevIoDriver := elevio.NewElevIoFakeDriver(4)
 	return NewElevator(BIdle, elevio.MDUp, elevIoDriver)
 }
 
