@@ -2,7 +2,10 @@ module github.com/Mosazghi/elevator-ttk4145
 
 go 1.25.6
 
-require github.com/stretchr/testify v1.11.1
+require (
+	github.com/lmittmann/tint v1.1.3
+	github.com/stretchr/testify v1.11.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

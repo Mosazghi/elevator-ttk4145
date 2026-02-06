@@ -14,6 +14,10 @@ func ValidateStateWv(wv *Worldview) error {
 
 // ValidateStateRemote does sanity check on a remote elevator state
 func ValidateStateRemote(res *RemoteElevatorState) error {
+	if res == nil {
+		return fmt.Errorf("remote elevator state cannot be nil")
+	}
+
 	isMoving := res.Behavior == elevator.BMoving
 	isDoorOpen := res.DoorState == elevator.DSOpen
 
