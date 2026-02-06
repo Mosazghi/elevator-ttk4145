@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	"github.com/Mosazghi/elevator-ttk4145/internal/net"
 )
 
 var numFloors = 4
@@ -37,6 +39,30 @@ func main() {
 	if initFloor == -1 {
 		elev.OnInitBetweenFloors()
 	}
+
+	// Start network
+    txChan, rxChan, errChan, err := network.UDPRunNetwork("nodeA")
+    if err != nil {
+        fmt.Printf("Failed to start network: %v\n", err)
+        return
+    }
+
+	ticker := time.NewTicker(2* time.Second)
+	defer ticker.Stop()
+    // Handle all channels
+    for {
+        select {
+        case msg := <-rxChan:
+            fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+            
+        case err := <-errChan:
+            fmt.Printf("Network error: %v\n", err)
+            
+        case <-ticker.C:
+            // Send a message
+            txChan <- network.UDPMessage{Data: []byte("Hello from A")}
+        }
+    }
 
 	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
 }
