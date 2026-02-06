@@ -2,22 +2,24 @@ package main
 
 import (
 	//"flag"
+	"flag"
 	"fmt"
 	"time"
 
 	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 )
 
-//var numFloors = 4
-
+// var numFloors = 4
 func main() {
-	// 	portNum := flag.String("port", "15657", "specify port number")
-	// 	id := flag.Int("id", 1, "specify elevator ID")
+	portNum := flag.String("port", "15657", "specify port number")
+	id := flag.Int("id", 1, "specify elevator ID")
 
 	flag.Parse()
 	fmt.Println("ID: ", *id)
+	fmt.Println("portNum: ", *portNum)
 
 	// 	drvButtons := make(chan eIO.ButtonEvent)
 	// 	drvFloors := make(chan int)
@@ -48,8 +50,6 @@ func main() {
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState) {
-	prevBehavior := elevator.BIdle
 
 	// Handle all channels
 	for {
@@ -66,7 +66,7 @@ func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst c
 		}
 	}
 
-	//stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
+	// stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
 }
 
 // func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState) {
