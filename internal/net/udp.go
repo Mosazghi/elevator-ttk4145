@@ -80,7 +80,7 @@ func UDPrx(connection *net.UDPConn, receiveChannel chan<- UDPMessage, errorChann
 func UDPRunNetwork(ID string) (chan<- UDPMessage, <-chan UDPMessage, <-chan error, error) {
 
 	// Read config file
-	fileData, err := os.ReadFile("network_config.json")
+	fileData, err := os.ReadFile("internal/net/network_config.json")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("[UDPRunNetwork] Failed to read config file: %v", err)
 	}
@@ -100,7 +100,7 @@ func UDPRunNetwork(ID string) (chan<- UDPMessage, <-chan UDPMessage, <-chan erro
 
 	// Create broadcast socket 
 	broadcastConn, _ := UDPCreateSocket(LISTEN_IP, nodeConfig.BroadcastPort)
-	defer broadcastConn.Close()
+	//defer broadcastConn.Close()
 
 	// Initialize channels
 	rxChan := make(chan UDPMessage, 1024)
@@ -113,7 +113,7 @@ func UDPRunNetwork(ID string) (chan<- UDPMessage, <-chan UDPMessage, <-chan erro
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("[UDPRunNetwork] Failed to create tx socket on port %d: %v", port, err)
 		}
-		defer listenConn.Close()
+		//defer listenConn.Close()
 
 		go UDPrx(listenConn, rxChan, errChan)
 	}
