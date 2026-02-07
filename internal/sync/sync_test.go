@@ -1,7 +1,6 @@
 package statesync
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -89,15 +88,13 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 	err := wv1.Merge(wv2, checksum)
 
 	require.NoError(t, err)
-	fmt.Printf("Merged worldview: %v\n", wv1)
 
 	// verify that only the receiving elevator is merged and not the other ones
 	wv2ID := 2
 	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator %d should be in wv1", wv2ID)
 	for floor := 0; floor < 4; floor++ {
 		elevatorID := floor + 1
-		if elevatorID == wv2ID && elevatorID == 1 {
-			fmt.Println("Skipping...")
+		if elevatorID == wv2ID || elevatorID == wv1.LocalID {
 			continue // already checked
 		}
 		_, exists := wv1.ElevatorStates[elevatorID]
@@ -119,7 +116,7 @@ func TestMerge_NilWorldview_ShouldError(t *testing.T) {
 func TestMerge_PreservesLocalState(t *testing.T) {
 	wv1 := NewWorldView(1, 4)
 	originalLocalID := wv1.LocalID
-	originalLocalState := wv1.localRemoteState
+	originalLocalState := wv1.ElevatorStates[originalLocalID]
 
 	wv2 := NewWorldView(10, 4)
 	wv2.ElevatorStates[10] = NewRemoteElevatorState(10, 4)
@@ -129,7 +126,7 @@ func TestMerge_PreservesLocalState(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, originalLocalID, wv1.LocalID, "local ID should not change")
-	assert.Equal(t, originalLocalState.ID, wv1.localRemoteState.ID, "local state ID should not change")
+	assert.Equal(t, originalLocalState.ID, wv1.ElevatorStates[originalLocalID].ID, "local state ID should not change")
 }
 
 // Test 15: Merge with edge case: PrevFloor and TargetFloor
@@ -139,7 +136,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 
 	wv2 := NewWorldView(wv2ID, 4)
 
-	wv2.localRemoteState = &RemoteElevatorState{
+	wv2.ElevatorStates[wv2ID] = &RemoteElevatorState{
 		ID:           wv2ID,
 		TargetFloor:  3,
 		CurrentFloor: 2,
@@ -235,12 +232,12 @@ func TestSetCabCall(t *testing.T) {
 	success := wv.SetCabCall(2, true)
 
 	assert.True(t, success, "should be able to set valid cab call")
-	assert.True(t, wv.localRemoteState.CabCalls[2], "cab call state should be updated")
+	assert.True(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
 
 	success = wv.SetCabCall(2, false)
 
 	assert.True(t, success, "should be able to set valid cab call")
-	assert.False(t, wv.localRemoteState.CabCalls[2], "cab call state should be updated")
+	assert.False(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
 
 	success = wv.SetCabCall(5, true)
 

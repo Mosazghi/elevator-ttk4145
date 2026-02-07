@@ -22,8 +22,8 @@ type Worldview struct {
 	lostElevatorsState  map[int]*RemoteElevatorState
 	HallCalls           [][2]HallCallPairState `json:"hall_calls"`
 	syncLocalRemoteChan chan RemoteElevatorState
-	localRemoteState    *RemoteElevatorState
-	NumFloors           int `json:"num_floors"`
+	// localRemoteState    *RemoteElevatorState
+	NumFloors int `json:"num_floors"`
 	// checksum            uint64
 	wvChan chan Worldview
 	mu     *sync.Mutex
@@ -39,10 +39,10 @@ func NewWorldView(localID, numFloors int) *Worldview {
 		NumFloors:           numFloors,
 		syncLocalRemoteChan: make(chan RemoteElevatorState, 10),
 		wvChan:              make(chan Worldview),
-		localRemoteState:    NewRemoteElevatorState(localID, numFloors),
-		mu:                  &sync.Mutex{},
+		// localRemoteState:    NewRemoteElevatorState(localID, numFloors),
+		mu: &sync.Mutex{},
 	}
-	wv.ElevatorStates[localID] = wv.localRemoteState
+	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
 
 	return wv
 }
@@ -172,7 +172,7 @@ func (wv *Worldview) SetCabCall(floor int, state bool) bool {
 		return false
 	}
 
-	wv.localRemoteState.CabCalls[floor] = state
+	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
 
 	return true
 }
@@ -185,7 +185,7 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 		return err
 	}
 
-	wv.localRemoteState = elev
+	wv.ElevatorStates[wv.LocalID] = elev
 	return nil
 }
 
@@ -193,7 +193,7 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 func (wv *Worldview) GetRemoteElevator() RemoteElevatorState {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
-	return *wv.localRemoteState
+	return *wv.ElevatorStates[wv.LocalID]
 }
 
 // GetAllHallCalls returns a copy of the current hall calls in the worldview
