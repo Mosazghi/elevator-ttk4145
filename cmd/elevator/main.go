@@ -13,7 +13,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
-	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
 )
 
@@ -66,17 +66,22 @@ func main() {
 		slog.Error("Failed to start network", "error", err)
 		return
 	}
-	wvChan := make(chan statesync.Worldview)
+	wvChan := make(chan statesync.Worldview, 10)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	// For testing purposes... Seems to work
 	go func() {
+		prev := map[int]bool{}
 		for wv := range wvChan {
 			for floor := range wv.HallCalls {
 				for dir := range wv.HallCalls[floor] {
 					if len(wv.HallCalls[floor][dir].ConfirmedBy) == len(wv.ElevatorStates) {
+						prevKey := floor*10 + int(dir)
+						if _, exists := prev[prevKey]; !exists {
+							prev[prevKey] = true
+						}
 						slog.Info("order is confirmed by all!", "floor", floor, "dir", dir)
 					}
 				}

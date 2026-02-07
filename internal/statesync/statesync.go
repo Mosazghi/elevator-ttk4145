@@ -23,11 +23,9 @@ type Worldview struct {
 	lostElevatorsState  map[int]*RemoteElevatorState
 	HallCalls           [][2]HallCallPairState `json:"hall_calls"`
 	syncLocalRemoteChan chan RemoteElevatorState
-	// localRemoteState    *RemoteElevatorState
-	NumFloors int `json:"num_floors"`
-	// checksum            uint64
-	wvChan chan Worldview
-	mu     *sync.Mutex
+	NumFloors           int `json:"num_floors"`
+	wvChan              chan Worldview
+	mu                  *sync.Mutex
 }
 
 // NewWorldView creates a new instance
