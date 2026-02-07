@@ -1,25 +1,40 @@
 package main
 
 import (
-	//"flag"
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
+	"github.com/lmittmann/tint"
 )
 
 // var numFloors = 4
 func main() {
-	portNum := flag.String("port", "15657", "specify port number")
-	id := flag.Int("id", 1, "specify elevator ID")
+
+	w := os.Stderr
+
+	// Create a new logger
+
+	// Set global logger with custom options
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level:      slog.LevelDebug,
+			TimeFormat: time.Kitchen,
+		}),
+	))
+	port := flag.Int("port", 15657, "specify port number")
+	localID := flag.Int("id", 1, "specify elevator ID")
 
 	flag.Parse()
-	fmt.Println("ID: ", *id)
-	fmt.Println("portNum: ", *portNum)
+	slog.Info("Elevator started", "id", *localID)
+	slog.Info("Elevator started", "port", *port)
 
 	// 	drvButtons := make(chan eIO.ButtonEvent)
 	// 	drvFloors := make(chan int)
@@ -47,24 +62,27 @@ func main() {
 		fmt.Printf("Failed to start network: %v\n", err)
 		return
 	}
+	wv := statesync.NewWorldView(*localID, 4)
+	wv.StartSyncing(txChan, rxChan, errChan)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	// Handle all channels
-	for {
-		select {
-		case msg := <-rxChan:
-			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+	// for {
+	// 	select {
+	// 	case msg := <-rxChan:
+	// 		fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address)
 
-		case err := <-errChan:
-			fmt.Printf("Network error: %v\n", err)
+	// 	case err := <-errChan:
+	// 		fmt.Printf("Network error: %v\n", err)
 
-		case <-ticker.C:
-			txChan <- network.UDPMessage{Data: []byte("Hello from A")}
-			fmt.Println("Sent broadcast message")
-		}
-	}
+	// 	case <-ticker.C:
+	// 		msg := fmt.Sprintf("Hello from %d", *localID)
+	// 		txChan <- network.UDPMessage{Data: []byte(msg)}
+	// 		fmt.Println("Sent broadcast message")
+	// 	}
+	// }
 
 	// stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
 }
