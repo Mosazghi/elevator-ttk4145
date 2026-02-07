@@ -11,10 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Easier to create test worldviews with this helper function
+func NewTestWorldView(localID, numFloors int) *Worldview {
+	return NewWorldView(localID, numFloors, make(chan Worldview))
+}
+
 // Merge with different number of floors should fail
 func TestMerge_DifferentNumFloors_ShouldError(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
-	wv2 := NewWorldView(2, 3)
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 3)
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
 	err := wv1.Merge(wv2, checksum)
@@ -25,8 +30,8 @@ func TestMerge_DifferentNumFloors_ShouldError(t *testing.T) {
 
 // Merge with checksum mismatch should fail
 func TestMerge_ChecksumMismatch_ShouldError(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
-	wv2 := NewWorldView(2, 4)
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
 	checksum, _ := checksum.CalculateChecksum(wv2)
 	// Corrupt the checksum
 	wv2.LocalID = 999
@@ -39,8 +44,8 @@ func TestMerge_ChecksumMismatch_ShouldError(t *testing.T) {
 
 // Valid merge with same numFloors and valid checksum
 func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
-	wv2 := NewWorldView(2, 4)
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
 
 	// Add elevator state to wv2
 	wv2.HallCalls[1][HDUp] = HallCallPairState{
@@ -61,8 +66,8 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 // Merge with empty worldview
 func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
-	wv2 := NewWorldView(2, 4)
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
 
@@ -73,11 +78,11 @@ func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
 
 // Merge with elevator at different floors
 func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
-	wv2 := NewWorldView(2, 4)
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
 
 	// Test all valid floor positions
-	for floor := 0; floor < 4; floor++ {
+	for floor := range 4 {
 		elevatorID := floor + 1
 		state := NewRemoteElevatorState(elevatorID, 4)
 		wv2.ElevatorStates[elevatorID] = state
@@ -92,7 +97,7 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 	// verify that only the receiving elevator is merged and not the other ones
 	wv2ID := 2
 	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator %d should be in wv1", wv2ID)
-	for floor := 0; floor < 4; floor++ {
+	for floor := range 4 {
 		elevatorID := floor + 1
 		if elevatorID == wv2ID || elevatorID == wv1.LocalID {
 			continue // already checked
@@ -104,7 +109,7 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 
 // Test merge nil worldview
 func TestMerge_NilWorldview_ShouldError(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
+	wv1 := NewTestWorldView(1, 4)
 
 	err := wv1.Merge(nil, 0)
 
@@ -114,11 +119,11 @@ func TestMerge_NilWorldview_ShouldError(t *testing.T) {
 
 // Test merge preserves local state
 func TestMerge_PreservesLocalState(t *testing.T) {
-	wv1 := NewWorldView(1, 4)
+	wv1 := NewTestWorldView(1, 4)
 	originalLocalID := wv1.LocalID
 	originalLocalState := wv1.ElevatorStates[originalLocalID]
 
-	wv2 := NewWorldView(10, 4)
+	wv2 := NewTestWorldView(10, 4)
 	wv2.ElevatorStates[10] = NewRemoteElevatorState(10, 4)
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
@@ -132,9 +137,9 @@ func TestMerge_PreservesLocalState(t *testing.T) {
 // Test 15: Merge with edge case: PrevFloor and TargetFloor
 func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	wv2ID := 10
-	wv1 := NewWorldView(1, 4)
+	wv1 := NewTestWorldView(1, 4)
 
-	wv2 := NewWorldView(wv2ID, 4)
+	wv2 := NewTestWorldView(wv2ID, 4)
 
 	wv2.ElevatorStates[wv2ID] = &RemoteElevatorState{
 		ID:           wv2ID,
@@ -182,8 +187,8 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wv1 := NewWorldView(1, 4)
-			wv2 := NewWorldView(2, 4)
+			wv1 := NewTestWorldView(1, 4)
+			wv2 := NewTestWorldView(2, 4)
 
 			wv1.HallCalls[1][HDUp] = HallCallPairState{State: tt.ourState, By: 1}
 
@@ -203,7 +208,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 }
 
 func TestSetHallCall(t *testing.T) {
-	wv := NewWorldView(1, 4)
+	wv := NewTestWorldView(1, 4)
 
 	err := wv.SetHallCall(3, HDUp, HSAvailable)
 
@@ -227,25 +232,25 @@ func TestSetHallCall(t *testing.T) {
 }
 
 func TestSetCabCall(t *testing.T) {
-	wv := NewWorldView(1, 4)
+	wv := NewTestWorldView(1, 4)
 
-	success := wv.SetCabCall(2, true)
+	err := wv.SetCabCall(2, true)
 
-	assert.True(t, success, "should be able to set valid cab call")
+	assert.NoError(t, err, "should be able to set valid cab call")
 	assert.True(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
 
-	success = wv.SetCabCall(2, false)
+	err = wv.SetCabCall(2, false)
 
-	assert.True(t, success, "should be able to set valid cab call")
+	assert.NoError(t, err, "should be able to set valid cab call")
 	assert.False(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
 
-	success = wv.SetCabCall(5, true)
+	err = wv.SetCabCall(5, true)
 
-	assert.False(t, success, "should not be able to set cab call for invalid floor")
+	assert.Error(t, err, "should not be able to set cab call for invalid floor")
 }
 
 func TestSetLocalElevator(t *testing.T) {
-	wv := NewWorldView(1, 4)
+	wv := NewTestWorldView(1, 4)
 
 	validState := NewRemoteElevatorState(1, 4)
 

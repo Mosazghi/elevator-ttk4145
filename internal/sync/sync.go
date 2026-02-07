@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,7 +31,7 @@ type Worldview struct {
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 	wv := &Worldview{
 		LocalID:             localID,
 		ElevatorStates:      make(map[int]*RemoteElevatorState),
@@ -38,24 +39,28 @@ func NewWorldView(localID, numFloors int) *Worldview {
 		HallCalls:           make([][2]HallCallPairState, numFloors),
 		NumFloors:           numFloors,
 		syncLocalRemoteChan: make(chan RemoteElevatorState, 10),
-		wvChan:              make(chan Worldview),
+		wvChan:              wvChan,
 		// localRemoteState:    NewRemoteElevatorState(localID, numFloors),
 		mu: &sync.Mutex{},
 	}
+
+	for i := range wv.HallCalls {
+		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
+	}
+
 	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
 
 	return wv
 }
 
 func (wv Worldview) String() string {
-
 	return fmt.Sprintf("Worldview{LocalID: %d, ElevatorStates: %v, HallCalls: %v, NumFloors: %d}",
 		wv.LocalID, wv.ElevatorStates, wv.HallCalls, wv.NumFloors)
 }
 
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
 func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-chan network.UDPMessage, errChan <-chan error) {
-
 	ticker := time.NewTicker(BroadcastInterval)
 	localID := wv.LocalID
 	for {
@@ -74,10 +79,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 
 			if otherWv.LocalID == localID {
 				// fmt.Println("Received own broadcast, ignoring...")
-				continue
-			}
-			if err != nil {
-				slog.Error("Failed to unmarshal worldview", "error", err)
 				continue
 			}
 
@@ -155,26 +156,32 @@ func (wv *Worldview) SetHallCall(floor int, dir HallCallDir, state HallCallState
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	by := -1
+	if state == HSProcessing {
+		by = wv.LocalID
+	}
+
 	wv.HallCalls[floor][dir] = HallCallPairState{
-		State: state,
-		By:    wv.LocalID,
+		State:       state,
+		By:          by,
+		ConfirmedBy: []int{wv.LocalID},
 	}
 
 	return nil
 }
 
 // SetCabCall changes cab call state at floor
-func (wv *Worldview) SetCabCall(floor int, state bool) bool {
+func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
 	if !IsValidFloor(floor, wv.NumFloors) {
-		return false
+		return fmt.Errorf("%v is not valid floor", floor)
 	}
 
 	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
 
-	return true
+	return nil
 }
 
 // SetLocalElevator updates the local elevator state in the worldview
@@ -238,7 +245,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	// -- Validate Elevator State --
-	slog.Debug("validating", "other", other)
+	slog.Debug("validating..", "otherHC", other.HallCalls)
 	otherLocalState := other.ElevatorStates[other.LocalID]
 	if err = ValidateStateRemote(otherLocalState); err != nil {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
@@ -260,40 +267,40 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 			// 2. Check if others has received a new order
 			if otherDirState.State == HSAvailable {
-				if ourDirState.State == HSNone {
-					wv.HallCalls[floor][dir] = otherDirState
+
+				for _, id := range otherDirState.ConfirmedBy {
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+						slog.Info("merging confirmation from other node", "floor", floor, "dir", dir, "id", id)
+						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
+					}
 				}
+
+				// If we hadnt seen it yet..
+				if ourDirState.State == HSNone {
+					slog.Info("other has new order", "floor", floor, "dir", dir, "by", otherDirState.By)
+					wv.HallCalls[floor][dir].State = HSAvailable
+					wv.HallCalls[floor][dir].By = otherDirState.By
+
+					// 2.1 We need to confirm the order
+
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
+						slog.Info("confirming order", "floor", floor, "dir", dir)
+						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
+					}
+				}
+
 			}
 
 			// 3. Check if others is processing an order
 			// though, it can only go from available -> processing
 			if otherDirState.State == HSProcessing && ourDirState.State == HSAvailable {
-				wv.HallCalls[floor][dir] = otherDirState
+				wv.HallCalls[floor][dir].By = otherDirState.By
+				wv.HallCalls[floor][dir].State = HSProcessing
+
 			}
 
-			// NOTE!: For later if we need to release the order [Release active stale orders taken by disconnected elevators]
-			// if otherDirState.State == HSProcessing && ourDirState.State == HSProcessing {
-			// 	if _, exists := wv.elevatorStates[otherDirState.By]; !exists {
-			// 		wv.hallCalls[floor][dir] = HallCallPairState{
-			// 			State: HSAvailable,
-			// 			By:    0,
-			// 		}
-			// 	}
-			// }
 		}
 	}
-
+	wv.wvChan <- *wv
 	return nil
 }
-
-// updateChecksum recalculates the worldview's checksum
-// func (wv *Worldview) updateChecksum() error {
-// 	cs, err := checksum.CalculateChecksum(wv)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	wv.checksum = cs
-
-// 	return nil
-// }

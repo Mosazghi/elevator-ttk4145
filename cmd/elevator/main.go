@@ -10,6 +10,8 @@ import (
 	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
 	"github.com/lmittmann/tint"
@@ -17,7 +19,6 @@ import (
 
 // var numFloors = 4
 func main() {
-
 	w := os.Stderr
 
 	// Create a new logger
@@ -36,77 +37,89 @@ func main() {
 	slog.Info("Elevator started", "id", *localID)
 	slog.Info("Elevator started", "port", *port)
 
-	// 	drvButtons := make(chan eIO.ButtonEvent)
-	// 	drvFloors := make(chan int)
-	// 	drvObstr := make(chan bool)
-	// 	drvStop := make(chan bool)
+	drvButtons := make(chan elevio.ButtonEvent)
+	drvFloors := make(chan int)
+	drvObstr := make(chan bool)
+	drvStop := make(chan bool)
 
-	// 	elevIoDriver := eIO.NewElevIoDriver("localhost:"+*portNum, 4)
+	eIOAddr := fmt.Sprintf("localhost:%d", *port)
+	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, 4)
 
-	// 	go elevIoDriver.PollButtons(drvButtons)
-	// 	go elevIoDriver.PollFloorSensor(drvFloors)
-	// 	go elevIoDriver.PollObstructionSwitch(drvObstr)
-	// 	go elevIoDriver.PollStopButton(drvStop)
+	go elevIoDriver.PollButtons(drvButtons)
 
-	// 	initFloor := elevIoDriver.GetFloor()
+	go elevIoDriver.PollFloorSensor(drvFloors)
+	go elevIoDriver.PollObstructionSwitch(drvObstr)
+	go elevIoDriver.PollStopButton(drvStop)
 
-	// 	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
+	initFloor := elevIoDriver.GetFloor()
 
-	// 	if initFloor == -1 {
-	// 		elev.OnInitBetweenFloors()
-	// 	}
+	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
+
+	if initFloor == -1 {
+		slog.Info("Elevator initialized between floors")
+		elev.OnInitBetweenFloors()
+	}
 
 	// Start network
 	txChan, rxChan, errChan, err := network.UDPRunNetwork()
 	if err != nil {
-		fmt.Printf("Failed to start network: %v\n", err)
+		slog.Error("Failed to start network", "error", err)
 		return
 	}
-	wv := statesync.NewWorldView(*localID, 4)
-	wv.StartSyncing(txChan, rxChan, errChan)
+	wvChan := make(chan statesync.Worldview)
+	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	// Handle all channels
-	// for {
-	// 	select {
-	// 	case msg := <-rxChan:
-	// 		fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address)
+	// For testing purposes... Seems to work
+	go func() {
+		for wv := range wvChan {
+			for floor := range wv.HallCalls {
+				for dir := range wv.HallCalls[floor] {
+					if len(wv.HallCalls[floor][dir].ConfirmedBy) == len(wv.ElevatorStates) {
+						slog.Info("order is confirmed by all!", "floor", floor, "dir", dir)
+					}
+				}
+			}
+		}
+	}()
 
-	// 	case err := <-errChan:
-	// 		fmt.Printf("Network error: %v\n", err)
-
-	// 	case <-ticker.C:
-	// 		msg := fmt.Sprintf("Hello from %d", *localID)
-	// 		txChan <- network.UDPMessage{Data: []byte(msg)}
-	// 		fmt.Println("Sent broadcast message")
-	// 	}
-	// }
-
-	// stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
+	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
 }
 
-// func stateMachine(drvButtons chan eIO.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState) {
+func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState, wv *statesync.Worldview) {
+	prevBehavior := elevator.BIdle
 
-// 	prevBehavior := elevator.BIdle
+	for {
 
-// 	for {
+		if prevBehavior != elev.Behavior {
+			slog.Info("State Trans", "from", prevBehavior, "to", elev.Behavior)
+			prevBehavior = elev.Behavior
+		}
 
-// 		if prevBehavior != elev.Behavior {
-// 			fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
-// 			prevBehavior = elev.Behavior
-// 		}
+		select {
+		case a := <-drvButtons:
+			slog.Debug("Button event received", "event", a)
+			var err error
+			switch a.Button {
+			case elevio.Cab:
+				err = wv.SetCabCall(a.Floor, true)
+			case elevio.HallUp:
+				err = wv.SetHallCall(a.Floor, statesync.HDUp, statesync.HSAvailable)
+			default:
+				err = wv.SetHallCall(a.Floor, statesync.HDDown, statesync.HSAvailable)
+			}
+			if err != nil {
+				slog.Error("Failed to set call in worldview", "error", err)
+			}
 
-// 		select {
-// 		case a := <-drvButtons:
-// 			elev.OnOrderRequest(a)
-// 		case a := <-drvFloors:
-// 			elev.OnNewFloorArrival(a)
-// 		case a := <-drvObst:
-// 			elev.OnObstructionSignal(a)
-// 		case a := <-drvStop:
-// 			elev.OnStopSignal(a)
-// 		}
-// 	}
-// }
+			elev.OnOrderRequest(a)
+		case a := <-drvFloors:
+			elev.OnNewFloorArrival(a)
+		case a := <-drvObst:
+			elev.OnObstructionSignal(a)
+		case a := <-drvStop:
+			elev.OnStopSignal(a)
+		}
+	}
+}
