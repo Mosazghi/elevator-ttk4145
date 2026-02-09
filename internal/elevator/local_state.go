@@ -59,29 +59,41 @@ type ElevatorState struct {
 	Behavior Behavior
 }
 
-type ElevatorCallbacks interface {
-	OnStopSignal(signal bool)
-	SetAction(behavior Behavior, direction elevio.MotorDirection)
+type Action struct {
+	Behavior  Behavior
+	Direction elevio.MotorDirection
+}
 
+type ElevatorCallbacks interface {
+	SetAction(behavior Behavior, direction elevio.MotorDirection)
+	Stop()
 	OnInitBetweenFloors()
 }
 
-func (e *ElevatorState) SetAction(behavior Behavior, direction elevio.MotorDirection) error {
-	if behavior < 0 || behavior >= BSize {
+func (e *ElevatorState) SetAction(action Action) error {
+	if action.Behavior < 0 || action.Behavior >= BSize {
 		return errors.New("got an invalid behavior")
 	}
 
-	if direction != elevio.MDDown && direction != elevio.MDUp && direction != elevio.MDStop {
+	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
 		return errors.New("got an invalid direction")
 	}
 
-	e.Behavior = behavior
-	e.Dir = direction
-	e.io.SetMotorDirection(direction)
+	e.Behavior = action.Behavior
+	e.Dir = action.Direction
+	e.io.SetMotorDirection(action.Direction)
 	return nil
 }
 
-func (e *ElevatorState) OnStopSignal(signal bool) {
+func (e *ElevatorState) Stop() {
+	e.io.SetMotorDirection(elevio.MDStop)
+}
+
+// Continue the currently active order
+func (e *ElevatorState) Continue() {
+	if e.Behavior == BMoving {
+		e.io.SetMotorDirection(e.Dir)
+	}
 }
 
 func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {

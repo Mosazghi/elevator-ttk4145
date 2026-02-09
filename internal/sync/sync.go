@@ -212,3 +212,7 @@ func (wv *Worldview) UpdateLocalElevatorFloor(floor int) {
 func (wv *Worldview) UpdateLocalElevatorBehavior(behavior elevator.Behavior) {
 	wv.localRemoteState.Behavior = behavior
 }
+
+func (wv *Worldview) GetLocalElevator() *RemoteElevatorState {
+	return wv.localRemoteState
+}

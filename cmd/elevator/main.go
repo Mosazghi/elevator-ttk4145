@@ -48,8 +48,7 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
-	wv := statesync.NewTestWorldview(*id, 4)
+	// initFloor := elevIoDriver.GetFloor()
 
 	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
 
@@ -61,7 +60,7 @@ func main() {
 	}
 	wvChan := make(chan statesync.Worldview, 10)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
-	go wv.StartSyncing(txChan, rxChan, errChan)
+	go wv.StartSyncing(txChan, rxChan)
 	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
 }
 
@@ -81,6 +80,14 @@ func stateMachine(
 	}
 
 	for {
+
+		local_elv := worldView.GetLocalElevator()
+
+		if prevBehavior != elev.Behavior {
+			fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
+			prevBehavior = elev.Behavior
+		}
+
 		select {
 		case msg := <-rxChan:
 			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
