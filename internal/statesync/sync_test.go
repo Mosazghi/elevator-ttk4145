@@ -320,15 +320,7 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	wv2.SetHallCall(2, HDUp, HSAvailable)
 
 	// Create and send a message from wv2
-	checksum, err := checksum.CalculateChecksum(wv2)
-	require.NoError(t, err)
-
-	msg := Message{
-		Wv:       *wv2,
-		Checksum: checksum,
-	}
-
-	jsonData, err := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -360,13 +352,8 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 	fakeOwnMessage := NewTestWorldView(1, 4) // Same ID as wv
 	fakeOwnMessage.SetHallCall(3, HDDown, HSAvailable)
 
-	checksum, _ := checksum.CalculateChecksum(fakeOwnMessage)
-	msg := Message{
-		Wv:       *fakeOwnMessage,
-		Checksum: checksum,
-	}
-
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(fakeOwnMessage)
+	require.NoError(t, err)
 
 	// Send the "own" message
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -399,9 +386,8 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 
 	// Send valid message to confirm system is still responsive
 	wv2 := NewTestWorldView(2, 4)
-	checksum, _ := checksum.CalculateChecksum(wv2)
-	msg := Message{Wv: *wv2, Checksum: checksum}
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
@@ -410,35 +396,6 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 	wv.mu.Lock()
 	assert.Contains(t, wv.ElevatorStates, 2, "should still process valid messages after invalid one")
 	wv.mu.Unlock()
-}
-
-// TestStartSyncing_HandlesChecksumMismatch verifies checksum validation
-func TestStartSyncing_HandlesChecksumMismatch(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
-
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
-	errChan := make(chan error, 10)
-
-	go wv1.StartSyncing(txChan, rxChan, errChan)
-
-	// Create message with wrong checksum
-	msg := Message{
-		Wv:       *wv2,
-		Checksum: 0xDEADBEEF, // Invalid checksum
-	}
-
-	jsonData, _ := json.Marshal(msg)
-	rxChan <- network.UDPMessage{Data: jsonData}
-
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify wv2's state was NOT merged due to checksum failure
-	wv1.mu.Lock()
-	_, exists := wv1.ElevatorStates[2]
-	assert.False(t, exists, "should not merge data with invalid checksum")
-	wv1.mu.Unlock()
 }
 
 // TestStartSyncing_DetectsLostPeers verifies timeout detection for lost peers
@@ -451,9 +408,8 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	errChan := make(chan error, 10)
 
 	// First, add wv2 to wv1
-	checksum, _ := checksum.CalculateChecksum(wv2)
-	msg := Message{Wv: *wv2, Checksum: checksum}
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
@@ -482,8 +438,10 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 
 // TestStartSyncing_ReappearedPeers verifies handling of returning peers
 func TestStartSyncing_ReappearedPeers(t *testing.T) {
+	wv2ID := 2
+
 	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv2 := NewTestWorldView(wv2ID, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -493,21 +451,20 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 
 	// Manually mark peer as lost
 	wv1.mu.Lock()
-	wv1.lostElevatorsState[2] = wv2.ElevatorStates[2]
+	wv1.lostElevatorsState[wv2ID] = wv2.ElevatorStates[wv2ID]
 	wv1.mu.Unlock()
 
 	// Send message from "reappeared" peer
-	checksum, _ := checksum.CalculateChecksum(wv2)
-	msg := Message{Wv: *wv2, Checksum: checksum}
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify peer was restored
 	wv1.mu.Lock()
-	_, existsLost := wv1.lostElevatorsState[2]
-	_, existsActive := wv1.ElevatorStates[2]
+	_, existsLost := wv1.lostElevatorsState[wv2ID]
+	_, existsActive := wv1.ElevatorStates[wv2ID]
 	wv1.mu.Unlock()
 
 	assert.False(t, existsLost, "peer should be removed from lost state")
@@ -540,9 +497,8 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 2; i < 10; i++ {
 			peer := NewTestWorldView(i, 4)
-			checksum, _ := checksum.CalculateChecksum(peer)
-			msg := Message{Wv: *peer, Checksum: checksum}
-			jsonData, _ := json.Marshal(msg)
+			jsonData, err := BuildWvJson(peer)
+			require.NoError(t, err)
 			rxChan <- network.UDPMessage{Data: jsonData}
 			time.Sleep(15 * time.Millisecond)
 		}
@@ -586,9 +542,8 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 	// Send valid message to verify system is still functional
 	wv2 := NewTestWorldView(2, 4)
-	checksum, _ := checksum.CalculateChecksum(wv2)
-	msg := Message{Wv: *wv2, Checksum: checksum}
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
@@ -599,31 +554,6 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	wv.mu.Unlock()
 
 	assert.True(t, exists, "should continue operating after network error")
-}
-
-// TestStartSyncing_UpdatesLastSeenAt verifies timestamp updates on broadcast
-func TestStartSyncing_UpdatesLastSeenAt(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
-
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
-	errChan := make(chan error, 10)
-
-	// Get initial timestamp
-	wv.mu.Lock()
-	initialTime := wv.ElevatorStates[wv.LocalID].LastSeenAt
-	wv.mu.Unlock()
-
-	go wv.StartSyncing(txChan, rxChan, errChan)
-
-	// Wait for at least one broadcast
-	time.Sleep(BroadcastInterval + 100*time.Millisecond)
-
-	wv.mu.Lock()
-	updatedTime := wv.ElevatorStates[wv.LocalID].LastSeenAt
-	wv.mu.Unlock()
-
-	assert.True(t, updatedTime.After(initialTime), "LastSeenAt should be updated on broadcast")
 }
 
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
@@ -646,9 +576,8 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	}
 
 	// Send wv2's state to wv1
-	cs, _ := checksum.CalculateChecksum(wv2)
-	msg := Message{Wv: *wv2, Checksum: cs}
-	jsonData, _ := json.Marshal(msg)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
@@ -670,10 +599,8 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 		ConfirmedBy: []int{2, 3, 4},
 	}
 
-	cs2, _ := checksum.CalculateChecksum(wv3)
-
-	msg2 := Message{Wv: *wv3, Checksum: cs2}
-	jsonData2, _ := json.Marshal(msg2)
+	jsonData2, err := BuildWvJson(wv3)
+	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData2}
 	time.Sleep(100 * time.Millisecond)

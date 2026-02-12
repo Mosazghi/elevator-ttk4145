@@ -1,3 +1,4 @@
+// Package network includes udp socket creation, listenting etc.
 package network
 
 import (
@@ -9,8 +10,8 @@ import (
 )
 
 const (
-	BROADCAST_IP = "255.255.255.255"
-	THE_ONE_PORT = 30000
+	BroadCastIP   = "255.255.255.255"
+	BroadCastPort = 30000
 )
 
 type UDPMessage struct {
@@ -32,11 +33,8 @@ func LocalIP() (string, error) {
 	return localIP, nil
 }
 
-/*
-	Creates a UDP socket with SO_REUSEADDR, SO_BROADCAST enabled.
-
-Allows multiple programs to bind to the same port.
-*/
+// UDPCreateSocket creates a UDP socket with SO_REUSEADDR, SO_BROADCAST enabled.
+// Allows multiple programs to bind to the same port.
 func UDPCreateSocket(port int) (net.PacketConn, error) {
 	s, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 	if err != nil {
@@ -63,7 +61,9 @@ func UDPCreateSocket(port int) (net.PacketConn, error) {
 	f.Close()
 
 	return conn, nil
-} /* Reads continuously from socket and passes the data to a channel */
+}
+
+// UDPrx reads continuously from socket and passes the data to a channel
 func UDPrx(connection net.PacketConn, receiveChannel chan<- UDPMessage, errorChannel chan<- error) {
 	buffer := make([]byte, 2048)
 
@@ -93,22 +93,22 @@ func UDPrx(connection net.PacketConn, receiveChannel chan<- UDPMessage, errorCha
 	}
 }
 
-/* Initializes & runs the UDP network. */
+// UDPRunNetwork initializes & runs the UDP network.
 func UDPRunNetwork() (chan<- UDPMessage, <-chan UDPMessage, <-chan error, error) {
 	rxChan := make(chan UDPMessage, 20)
 	txChan := make(chan UDPMessage, 20)
 	errChan := make(chan error, 10)
 
-	conn, err := UDPCreateSocket(THE_ONE_PORT)
+	conn, err := UDPCreateSocket(BroadCastPort)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("Failed to create socket: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to create socket: %w", err)
 	}
 
 	go UDPrx(conn, rxChan, errChan)
 
 	broadcastAddr := &net.UDPAddr{
-		IP:   net.ParseIP(BROADCAST_IP),
-		Port: THE_ONE_PORT,
+		IP:   net.ParseIP(BroadCastIP),
+		Port: BroadCastPort,
 	}
 
 	// Broadcast
@@ -116,7 +116,7 @@ func UDPRunNetwork() (chan<- UDPMessage, <-chan UDPMessage, <-chan error, error)
 		for msg := range txChan {
 			_, err := conn.WriteTo(msg.Data, broadcastAddr)
 			if err != nil {
-				errChan <- fmt.Errorf("Write error: %v", err)
+				errChan <- fmt.Errorf("write error: %w", err)
 			}
 		}
 	}()

@@ -71,24 +71,6 @@ func main() {
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	// For testing purposes... Seems to work
-	go func() {
-		prev := map[int]bool{}
-		for wv := range wvChan {
-			for floor := range wv.HallCalls {
-				for dir := range wv.HallCalls[floor] {
-					if len(wv.HallCalls[floor][dir].ConfirmedBy) == len(wv.ElevatorStates) {
-						prevKey := floor*10 + int(dir)
-						if _, exists := prev[prevKey]; !exists {
-							prev[prevKey] = true
-						}
-						slog.Info("order is confirmed by all!", "floor", floor, "dir", dir)
-					}
-				}
-			}
-		}
-	}()
-
 	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
 }
 
