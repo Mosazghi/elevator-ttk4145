@@ -10,6 +10,7 @@ import (
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	watchdog "github.com/Mosazghi/elevator-ttk4145/internal/watchdog"
 )
 
 // var numFloors = 4
@@ -51,9 +52,21 @@ func main() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	wd := watchdog.Start(5.0) // 5 second timeout
+
+	// Keep the dog alive
+	for i := 0; i < 10; i++ {
+		watchdog.Ping(&wd)
+		time.Sleep(1 * time.Second)
+	}
+
 	// Handle all channels
 	for {
 		select {
+		case <-wd.Timeout:
+			watchdog.Stop(&wd)
+			continue
+
 		case msg := <-rxChan:
 			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
 
