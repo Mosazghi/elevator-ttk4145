@@ -236,7 +236,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	if calculatedChecksum != otherChecksum {
-		fmt.Printf("Calculated checksum: %x, Received checksum: %x\n", calculatedChecksum, otherChecksum)
+		slog.Warn("data integrity check failed: checksum mismatch",
+			"calculatedChecksum", calculatedChecksum,
+			"receivedChecksum", otherChecksum,
+		)
 		return fmt.Errorf("data integrity check failed: checksum mismatch")
 	}
 
