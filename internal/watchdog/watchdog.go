@@ -8,26 +8,24 @@ import (
 type WatchDog struct {
 	pingChan chan struct{}
 	stopChan chan struct{}
-	done	 chan struct{}
+	done     chan struct{}
 	Timeout  chan bool
 }
-
 
 /* Start new Watchdog timer with a given interval. Returns WatchDog struct */
 func Start(duration float64) WatchDog {
 	slog.Info("[Watchdog] Starting...")
 
 	interval := time.Duration(duration * float64(time.Second))
-	
-	wd := WatchDog{
-		pingChan:	make(chan struct{}, 1),
-		stopChan:	make(chan struct{}, 1),
-		done:		make(chan struct{}, 1),
-		Timeout:	make(chan bool, 1),
 
+	wd := WatchDog{
+		pingChan: make(chan struct{}, 1),
+		stopChan: make(chan struct{}),
+		done:     make(chan struct{}),
+		Timeout:  make(chan bool, 1),
 	}
 
-	go func(){
+	go func() {
 		slog.Info("[Watchdog] Started")
 		timer := time.NewTimer(interval)
 		defer timer.Stop()
@@ -35,25 +33,19 @@ func Start(duration float64) WatchDog {
 
 		for {
 			select {
-			case <- timer.C:
+			case <-timer.C:
 				slog.Error("[Watchdog] Timed out")
-				select {
-				case wd.Timeout <- true:
-				default:
-				}
+				wd.Timeout <- true
 				return
 
-			case <- wd.pingChan:
-				slog.Info("[Watchdog] Ping received -> Timer is reset.")
+			case <-wd.pingChan:
+				slog.Debug("[Watchdog] Ping received -> Timer is reset.")
 				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
+					<-timer.C
 				}
 				timer.Reset(interval)
 
-			case <- wd.stopChan:
+			case <-wd.stopChan:
 				slog.Info("[Watchdog] Timer Stopped")
 				return
 			}
@@ -63,17 +55,18 @@ func Start(duration float64) WatchDog {
 	return wd
 }
 
-/* Signals the watchdog timer to stop*/
-func Stop(wd *WatchDog) {
-	close(wd.stopChan)
-	<-wd.done
-}
-
-/* Resets the watchdog timer */
-func Ping(wd *WatchDog) {
+// Stops Signals the watchdog timer to stop
+func (wd *WatchDog) Stop() {
 	select {
-	case wd.pingChan <- struct{}{}:
+	case <-wd.done:
+		return
 	default:
+		close(wd.stopChan)
+		<-wd.done
 	}
 }
 
+// Ping resets the watchdog timer
+func (wd *WatchDog) Ping() {
+	wd.pingChan <- struct{}{}
+}

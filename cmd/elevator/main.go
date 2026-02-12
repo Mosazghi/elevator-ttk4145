@@ -55,8 +55,8 @@ func main() {
 	wd := watchdog.Start(5.0) // 5 second timeout
 
 	// Keep the dog alive
-	for i := 0; i < 10; i++ {
-		watchdog.Ping(&wd)
+	for i := 0; i < 5; i++ {
+		wd.Ping()
 		time.Sleep(1 * time.Second)
 	}
 
@@ -64,7 +64,10 @@ func main() {
 	for {
 		select {
 		case <-wd.Timeout:
-			watchdog.Stop(&wd)
+
+			// TODO: Test ping after timeout ->
+			// Make sure non-blocking
+			wd.Ping()
 			continue
 
 		case msg := <-rxChan:
