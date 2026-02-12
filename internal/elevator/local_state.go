@@ -2,7 +2,6 @@
 package elevator
 
 import (
-	"errors"
 	"log/slog"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
@@ -85,21 +84,20 @@ type ElevatorCallbacks interface {
 	Stop()
 }
 
-func (e *ElevatorState) SetAction(action Action) error {
+func (e *ElevatorState) SetAction(action Action) {
 	if action.Behavior < 0 || action.Behavior >= BSize {
 		slog.Error("[Elevator] Got an invalid behavior", "Received behavior", action.Behavior)
-		return errors.New("got an invalid behavior")
+		return
 	}
 
 	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
 		slog.Error("[Elevator] Got an invalid direction", "Direction", action.Direction)
-		return errors.New("got an invalid direction")
+		return
 	}
 
 	e.Behavior = action.Behavior
 	e.Dir = action.Direction
 	e.io.SetMotorDirection(action.Direction)
-	return nil
 }
 
 func (e *ElevatorState) Stop() {
@@ -118,7 +116,7 @@ func (e *ElevatorState) Continue() {
 
 func (e *ElevatorState) SetDoor(state DoorState) {
 	if e.Behavior != BIdle {
-		slog.Error("Cannot open door when not idle", "current behavior", e.Behavior)
+		slog.Error("[Elevator] Cannot open door when not idle", "current behavior", e.Behavior)
 		return
 	}
 
@@ -150,7 +148,7 @@ func (e *ElevatorState) SetCurrentFloorLight(floor int) {
 }
 
 func (e *ElevatorState) String() {
-	slog.Info("Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
+	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
 }
 
 func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {

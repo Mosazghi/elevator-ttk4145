@@ -8,17 +8,14 @@ import (
 	"time"
 
 	elevator "github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
-
 	// network "github.com/Mosazghi/elevator-ttk4145/internal/net"
-	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
 )
 
-var numFloors = 4
-
 func main() {
+	numFloors := 4
 	port := flag.Int("port", 15657, "specify port number")
 	localID := flag.Int("id", 1, "specify elevator ID")
 
@@ -43,7 +40,7 @@ func main() {
 	drvStop := make(chan bool)
 
 	eIOAddr := fmt.Sprintf("localhost:%d", *port)
-	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, 4)
+	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, numFloors)
 
 	go elevIoDriver.PollButtons(drvButtons)
 
@@ -52,11 +49,15 @@ func main() {
 	go elevIoDriver.PollStopButton(drvStop)
 
 	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
-	wv := statesync.NewWorldView(1, 4)
 
-	initFloor := elevIoDriver.GetFloor()
-	if initFloor == -1 {
-		wv.UpdateLocalElevatorFloor(0)
+	wvChan := make(chan statesync.Worldview, 10)
+	wv := statesync.NewWorldView(1, 4, wvChan)
+
+	localElvevator := wv.GetRemoteElevator()
+	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
+	err := wv.SetLocalElevator(&localElvevator)
+	if err != nil {
+		slog.Error("[StateMachine] SetHallCall", "error", err)
 	}
 
 	stateMachine(drvButtons,
@@ -68,7 +69,7 @@ func main() {
 }
 
 func stateMachine(
-	drvButtons chan eIO.ButtonEvent,
+	drvButtons chan elevio.ButtonEvent,
 	drvFloors chan int,
 	drvObst chan bool,
 	drvStop chan bool,
@@ -88,17 +89,11 @@ func stateMachine(
 	goal := 0
 	stopped := false
 
-	if prevBehavior != elev.Behavior {
-		fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
-		prevBehavior = elev.Behavior
-	}
-
 	for {
-
-		local_elv := worldView.GetLocalElevator()
+		localElvevator := worldView.GetRemoteElevator()
 
 		if prevBehavior != elev.Behavior {
-			fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
+			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", elev.Behavior)
 			prevBehavior = elev.Behavior
 		}
 
@@ -116,17 +111,15 @@ func stateMachine(
 		case order := <-drvButtons:
 			goal = order.Floor
 			elev.SetDoor(elevator.DSClosed)
-			fmt.Println("Goal: ", goal)
 			if order.Button == elevio.Cab {
 				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
-				fmt.Println("Cab call!")
 
-				if order.Floor == local_elv.CurrentFloor {
-					fmt.Println("Allready on floor")
+				if order.Floor == localElvevator.CurrentFloor {
+					slog.Info("[StateMachine] Allready on floor")
 					continue
 				}
 
-				if order.Floor > local_elv.CurrentFloor {
+				if order.Floor > localElvevator.CurrentFloor {
 					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
 				} else {
 					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
@@ -136,31 +129,43 @@ func stateMachine(
 			}
 
 			if order.Button == elevio.HallUp {
-				fmt.Println("Hall call up")
+				// slog.Info("[StateMachine] Hall-call up")
 
-				if order.Floor == local_elv.CurrentFloor {
-					fmt.Println("Allready on floor")
-					continue
+				// if order.Floor == localElvevator.CurrentFloor {
+				// 	slog.Info("[StateMachine] Allready on floor")
+				// 	continue
+				// }
+				// elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
+				err := worldView.SetHallCall(order.Floor, statesync.HDUp, statesync.HSAvailable)
+				if err != nil {
+					slog.Error("[StateMachine] SetHallCall", "error", err)
 				}
-				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
-				// worldView.SetHallCall(order.Floor, statesync.HDUp, statesync.HSAvailable)
 			}
 
 			if order.Button == elevio.HallDown {
-				fmt.Println("Hall call down")
-
-				if order.Floor == local_elv.CurrentFloor {
-					fmt.Println("Allready on floor")
-					continue
+				// slog.Info("[StateMachine] Hall-call down")
+				//
+				// if order.Floor == localElvevator.CurrentFloor {
+				// 	slog.Info("[StateMachine] Allready on floor")
+				// 	fmt.Println("Allready on floor")
+				// 	continue
+				// }
+				// elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
+				err := worldView.SetHallCall(order.Floor, statesync.HDDown, statesync.HSAvailable)
+				if err != nil {
+					slog.Error("[StateMachine] SetHallCall", "error", err)
 				}
-				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
-				// worldView.SetHallCall(order.Floor, statesync.HDDown, statesync.HSAvailable)
 			}
 
 		case floor := <-drvFloors:
-			worldView.UpdateLocalElevatorFloor(floor)
+			localElvevator.CurrentFloor = floor
+			err := worldView.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetHallCall", "error", err)
+			}
+
 			elev.SetCurrentFloorLight(floor)
-			fmt.Println("floor: ", floor, " goal: ", goal)
+			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
 
 			if goal == floor {
 				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
