@@ -136,9 +136,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-func (wv *Worldview) BroadCast() {
-}
-
 // SetHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) SetHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
@@ -238,10 +235,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	if calculatedChecksum != otherChecksum {
-		slog.Warn("data integrity check failed: checksum mismatch",
-			"calculatedChecksum", calculatedChecksum,
-			"receivedChecksum", otherChecksum,
-		)
 		return fmt.Errorf("data integrity check failed: checksum mismatch")
 	}
 

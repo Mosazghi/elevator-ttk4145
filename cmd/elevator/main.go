@@ -19,21 +19,21 @@ import (
 
 // var numFloors = 4
 func main() {
-	w := os.Stderr
-
-	// Create a new logger
-
-	// Set global logger with custom options
-	slog.SetDefault(slog.New(
-		tint.NewHandler(w, &tint.Options{
-			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
-		}),
-	))
 	port := flag.Int("port", 15657, "specify port number")
 	localID := flag.Int("id", 1, "specify elevator ID")
 
+	SetupLogger()
+
 	flag.Parse()
+
+	// Check environment mode (ENV=production or ENV=prod enables production mode)
+	env := os.Getenv("ENV")
+	prodMode := env == "production" || env == "prod"
+	if prodMode {
+		slog.Info("Running in production mode (echo filtering enabled)")
+	} else {
+		slog.Info("Running in development mode (echo filtering disabled)")
+	}
 	slog.Info("Elevator started", "id", *localID)
 	slog.Info("Elevator started", "port", *port)
 
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	// Start network
-	txChan, rxChan, errChan, err := network.UDPRunNetwork()
+	txChan, rxChan, errChan, err := network.Start(prodMode)
 	if err != nil {
 		slog.Error("Failed to start network", "error", err)
 		return
@@ -109,4 +109,14 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 			elev.OnStopSignal(a)
 		}
 	}
+}
+
+func SetupLogger() {
+	w := os.Stderr
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level:      slog.LevelDebug,
+			TimeFormat: time.Kitchen,
+		}),
+	))
 }
