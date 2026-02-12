@@ -38,8 +38,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 		NumFloors:           numFloors,
 		syncLocalRemoteChan: make(chan RemoteElevatorState, 10),
 		wvChan:              wvChan,
-		// localRemoteState:    NewRemoteElevatorState(localID, numFloors),
-		mu: &sync.Mutex{},
+		mu:                  &sync.Mutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -76,7 +75,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			otherWv := message.Wv
 
 			if otherWv.LocalID == localID {
-				// fmt.Println("Received own broadcast, ignoring...")
 				continue
 			}
 
@@ -224,7 +222,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	otherHCLen := len(other.HallCalls)
 	ourHCLen := len(wv.HallCalls)
 
-	if otherHCLen > ourHCLen || otherHCLen < ourHCLen {
+	if otherHCLen != ourHCLen {
 		return fmt.Errorf("length of hall calls doesnt match")
 	}
 
@@ -255,32 +253,31 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	// Merge hall calls
 	for floor := range other.HallCalls {
 		for dir := range other.HallCalls[floor] {
-			otherDirState := other.HallCalls[floor][dir]
-			ourDirState := wv.HallCalls[floor][dir]
+			otherHCState := other.HallCalls[floor][dir]
+			ourHCState := wv.HallCalls[floor][dir]
 
 			// 1. Check if others has fullfilled the call
-			if otherDirState.State == HSNone && ourDirState.State == HSProcessing && other.LocalID == otherDirState.By {
-				wv.HallCalls[floor][dir] = otherDirState
+			if otherHCState.State == HSNone && ourHCState.State == HSProcessing && other.LocalID == otherHCState.By {
+				wv.HallCalls[floor][dir] = otherHCState
+				wv.HallCalls[floor][dir].ConfirmedBy = nil
 			}
 
 			// 2. Check if others has received a new order
-			if otherDirState.State == HSAvailable {
+			if otherHCState.State == HSAvailable {
 
-				for _, id := range otherDirState.ConfirmedBy {
+				for _, id := range otherHCState.ConfirmedBy {
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
-						slog.Info("merging confirmation from other node", "floor", floor, "dir", dir, "id", id)
+						slog.Debug("merging confirmation from other node", "floor", floor, "dir", dir, "id", id)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}
 
 				// If we hadnt seen it yet..
-				if ourDirState.State == HSNone {
-					slog.Info("other has new order", "floor", floor, "dir", dir, "by", otherDirState.By)
+				if ourHCState.State == HSNone {
+					slog.Info("other has new order", "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
-					wv.HallCalls[floor][dir].By = otherDirState.By
 
-					// 2.1 We need to confirm the order
-
+					// We need to confirm the order
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
 						slog.Info("confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
@@ -291,14 +288,16 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 			// 3. Check if others is processing an order
 			// though, it can only go from available -> processing
-			if otherDirState.State == HSProcessing && ourDirState.State == HSAvailable {
-				wv.HallCalls[floor][dir].By = otherDirState.By
+			if otherHCState.State == HSProcessing && ourHCState.State == HSAvailable {
+				wv.HallCalls[floor][dir].By = otherHCState.By
 				wv.HallCalls[floor][dir].State = HSProcessing
 
 			}
 
 		}
 	}
+
 	wv.wvChan <- *wv
+
 	return nil
 }
