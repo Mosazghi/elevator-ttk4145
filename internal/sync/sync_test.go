@@ -73,23 +73,23 @@ func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
 
 // Test 5: Merge with complex nested data (multiple elevators)
 func TestMerge_MultipleElevators_ShouldSucceed(t *testing.T) {
-	wv1 := NewTestWorldview(1, 4)
-	wv2 := NewTestWorldview(2, 4)
+	wv1 := NewWorldView(1, 4)
+	wv2 := NewWorldView(2, 4)
 
 	// Add multiple elevator states with different states
-	state1 := NewRemoteElevatorState(1, 0, 4)
+	state1 := NewRemoteElevatorState(1, 4)
 	state1.Direction = elevio.MDUp
 	state1.Behavior = elevator.BMoving
 	state1.CabCalls[2] = true
 	state1.CabCalls[3] = true
 	wv2.elevatorStates[1] = state1
 
-	state2 := NewRemoteElevatorState(2, 3, 4)
+	state2 := NewRemoteElevatorState(2, 4)
 	state2.DoorState = elevator.DSOpen
 	state2.Behavior = elevator.BDoorOpen
 	wv2.elevatorStates[2] = state2
 
-	state3 := NewRemoteElevatorState(3, 1, 4)
+	state3 := NewRemoteElevatorState(3, 4)
 	state3.Direction = elevio.MDDown
 	state3.Behavior = elevator.BMoving
 	state3.CabCalls[0] = true

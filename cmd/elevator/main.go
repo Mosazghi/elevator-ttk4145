@@ -7,14 +7,17 @@ import (
 	"os"
 	"time"
 
-	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	elevator "github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	"github.com/lmittmann/tint"
+
+	// network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/sync"
 )
 
-// var numFloors = 4
+var numFloors = 4
+
 func main() {
 	port := flag.Int("port", 15657, "specify port number")
 	localID := flag.Int("id", 1, "specify elevator ID")
@@ -48,20 +51,20 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	// initFloor := elevIoDriver.GetFloor()
+	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
+	wv := statesync.NewWorldView(1, 4)
 
-	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
-
-	// Start network
-	txChan, rxChan, errChan, err := network.Start(prodMode)
-	if err != nil {
-		slog.Error("Failed to start network", "error", err)
-		return
+	initFloor := elevIoDriver.GetFloor()
+	if initFloor == -1 {
+		wv.UpdateLocalElevatorFloor(0)
 	}
-	wvChan := make(chan statesync.Worldview, 10)
-	wv := statesync.NewWorldView(*localID, 4, wvChan)
-	go wv.StartSyncing(txChan, rxChan)
-	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
+
+	stateMachine(drvButtons,
+		drvFloors,
+		drvObstr,
+		drvStop,
+		&elev,
+		wv)
 }
 
 func stateMachine(
@@ -72,7 +75,18 @@ func stateMachine(
 	elev *elevator.ElevatorState,
 	worldView *statesync.Worldview,
 ) {
-	local_elv := worldView.GetLocalElevator()
+	// // Start network
+	// txChan, rxChan, errChan, err := network.UDPRunNetwork()
+	// if err != nil {
+	// 	fmt.Printf("Failed to start network: %v\n", err)
+	// 	return
+	// }
+	//
+	// ticker := time.NewTicker(2 * time.Second)
+	// defer ticker.Stop()
+	prevBehavior := elevator.BIdle
+	goal := 0
+	stopped := false
 
 	if prevBehavior != elev.Behavior {
 		fmt.Printf("State Trans: %v -> %v\n", prevBehavior, elev.Behavior)
@@ -89,55 +103,74 @@ func stateMachine(
 		}
 
 		select {
-		case msg := <-rxChan:
-			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+		// case msg := <-rxChan:
+		// 	fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
+		//
+		// case err := <-errChan:
+		// 	fmt.Printf("Network error: %v\n", err)
+		//
+		// case <-ticker.C:
+		// 	txChan <- network.UDPMessage{Data: []byte("Hello from A")}
+		// 	fmt.Println("Sent broadcast message")
 
-		case err := <-errChan:
-			fmt.Printf("Network error: %v\n", err)
-
-		case <-ticker.C:
-			txChan <- network.UDPMessage{Data: []byte("Hello from A")}
-			fmt.Println("Sent broadcast message")
 		case order := <-drvButtons:
-			fmt.Println("Got new order!")
+			goal = order.Floor
+			elev.SetDoor(elevator.DSClosed)
+			fmt.Println("Goal: ", goal)
 			if order.Button == elevio.Cab {
+				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
 				fmt.Println("Cab call!")
+
+				if order.Floor == local_elv.CurrentFloor {
+					fmt.Println("Allready on floor")
+					continue
+				}
+
 				if order.Floor > local_elv.CurrentFloor {
 					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
 				} else {
 					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
 				}
 
-				if order.Floor == local_elv.CurrentFloor {
-					fmt.Println("Allready on floor")
-				}
 				// worldView.SetCabCall(order.Floor, true)
 			}
 
 			if order.Button == elevio.HallUp {
 				fmt.Println("Hall call up")
-				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
 
 				if order.Floor == local_elv.CurrentFloor {
 					fmt.Println("Allready on floor")
+					continue
 				}
-
+				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
 				// worldView.SetHallCall(order.Floor, statesync.HDUp, statesync.HSAvailable)
 			}
 
 			if order.Button == elevio.HallDown {
 				fmt.Println("Hall call down")
-				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
 
 				if order.Floor == local_elv.CurrentFloor {
 					fmt.Println("Allready on floor")
+					continue
 				}
+				elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
 				// worldView.SetHallCall(order.Floor, statesync.HDDown, statesync.HSAvailable)
 			}
 
 		case floor := <-drvFloors:
 			worldView.UpdateLocalElevatorFloor(floor)
+			elev.SetCurrentFloorLight(floor)
+			fmt.Println("floor: ", floor, " goal: ", goal)
 
+			if goal == floor {
+				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
+				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
+				elev.SetDoor(elevator.DSOpen)
+			}
+
+		// Our understanding: Cannot accur a obstruction during movment
+		// Example: someone is infront of the door!
+		// Obstruct means we cannot close the door
 		case isObstructed := <-drvObst:
 			if isObstructed {
 				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
@@ -148,8 +181,16 @@ func stateMachine(
 
 		case shouldStop := <-drvStop:
 			if shouldStop {
+				stopped = true
 				elev.Stop()
-			} else {
+				elev.SetStopLight(elevator.LSOn)
+				if stopped {
+					stopped = false
+				}
+			}
+
+			if !stopped {
+				elev.SetStopLight(elevator.LSOff)
 				elev.Continue()
 			}
 		}

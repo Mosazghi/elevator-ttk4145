@@ -3,13 +3,15 @@ package elevator
 
 import (
 	"errors"
+	"log/slog"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
 
 type (
-	Behavior  int
-	DoorState int
+	Behavior   int
+	DoorState  int
+	LightState int
 )
 
 const (
@@ -21,22 +23,31 @@ const (
 )
 
 const (
-	DSClosing DoorState = iota
-	DSClosed
-	DSOpening
+	DSClosed DoorState = iota
 	DSOpen
+)
+
+const (
+	LSOff LightState = iota
+	LSOn
 )
 
 func (d DoorState) String() string {
 	switch d {
-	case DSClosing:
-		return "CLOSING"
 	case DSClosed:
 		return "CLOSED"
-	case DSOpening:
-		return "OPENING"
 	case DSOpen:
 		return "OPEN"
+	}
+	return "UNKNOWN"
+}
+
+func (l LightState) String() string {
+	switch l {
+	case LSOff:
+		return "Off"
+	case LSOn:
+		return "On"
 	}
 	return "UNKNOWN"
 }
@@ -66,16 +77,22 @@ type Action struct {
 
 type ElevatorCallbacks interface {
 	SetAction(behavior Behavior, direction elevio.MotorDirection)
+	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
+	SetCurrentFloorLight(floor int)
+	SetStopLight(state bool)
+	SetDoor(state bool)
+	String()
 	Stop()
-	OnInitBetweenFloors()
 }
 
 func (e *ElevatorState) SetAction(action Action) error {
 	if action.Behavior < 0 || action.Behavior >= BSize {
+		slog.Error("[Elevator] Got an invalid behavior", "Received behavior", action.Behavior)
 		return errors.New("got an invalid behavior")
 	}
 
 	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
+		slog.Error("[Elevator] Got an invalid direction", "Direction", action.Direction)
 		return errors.New("got an invalid direction")
 	}
 
@@ -94,6 +111,46 @@ func (e *ElevatorState) Continue() {
 	if e.Behavior == BMoving {
 		e.io.SetMotorDirection(e.Dir)
 	}
+}
+
+// Return an int along getNextAction func to indicate light on/off
+// Off happends when MDStop and BIdle while other is always on.
+
+func (e *ElevatorState) SetDoor(state DoorState) {
+	if e.Behavior != BIdle {
+		slog.Error("Cannot open door when not idle", "current behavior", e.Behavior)
+		return
+	}
+
+	if state == DSOpen {
+		e.io.SetDoorOpenLamp(true)
+	} else {
+		e.io.SetDoorOpenLamp(false)
+	}
+}
+
+func (e *ElevatorState) SetStopLight(state LightState) {
+	if state == LSOff {
+		e.io.SetStopLamp(false)
+	} else {
+		e.io.SetStopLamp(true)
+	}
+}
+
+func (e *ElevatorState) SetCallLight(buttonType elevio.ButtonType, floor int, state LightState) {
+	if state == LSOff {
+		e.io.SetButtonLamp(buttonType, floor, false)
+	} else {
+		e.io.SetButtonLamp(buttonType, floor, true)
+	}
+}
+
+func (e *ElevatorState) SetCurrentFloorLight(floor int) {
+	e.io.SetFloorIndicator(floor)
+}
+
+func (e *ElevatorState) String() {
+	slog.Info("Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
 }
 
 func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
