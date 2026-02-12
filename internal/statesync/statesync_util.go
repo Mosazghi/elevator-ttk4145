@@ -1,9 +1,8 @@
 package statesync
 
 import (
-	"encoding/json"
-
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 func BuildWvJson(wv *Worldview) ([]byte, error) {
@@ -15,11 +14,11 @@ func BuildWvJson(wv *Worldview) ([]byte, error) {
 
 	msg := Message{Wv: *wv, Checksum: checksum}
 
-	jsonData, err := json.Marshal(msg)
+	data, err := msgpack.Marshal(msg)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return jsonData, nil
+	return data, nil
 }

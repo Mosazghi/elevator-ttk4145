@@ -4,14 +4,13 @@ package network
 import (
 	"fmt"
 	"net"
-	"os"
 	"strings"
-	"syscall"
 )
 
 const (
 	BroadCastIP   = "255.255.255.255"
 	BroadCastPort = 30000
+	ChanBufferLen = 20
 )
 
 type UDPMessage struct {
@@ -19,66 +18,84 @@ type UDPMessage struct {
 	Address *net.UDPAddr
 }
 
-// CreateSocket creates a UDP socket with SO_REUSEADDR, SO_BROADCAST enabled.
-// Allows multiple programs to bind to the same port.
-func CreateSocket(port int) (net.PacketConn, error) {
-	s, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
+type Network struct {
+	errChan    chan error
+	txChan     chan UDPMessage
+	rxChan     chan UDPMessage
+	conn       net.PacketConn
+	filterEcho bool
+}
+
+// NewNetwork creates a new network
+func NewNetwork(filterEcho bool) (*Network, error) {
+	conn, err := CreateSocket(BroadCastPort)
 	if err != nil {
-		return nil, fmt.Errorf("socket error: %w", err)
-	}
-	err = syscall.SetsockoptInt(s, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-	if err != nil {
-		return nil, fmt.Errorf("setsockopt REUSEADDR error: %w", err)
-	}
-	err = syscall.SetsockoptInt(s, syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
-	if err != nil {
-		return nil, fmt.Errorf("setsockopt BROADCAST error: %w", err)
-	}
-	err = syscall.Bind(s, &syscall.SockaddrInet4{Port: port})
-	if err != nil {
-		return nil, fmt.Errorf("bind error: %w", err)
+		return nil, err
 	}
 
-	f := os.NewFile(uintptr(s), "")
-	defer f.Close()
+	return &Network{
+		conn:       conn,
+		rxChan:     make(chan UDPMessage, ChanBufferLen),
+		txChan:     make(chan UDPMessage, ChanBufferLen),
+		errChan:    make(chan error, ChanBufferLen),
+		filterEcho: filterEcho,
+	}, nil
+}
 
-	conn, err := net.FilePacketConn(f)
-	if err != nil {
-		return nil, fmt.Errorf("FilePacketConn error: %w", err)
+// Close closes the transmitt channel and possibly closes the net. connection
+func (n *Network) Close() error {
+	close(n.txChan)
+	if n.conn != nil {
+		return n.conn.Close()
 	}
 
-	return conn, nil
+	return nil
+}
+
+func (n *Network) Start() {
+	go n.receive()
+	go n.broadcast()
+}
+
+func (n *Network) TxChan() chan<- UDPMessage {
+	return n.txChan
+}
+
+func (n *Network) RxChan() <-chan UDPMessage {
+	return n.rxChan
+}
+
+func (n *Network) ErrChan() <-chan error {
+	return n.errChan
 }
 
 // receive reads continuously from socket and passes the data to a channel
-// filterEcho: if true, filters out messages from the local IP (production mode)
-func receive(connection net.PacketConn, receiveChannel chan<- UDPMessage, errorChannel chan<- error, filterEcho bool) {
+func (n *Network) receive() {
 	buffer := make([]byte, 2048)
 
 	var localAddrStr string
-	if filterEcho {
+	if n.filterEcho {
 		localAddrStr, _ = LocalIP()
 	}
-
 	for {
-		n, remoteAddress, err := connection.ReadFrom(buffer[0:])
+		bytesRead, remoteAddress, err := n.conn.ReadFrom(buffer[0:])
 		if err != nil {
-			errorChannel <- err
+			n.errChan <- fmt.Errorf("receive error: %w", err)
 			continue
 		}
 
-		data := make([]byte, n)
-		copy(data, buffer[:n])
+		data := make([]byte, bytesRead)
+		copy(data, buffer[:bytesRead])
 
 		// Extract IP from remote address (format is "IP:Port")
-		if filterEcho {
+		if n.filterEcho {
 			remoteIP := strings.Split(remoteAddress.String(), ":")[0]
 			if remoteIP == localAddrStr {
 				continue
 			}
 		}
 
-		receiveChannel <- UDPMessage{
+		n.rxChan <- UDPMessage{
 			Data:    data,
 			Address: remoteAddress.(*net.UDPAddr),
 		}
@@ -86,35 +103,16 @@ func receive(connection net.PacketConn, receiveChannel chan<- UDPMessage, errorC
 }
 
 // broadcast sends a message to the broadcast address
-func broadcast(txChan <-chan UDPMessage, errChan chan<- error, conn net.PacketConn, addr *net.UDPAddr) {
-	for msg := range txChan {
-		_, err := conn.WriteTo(msg.Data, addr)
-		if err != nil {
-			errChan <- fmt.Errorf("Broadcast error: %w", err)
-		}
-	}
-}
-
-// Start initializes & runs the UDP network.
-// prodMode: if true, filters echo messages (messages from local IP)
-func Start(prodMode bool) (chan<- UDPMessage, <-chan UDPMessage, <-chan error, error) {
-	rxChan := make(chan UDPMessage, 20)
-	txChan := make(chan UDPMessage, 20)
-	errChan := make(chan error, 10)
-
-	conn, err := CreateSocket(BroadCastPort)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create socket: %w", err)
-	}
-
-	broadcastAddr := &net.UDPAddr{
+func (n *Network) broadcast() {
+	addr := &net.UDPAddr{
 		IP:   net.ParseIP(BroadCastIP),
 		Port: BroadCastPort,
 	}
 
-	go receive(conn, rxChan, errChan, prodMode)
-
-	go broadcast(txChan, errChan, conn, broadcastAddr)
-
-	return txChan, rxChan, errChan, nil
+	for msg := range n.txChan {
+		_, err := n.conn.WriteTo(msg.Data, addr)
+		if err != nil {
+			n.errChan <- fmt.Errorf("broadcast error: %w", err)
+		}
+	}
 }

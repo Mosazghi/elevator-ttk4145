@@ -59,14 +59,21 @@ func main() {
 		slog.Info("Elevator initialized between floors")
 		elev.OnInitBetweenFloors()
 	}
-
-	// Start network
-	txChan, rxChan, errChan, err := network.Start(prodMode)
+	network, err := network.NewNetwork(prodMode)
 	if err != nil {
-		slog.Error("Failed to start network", "error", err)
+		slog.Error("failed to create network", "err", err)
 		return
 	}
-	wvChan := make(chan statesync.Worldview, 10)
+
+	defer network.Close()
+
+	network.Start()
+
+	txChan := network.TxChan()
+	rxChan := network.RxChan()
+	errChan := network.ErrChan()
+
+	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
@@ -102,6 +109,9 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 
 			elev.OnOrderRequest(a)
 		case a := <-drvFloors:
+			wv.CompleteHallCall(a, statesync.HDDown)
+			wv.CompleteHallCall(a, statesync.HDUp)
+
 			elev.OnNewFloorArrival(a)
 		case a := <-drvObst:
 			elev.OnObstructionSignal(a)
@@ -116,7 +126,7 @@ func SetupLogger() {
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
 			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
+			TimeFormat: time.DateTime,
 		}),
 	))
 }

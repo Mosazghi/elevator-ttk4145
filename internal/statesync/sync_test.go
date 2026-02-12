@@ -1,7 +1,6 @@
 package statesync
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 // Easier to create test worldviews with this helper function
@@ -295,8 +295,8 @@ func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 
 		// Verify the message can be unmarshaled
 		var received Message
-		err := json.Unmarshal(msg.Data, &received)
-		require.NoError(t, err, "broadcast data should be valid JSON")
+		err := msgpack.Unmarshal(msg.Data, &received)
+		require.NoError(t, err, "broadcast data should be valid msgpack")
 		assert.Equal(t, wv.LocalID, received.Wv.LocalID, "broadcast should contain local ID")
 
 	case <-time.After(BroadcastInterval * 2):
