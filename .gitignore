@@ -1,5 +1,7 @@
 # Prerequisites
 *.d
+main
+*.out
 
 # Object files
 *.o
