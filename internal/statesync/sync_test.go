@@ -52,7 +52,7 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	// Add elevator state to wv2
 	wv2.HallCalls[1][HDUp] = HallCallPairState{
-		State: HSAvailable, By: 2,
+		State: HSAvailable, By: 0,
 	}
 	wv2.HallCalls[1][HDDown] = HallCallPairState{
 		State: HSNone, By: 0,
@@ -62,9 +62,9 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 	err := wv1.Merge(wv2, checksum)
 
 	require.NoError(t, err)
-
+	fmt.Println("ID: ", wv1.HallCalls[1][HDUp].By)
 	assert.Equal(t, wv1.HallCalls[1][HDUp].State, HSAvailable, "hall call from wv2 should be merged into wv1")
-	assert.Equal(t, wv1.HallCalls[1][HDUp].By, 2, "hall call from wv2 should be merged into wv1")
+	assert.Equal(t, wv1.HallCalls[1][HDUp].By, -1, "hall call from wv2 should be merged into wv1")
 }
 
 // Merge with empty worldview

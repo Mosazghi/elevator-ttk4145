@@ -44,6 +44,8 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 	for i := range wv.HallCalls {
 		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
 		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDDown].By = -1
+		wv.HallCalls[i][HDUp].By = -1
 	}
 
 	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
@@ -101,27 +103,27 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			for id, state := range wv.ElevatorStates {
 				if id != wv.LocalID && time.Since(state.LastSeenAt) > NodeTimeoutDelay {
 					slog.Warn("Lost peer", "id", id)
-
 					wv.lostElevatorsState[id] = state
 					delete(wv.ElevatorStates, id)
 				}
 			}
+			wvSnapshot := *wv
 
-			checksum, err := checksum.CalculateChecksum(wv)
+			wv.mu.Unlock()
+
+			checksum, err := checksum.CalculateChecksum(wvSnapshot)
 			if err != nil {
 				slog.Error("Failed to calculate checksum", "error", err)
-				wv.mu.Unlock()
 				continue
 			}
 			msg := Message{
-				Wv:       *wv,
+				Wv:       wvSnapshot,
 				Checksum: checksum,
 			}
 
 			jsonData, err := json.Marshal(msg)
 			if err != nil {
 				slog.Error("Failed to marshal worldview", "error", err)
-				wv.mu.Unlock()
 				continue
 			}
 			// NOTE!: We can optimize by only sending diffs instead of the whole worldview
@@ -129,8 +131,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				Data:    jsonData,
 				Address: nil, // Broadcast address is handled by the network layer
 			}
-
-			wv.mu.Unlock()
 
 		}
 	}

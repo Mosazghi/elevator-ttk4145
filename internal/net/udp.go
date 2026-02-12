@@ -54,11 +54,12 @@ func UDPCreateSocket(port int) (net.PacketConn, error) {
 	}
 
 	f := os.NewFile(uintptr(s), "")
+	defer f.Close()
+
 	conn, err := net.FilePacketConn(f)
 	if err != nil {
 		return nil, fmt.Errorf("FilePacketConn error: %w", err)
 	}
-	f.Close()
 
 	return conn, nil
 }
