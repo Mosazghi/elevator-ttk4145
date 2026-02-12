@@ -78,11 +78,13 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
+			wv.mu.Lock()
 			_, exists := wv.lostElevatorsState[otherWv.LocalID]
 			if exists {
 				slog.Warn("Reappeared peer", "id", otherWv.LocalID)
 				delete(wv.lostElevatorsState, otherWv.LocalID)
 			}
+			wv.mu.Unlock()
 
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
