@@ -12,11 +12,12 @@ const (
 )
 
 const (
-	HDUp = iota
-	HDDown
+	HDDown = iota
+	HDUp
 )
 
 type HallCallPairState struct {
-	State HallCallState
-	By    int
+	State       HallCallState
+	By          int
+	ConfirmedBy []int
 }
