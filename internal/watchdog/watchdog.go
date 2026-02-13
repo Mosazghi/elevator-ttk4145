@@ -55,7 +55,7 @@ func Start(duration float64) WatchDog {
 	return wd
 }
 
-// Stops the watchdog timer
+// Stop stops the watchdog timer
 func (wd *WatchDog) Stop() {
 	select {
 	case <-wd.done:

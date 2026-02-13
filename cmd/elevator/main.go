@@ -10,7 +10,6 @@ import (
 	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
-	watchdog "github.com/Mosazghi/elevator-ttk4145/internal/watchdog"
 )
 
 // var numFloors = 4
@@ -51,33 +50,6 @@ func main() {
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-
-	wd := watchdog.Start(5.0) // 5 second timeout
-
-	// Keep the dog alive
-	for i := 0; i < 5; i++ {
-		wd.Ping()
-		time.Sleep(1 * time.Second)
-	}
-
-	// Handle all channels
-	for {
-		select {
-		case <-wd.Timeout:
-			wd.Ping()
-			continue
-
-		case msg := <-rxChan:
-			fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
-
-		case err := <-errChan:
-			fmt.Printf("Network error: %v\n", err)
-
-		case <-ticker.C:
-			txChan <- network.UDPMessage{Data: []byte("Hello from A")}
-			fmt.Println("Sent broadcast message")
-		}
-	}
 
 	// stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev)
 }
