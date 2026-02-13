@@ -128,7 +128,7 @@ func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
 	case BDoorOpen:
 	}
 
-	fmt.Printf("State: %v\n", e)
+	// fmt.Printf("State: %v\n", e)
 }
 
 func (e *ElevState) OnNewFloorArrival(floor int) {

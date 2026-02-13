@@ -328,6 +328,11 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	if err != nil {
 		log.Fatal("Error marshalling JSON:", err)
 	}
+	fmt.Println("Elevators:")
+	// print only eleavtos id
+	for id := range wv.ElevatorStates {
+		fmt.Printf(" - Elevator ID: %d\n", id)
+	}
 
 	// Print the byte slice as a string
 	fmt.Println("HallCalls[0]:")
