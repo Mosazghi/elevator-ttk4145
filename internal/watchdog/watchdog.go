@@ -12,7 +12,7 @@ type WatchDog struct {
 	Timeout  chan bool
 }
 
-/* Start new Watchdog timer with a given interval. Returns WatchDog struct */
+// Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
 func Start(duration float64) WatchDog {
 	slog.Info("[Watchdog] Starting...")
 
@@ -55,7 +55,7 @@ func Start(duration float64) WatchDog {
 	return wd
 }
 
-// Stops Signals the watchdog timer to stop
+// Stops the watchdog timer
 func (wd *WatchDog) Stop() {
 	select {
 	case <-wd.done:
@@ -66,7 +66,7 @@ func (wd *WatchDog) Stop() {
 	}
 }
 
-// Ping resets the watchdog timer
+// Ping resets the watchdog timer, postponing the timeout
 func (wd *WatchDog) Ping() {
 	wd.pingChan <- struct{}{}
 }

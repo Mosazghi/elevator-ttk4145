@@ -64,9 +64,6 @@ func main() {
 	for {
 		select {
 		case <-wd.Timeout:
-
-			// TODO: Test ping after timeout ->
-			// Make sure non-blocking
 			wd.Ping()
 			continue
 
