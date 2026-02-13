@@ -213,23 +213,23 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 func TestSetHallCall(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
 
-	err := wv.SetHallCall(3, HDUp, HSAvailable)
+	err := wv.NewHallCall(3, HDUp)
 
 	assert.NoError(t, err, "should be a valid state")
 
-	err = wv.SetHallCall(3, HDUp, HSNone)
+	err = wv.CompleteHallCall(3, HDUp)
 
 	assert.Error(t, err, "should not be able to transition from Available to None")
 
-	err = wv.SetHallCall(3, HDUp, HSProcessing)
+	err = wv.ProcessHallCall(3, HDUp)
 
 	assert.NoError(t, err, "should be able to transition from Available to Processing")
 
-	err = wv.SetHallCall(3, HDUp, HSAvailable)
+	err = wv.NewHallCall(3, HDUp)
 
 	assert.Error(t, err, "should not be able to transition from Processing to Available")
 
-	err = wv.SetHallCall(3, HDUp, HSNone)
+	err = wv.CompleteHallCall(3, HDUp)
 
 	assert.NoError(t, err, "should be able to transition from Processing to None")
 }
@@ -317,10 +317,10 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
 	// Set a hall call in wv2
-	wv2.SetHallCall(2, HDUp, HSAvailable)
+	wv2.NewHallCall(2, HDUp)
 
 	// Create and send a message from wv2
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -346,13 +346,13 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 
 	// Set original state
 	originalFloor := 2
-	wv.SetHallCall(originalFloor, HDUp, HSAvailable)
+	wv.NewHallCall(originalFloor, HDUp)
 
 	// Create a message with the same LocalID but different state
 	fakeOwnMessage := NewTestWorldView(1, 4) // Same ID as wv
-	fakeOwnMessage.SetHallCall(3, HDDown, HSAvailable)
+	fakeOwnMessage.NewHallCall(3, HDDown)
 
-	jsonData, err := BuildWvJson(fakeOwnMessage)
+	jsonData, err := BuildWvJSON(fakeOwnMessage)
 	require.NoError(t, err)
 
 	// Send the "own" message
@@ -386,7 +386,7 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 
 	// Send valid message to confirm system is still responsive
 	wv2 := NewTestWorldView(2, 4)
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -408,7 +408,7 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	errChan := make(chan error, 10)
 
 	// First, add wv2 to wv1
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
@@ -455,7 +455,7 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	wv1.mu.Unlock()
 
 	// Send message from "reappeared" peer
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -487,7 +487,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	// Writer goroutine
 	go func() {
 		for i := 0; i < 50; i++ {
-			wv.SetHallCall(i%4, HDUp, HSAvailable)
+			wv.NewHallCall(i%4, HDUp)
 			time.Sleep(10 * time.Millisecond)
 		}
 		done <- true
@@ -497,7 +497,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 2; i < 10; i++ {
 			peer := NewTestWorldView(i, 4)
-			jsonData, err := BuildWvJson(peer)
+			jsonData, err := BuildWvJSON(peer)
 			require.NoError(t, err)
 			rxChan <- network.UDPMessage{Data: jsonData}
 			time.Sleep(15 * time.Millisecond)
@@ -542,7 +542,7 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 	// Send valid message to verify system is still functional
 	wv2 := NewTestWorldView(2, 4)
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -576,7 +576,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	}
 
 	// Send wv2's state to wv1
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -599,7 +599,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 		ConfirmedBy: []int{2, 3, 4},
 	}
 
-	jsonData2, err := BuildWvJson(wv3)
+	jsonData2, err := BuildWvJSON(wv3)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData2}

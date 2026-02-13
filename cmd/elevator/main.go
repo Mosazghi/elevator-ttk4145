@@ -7,9 +7,6 @@ import (
 	"os"
 	"time"
 
-	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
@@ -34,8 +31,7 @@ func main() {
 	} else {
 		slog.Info("Running in development mode (echo filtering disabled)")
 	}
-	slog.Info("Elevator started", "id", *localID)
-	slog.Info("Elevator started", "port", *port)
+	slog.Info("Elevator started with", "id", *localID, "port", *port)
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -46,7 +42,6 @@ func main() {
 	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, 4)
 
 	go elevIoDriver.PollButtons(drvButtons)
-
 	go elevIoDriver.PollFloorSensor(drvFloors)
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
@@ -99,9 +94,9 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 			case elevio.Cab:
 				err = wv.SetCabCall(a.Floor, true)
 			case elevio.HallUp:
-				err = wv.SetHallCall(a.Floor, statesync.HDUp, statesync.HSAvailable)
+				err = wv.NewHallCall(a.Floor, statesync.HDUp)
 			default:
-				err = wv.SetHallCall(a.Floor, statesync.HDDown, statesync.HSAvailable)
+				err = wv.NewHallCall(a.Floor, statesync.HDDown)
 			}
 			if err != nil {
 				slog.Error("Failed to set call in worldview", "error", err)
@@ -109,8 +104,14 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 
 			elev.OnOrderRequest(a)
 		case a := <-drvFloors:
-			wv.CompleteHallCall(a, statesync.HDDown)
-			wv.CompleteHallCall(a, statesync.HDUp)
+			err := wv.CompleteHallCall(a, statesync.HDDown)
+			if err != nil {
+				slog.Error("failed to complete", "err", err)
+			}
+			err = wv.CompleteHallCall(a, statesync.HDUp)
+			if err != nil {
+				slog.Error("failed to complete", "err", err)
+			}
 
 			elev.OnNewFloorArrival(a)
 		case a := <-drvObst:

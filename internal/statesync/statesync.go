@@ -174,7 +174,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 }
 
 // SetHallCall changes the given floor's Up/Down state based on dir
-func (wv *Worldview) SetHallCall(floor int, dir HallCallDir, state HallCallState) error {
+func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
@@ -193,13 +193,44 @@ func (wv *Worldview) SetHallCall(floor int, dir HallCallDir, state HallCallState
 		by = wv.LocalID
 	}
 
+	existing := wv.HallCalls[floor][dir]
+
+	confirmedBy := []int{}
+
+	switch state {
+	case HSAvailable:
+		confirmedBy = append(confirmedBy, wv.LocalID)
+	case HSProcessing:
+		if existing.By != wv.LocalID {
+			return fmt.Errorf("cannot complete hall call that is not assigned to local elevator")
+		}
+		copy(confirmedBy, existing.ConfirmedBy)
+	case HSNone:
+	default:
+	}
+
 	wv.HallCalls[floor][dir] = HallCallPairState{
 		State:       state,
 		By:          by,
-		ConfirmedBy: []int{wv.LocalID},
+		ConfirmedBy: confirmedBy,
 	}
 
 	return nil
+}
+
+// CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
+func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
+	return wv.setHallCall(floor, dir, HSNone)
+}
+
+// NewHallCall creates a new order on the systems
+func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
+	return wv.setHallCall(floor, dir, HSAvailable)
+}
+
+// ProcessHallCall process the hall call by the local elevator
+func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
+	return wv.setHallCall(floor, dir, HSProcessing)
 }
 
 // SetCabCall changes cab call state at floor
@@ -244,35 +275,6 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	copy(result, wv.HallCalls)
 
 	return result
-}
-
-// CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
-func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
-	slog.Info("Cleaning order at ", "floor", floor, "dir", dir)
-
-	if !IsValidFloor(floor, wv.NumFloors) {
-		return fmt.Errorf("%v is not valid floor", floor)
-	}
-
-	currDirState := wv.HallCalls[floor][dir]
-
-	if currDirState.State != HSProcessing {
-		return fmt.Errorf("cannot complete hall call that is not processing")
-	}
-
-	if currDirState.By != wv.LocalID {
-		return fmt.Errorf("cannot complete hall call that is not assigned to local elevator")
-	}
-
-	wv.HallCalls[floor][dir] = HallCallPairState{
-		State:       HSNone,
-		By:          -1,
-		ConfirmedBy: []int{},
-	}
-
-	return nil
 }
 
 // Merge merges incoming Worldview into the current one
@@ -320,7 +322,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			ourHCState := wv.HallCalls[floor][dir]
 			switch otherHCState.State {
 			case HSNone:
-				if ourHCState.State != HSNone {
+				if ourHCState.State == HSProcessing && other.LocalID == otherHCState.By {
 					slog.Info("other has completed the order", "floor", floor, "dir", dir, "prevState", ourHCState.State)
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:       HSNone,
