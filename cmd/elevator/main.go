@@ -86,8 +86,8 @@ func stateMachine(
 	// ticker := time.NewTicker(2 * time.Second)
 	// defer ticker.Stop()
 	prevBehavior := elevator.BIdle
+	hallCallDir := 0
 	goal := 0
-	stopped := false
 
 	for {
 		localElvevator := worldView.GetRemoteElevator()
@@ -109,8 +109,15 @@ func stateMachine(
 		// 	fmt.Println("Sent broadcast message")
 
 		case order := <-drvButtons:
+			if order.Floor > localElvevator.CurrentFloor {
+				hallCallDir = statesync.HDUp
+			} else {
+				hallCallDir = statesync.HDDown
+			}
+
 			goal = order.Floor
 			elev.SetDoor(elevator.DSClosed)
+
 			if order.Button == elevio.Cab {
 				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
 
@@ -126,35 +133,12 @@ func stateMachine(
 				}
 
 				// worldView.SetCabCall(order.Floor, true)
-			}
-
-			if order.Button == elevio.HallUp {
-				// slog.Info("[StateMachine] Hall-call up")
-
-				// if order.Floor == localElvevator.CurrentFloor {
-				// 	slog.Info("[StateMachine] Allready on floor")
-				// 	continue
-				// }
-				// elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
-				err := worldView.SetHallCall(order.Floor, statesync.HDUp, statesync.HSAvailable)
+			} else {
+				err := worldView.SetHallCall(order.Floor, statesync.HallCallDir(hallCallDir), statesync.HSAvailable)
 				if err != nil {
 					slog.Error("[StateMachine] SetHallCall", "error", err)
 				}
-			}
 
-			if order.Button == elevio.HallDown {
-				// slog.Info("[StateMachine] Hall-call down")
-				//
-				// if order.Floor == localElvevator.CurrentFloor {
-				// 	slog.Info("[StateMachine] Allready on floor")
-				// 	fmt.Println("Allready on floor")
-				// 	continue
-				// }
-				// elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
-				err := worldView.SetHallCall(order.Floor, statesync.HDDown, statesync.HSAvailable)
-				if err != nil {
-					slog.Error("[StateMachine] SetHallCall", "error", err)
-				}
 			}
 
 		case floor := <-drvFloors:
@@ -176,27 +160,20 @@ func stateMachine(
 		// Our understanding: Cannot accur a obstruction during movment
 		// Example: someone is infront of the door!
 		// Obstruct means we cannot close the door
+		// Obsructuion is only resolved/accur during open door not movement
 		case isObstructed := <-drvObst:
 			if isObstructed {
 				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
-				elev.Stop()
-			} else {
-				elev.Continue()
 			}
 
 		case shouldStop := <-drvStop:
 			if shouldStop {
-				stopped = true
-				elev.Stop()
+				elev.StopAction()
 				elev.SetStopLight(elevator.LSOn)
-				if stopped {
-					stopped = false
-				}
-			}
-
-			if !stopped {
+			} else {
 				elev.SetStopLight(elevator.LSOff)
-				elev.Continue()
+				elev.ContinueAction()
+
 			}
 		}
 	}

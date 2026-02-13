@@ -2,6 +2,7 @@
 package elevator
 
 import (
+	"fmt"
 	"log/slog"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
@@ -16,9 +17,7 @@ type (
 const (
 	BIdle Behavior = iota
 	BMoving
-	BDoorOpen
 	BObstructed
-	BSize
 )
 
 const (
@@ -57,8 +56,6 @@ func (b Behavior) String() string {
 		return "IDLE"
 	case BMoving:
 		return "MOVING"
-	case BDoorOpen:
-		return "DOOR_OPEN"
 	}
 	return "UNKNOWN"
 }
@@ -84,28 +81,29 @@ type ElevatorCallbacks interface {
 	Stop()
 }
 
-func (e *ElevatorState) SetAction(action Action) {
-	if action.Behavior < 0 || action.Behavior >= BSize {
-		slog.Error("[Elevator] Got an invalid behavior", "Received behavior", action.Behavior)
-		return
+func (e *ElevatorState) SetAction(action Action) error {
+	if action.Behavior != BIdle &&
+		action.Behavior != BMoving &&
+		action.Behavior != BObstructed {
+		return fmt.Errorf("[Elevator] Got an invalid behavior, Received: %v", action.Behavior)
 	}
 
 	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
-		slog.Error("[Elevator] Got an invalid direction", "Direction", action.Direction)
-		return
+		return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
 	}
 
 	e.Behavior = action.Behavior
 	e.Dir = action.Direction
 	e.io.SetMotorDirection(action.Direction)
+	return nil
 }
 
-func (e *ElevatorState) Stop() {
+func (e *ElevatorState) StopAction() {
 	e.io.SetMotorDirection(elevio.MDStop)
 }
 
 // Continue the currently active order
-func (e *ElevatorState) Continue() {
+func (e *ElevatorState) ContinueAction() {
 	if e.Behavior == BMoving {
 		e.io.SetMotorDirection(e.Dir)
 	}

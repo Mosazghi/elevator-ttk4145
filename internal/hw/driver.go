@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-const _pollRate = 20 * time.Millisecond
+const (
+	_pollRate     = 20 * time.Millisecond
+	_debounceTime = 100 * time.Millisecond
+)
 
 type ElevatorDriver interface {
 	ReadInitialButtons() [4][3]bool
@@ -147,14 +150,23 @@ func (e *ElevIoDriver) PollFloorSensor(receiver chan<- int) {
 }
 
 func (e *ElevIoDriver) PollStopButton(receiver chan<- bool) {
-	prev := false
+	stable := false
+	candidate := stable
+	candidateSince := time.Now()
+
 	for {
 		time.Sleep(_pollRate)
-		v := e.GetStop()
-		if v != prev {
-			receiver <- v
+		raw := e.GetStop()
+
+		if raw != candidate {
+			candidate = raw
+			candidateSince = time.Now()
 		}
-		prev = v
+
+		if candidate != stable && time.Since(candidateSince) >= _debounceTime {
+			stable = candidate
+			receiver <- stable
+		}
 	}
 }
 
