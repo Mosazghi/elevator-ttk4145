@@ -14,6 +14,7 @@ const (
 const (
 	HDDown = iota
 	HDUp
+	HDNone
 )
 
 type HallCallPairState struct {

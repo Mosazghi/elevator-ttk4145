@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-const _pollRate = 20 * time.Millisecond
+const (
+	_pollRate     = 20 * time.Millisecond
+	_debounceTime = 100 * time.Millisecond
+)
 
 type ElevatorDriver interface {
 	ReadInitialButtons() [4][3]bool
@@ -26,6 +29,9 @@ type ElevatorDriver interface {
 	PollObstructionSwitch(receiver chan<- bool)
 }
 
+// FAKE DRIVER
+type FakeDriver struct{ numFloors int }
+
 // ElevIoDriver is a struct that implements the ElevatorDriver interface
 type ElevIoDriver struct {
 	numFloors int
@@ -36,18 +42,18 @@ type ElevIoDriver struct {
 type MotorDirection int
 
 const (
-	Up   MotorDirection = 1
-	Down MotorDirection = -1
-	Stop MotorDirection = 0
+	MDUp   MotorDirection = 1
+	MDDown MotorDirection = -1
+	MDStop MotorDirection = 0
 )
 
 func (md MotorDirection) String() string {
 	switch md {
-	case Up:
+	case MDUp:
 		return "Up"
-	case Down:
+	case MDDown:
 		return "Down"
-	case Stop:
+	case MDStop:
 		return "Stop"
 	default:
 		return "Unknown"
@@ -144,14 +150,23 @@ func (e *ElevIoDriver) PollFloorSensor(receiver chan<- int) {
 }
 
 func (e *ElevIoDriver) PollStopButton(receiver chan<- bool) {
-	prev := false
+	stable := false
+	candidate := stable
+	candidateSince := time.Now()
+
 	for {
 		time.Sleep(_pollRate)
-		v := e.GetStop()
-		if v != prev {
-			receiver <- v
+		raw := e.GetStop()
+
+		if raw != candidate {
+			candidate = raw
+			candidateSince = time.Now()
 		}
-		prev = v
+
+		if candidate != stable && time.Since(candidateSince) >= _debounceTime {
+			stable = candidate
+			receiver <- stable
+		}
 	}
 }
 
@@ -234,3 +249,31 @@ func toBool(a byte) bool {
 	}
 	return b
 }
+
+// FAKE DRIVER
+
+func NewElevIoFakeDriver(numfloors int) *FakeDriver {
+	return &FakeDriver{
+		numfloors,
+	}
+}
+
+func (e *FakeDriver) ReadInitialButtons() [4][3]bool {
+	var orders [4][3]bool
+	return orders
+}
+
+func (e *FakeDriver) SetMotorDirection(dir MotorDirection)                   {}
+func (e *FakeDriver) SetButtonLamp(button ButtonType, floor int, value bool) {}
+func (e *FakeDriver) SetFloorIndicator(floor int)                            {}
+func (e *FakeDriver) SetDoorOpenLamp(value bool)                             {}
+func (e *FakeDriver) SetStopLamp(value bool)                                 {}
+func (e *FakeDriver) GetButton(button ButtonType, floor int) bool            { return false }
+func (e *FakeDriver) GetFloor() int                                          { return 0 }
+func (e *FakeDriver) GetStop() bool                                          { return false }
+func (e *FakeDriver) GetTotalFloors() int                                    { return 0 }
+func (e *FakeDriver) GetObstruction() bool                                   { return false }
+func (e *FakeDriver) PollButtons(receiver chan<- ButtonEvent)                {}
+func (e *FakeDriver) PollFloorSensor(receiver chan<- int)                    {}
+func (e *FakeDriver) PollStopButton(receiver chan<- bool)                    {}
+func (e *FakeDriver) PollObstructionSwitch(receiver chan<- bool)             {}
