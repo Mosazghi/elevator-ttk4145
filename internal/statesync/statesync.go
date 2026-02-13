@@ -347,7 +347,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSProcessing:
 				if ourHCState.State == HSAvailable {
-					slog.Error("processing order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("processing order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}
