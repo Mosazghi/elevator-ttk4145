@@ -213,25 +213,59 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 func TestSetHallCall(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
 
-	err := wv.NewHallCall(3, HDUp)
+	// Test invalid floors
+	err := wv.NewHallCall(-1, HDUp)
+	assert.Error(t, err, "should reject negative floor")
 
-	assert.NoError(t, err, "should be a valid state")
+	err = wv.NewHallCall(4, HDUp)
+	assert.Error(t, err, "should reject floor > NumFloors")
 
-	err = wv.CompleteHallCall(3, HDUp)
+	// Test boundary floors
+	err = wv.NewHallCall(0, HDUp)
+	assert.NoError(t, err, "should accept floor 0")
 
+	err = wv.NewHallCall(3, HDDown)
+	assert.NoError(t, err, "should accept last floor with HDDown")
+
+	// Test None -> Available with ConfirmedBy verification
+	err = wv.NewHallCall(2, HDUp)
+	assert.NoError(t, err, "should be a valid state transition")
+	assert.Equal(t, HSAvailable, wv.HallCalls[2][HDUp].State, "state should be Available")
+	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should contain localID")
+	assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be -1 for Available state")
+
+	// Test Available -> None (should fail without processing first)
+	err = wv.CompleteHallCall(2, HDUp)
 	assert.Error(t, err, "should not be able to transition from Available to None")
 
-	err = wv.ProcessHallCall(3, HDUp)
+	// Manually assign the call to local elevator (simulates external assignment logic)
+	wv.HallCalls[2][HDUp].By = wv.LocalID
+
+	// Test Available -> Processing with field verification
+	err = wv.ProcessHallCall(2, HDUp)
 
 	assert.NoError(t, err, "should be able to transition from Available to Processing")
+	assert.Equal(t, HSProcessing, wv.HallCalls[2][HDUp].State, "state should be Processing")
+	assert.Equal(t, wv.LocalID, wv.HallCalls[2][HDUp].By, "By should be localID when processing")
+	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should be preserved")
 
-	err = wv.NewHallCall(3, HDUp)
-
+	// Test Processing -> Available (should fail)
+	err = wv.NewHallCall(2, HDUp)
 	assert.Error(t, err, "should not be able to transition from Processing to Available")
 
-	err = wv.CompleteHallCall(3, HDUp)
-
+	// Test Processing -> None (complete)
+	err = wv.CompleteHallCall(2, HDUp)
 	assert.NoError(t, err, "should be able to transition from Processing to None")
+	assert.Equal(t, HSNone, wv.HallCalls[2][HDUp].State, "state should be None")
+	// assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
+	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
+
+	// Test processing a call assigned to another elevator
+	wv.NewHallCall(1, HDDown)
+	wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
+	err = wv.ProcessHallCall(1, HDDown)
+	assert.Error(t, err, "should not be able to process call assigned to another elevator")
+	assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
 }
 
 func TestSetCabCall(t *testing.T) {

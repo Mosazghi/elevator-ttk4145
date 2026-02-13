@@ -110,7 +110,6 @@ func (e *ElevState) OnInitBetweenFloors() {
 }
 
 func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
-	fmt.Printf("[ORDER] %+v\n", order)
 	e.io.SetButtonLamp(order.Button, order.Floor, true)
 	e.Orders[order.Floor][order.Button] = true
 	switch e.Behavior {
@@ -133,8 +132,6 @@ func (e *ElevState) OnOrderRequest(order elevio.ButtonEvent) {
 }
 
 func (e *ElevState) OnNewFloorArrival(floor int) {
-	fmt.Printf("[FLOOR] %+v\n", floor)
-	fmt.Printf("STATE: %+v\n", e)
 	// if floor == e.io.GetTotalFloors()-1 {
 	// 	e.Dir = elevio.MD_Down
 	// } else if floor == 0 {
@@ -161,25 +158,25 @@ func (e *ElevState) OnNewFloorArrival(floor int) {
 }
 
 func (e *ElevState) OnObstructionSignal(obstructed bool) {
-	fmt.Printf("[OBSTR] %+v\n", obstructed)
+	// fmt.Printf("[OBSTR] %+v\n", obstructed)
 	if obstructed {
 		e.io.SetMotorDirection(elevio.Stop)
 	} else {
 		e.io.SetMotorDirection(e.Dir)
 	}
 
-	fmt.Printf("State: %v\n", e)
+	// fmt.Printf("State: %v\n", e)
 }
 
 func (e *ElevState) OnStopSignal(stop bool) {
-	fmt.Printf("[STOP] %+v\n", stop)
+	// fmt.Printf("[STOP] %+v\n", stop)
 	for f := range e.Orders {
 		for b := range e.Orders[f] {
 			e.io.SetButtonLamp(elevio.ButtonType(b), f, false)
 		}
 	}
 
-	fmt.Printf("State: %v\n", e)
+	// fmt.Printf("State: %v\n", e)
 }
 
 func (e *ElevState) SetAllLights() {

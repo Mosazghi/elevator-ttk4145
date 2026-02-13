@@ -90,18 +90,30 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 		case a := <-drvButtons:
 			slog.Debug("Button event received", "event", a)
 			var err error
+			var dir statesync.HallCallDir
 			switch a.Button {
 			case elevio.Cab:
 				err = wv.SetCabCall(a.Floor, true)
 			case elevio.HallUp:
+				dir = statesync.HDUp
 				err = wv.NewHallCall(a.Floor, statesync.HDUp)
 			default:
+				dir = statesync.HDDown
 				err = wv.NewHallCall(a.Floor, statesync.HDDown)
 			}
+
 			if err != nil {
 				slog.Error("Failed to set call in worldview", "error", err)
 			}
 
+			slog.Info("calculating cost function...")
+			time.Sleep(4 * time.Second) // Simulate cost function calculation time
+			slog.Info("i won")
+
+			err = wv.ProcessHallCall(a.Floor, dir)
+			if err != nil {
+				slog.Error("failed to process hall call", "err", err)
+			}
 			elev.OnOrderRequest(a)
 		case a := <-drvFloors:
 			err := wv.CompleteHallCall(a, statesync.HDDown)

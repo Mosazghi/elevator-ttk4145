@@ -1,7 +1,9 @@
 package statesync
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"slices"
 	"sync"
@@ -178,6 +180,8 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
+	wv.HallCalls[floor][dir].By = wv.LocalID // REMOVE ME: for testing purposes
+
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
@@ -204,6 +208,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		if existing.By != wv.LocalID {
 			return fmt.Errorf("cannot complete hall call that is not assigned to local elevator")
 		}
+		confirmedBy = make([]int, len(existing.ConfirmedBy))
 		copy(confirmedBy, existing.ConfirmedBy)
 	case HSNone:
 	default:
@@ -312,7 +317,29 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
-	slog.Debug("merging.", "otherHC", other.HallCalls)
+
+	// if hcJSON, err := json.MarshalIndent(other.HallCalls, "", "  "); err == nil {
+	// 	slog.Debug("merging", "from", other.LocalID, "HC", string(hcJSON))
+	// } else {
+	// 	slog.Debug("merging", "from", other.LocalID, "HC", other.HallCalls)
+	// }
+
+	jsonData, err := json.MarshalIndent(other.HallCalls[0], "", "  ")
+	if err != nil {
+		log.Fatal("Error marshalling JSON:", err)
+	}
+
+	// Print the byte slice as a string
+	fmt.Println("HallCalls[0]:")
+	fmt.Println(string(jsonData))
+
+	jsonData, err = json.MarshalIndent(other.HallCalls[3], "", "  ")
+	if err != nil {
+		log.Fatal("Error marshalling JSON:", err)
+	}
+
+	fmt.Println("HallCalls[3]:")
+	fmt.Println(string(jsonData))
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -322,8 +349,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			ourHCState := wv.HallCalls[floor][dir]
 			switch otherHCState.State {
 			case HSNone:
-				if ourHCState.State == HSProcessing && other.LocalID == otherHCState.By {
-					slog.Info("other has completed the order", "floor", floor, "dir", dir, "prevState", ourHCState.State)
+				if ourHCState.State == HSProcessing {
+					slog.Warn("other has completed the order", "floor", floor, "dir", dir, "prevState", ourHCState.State)
+					slog.Warn("order completed by", "id", otherHCState.By, "otherLocalID", other.LocalID)
+
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:       HSNone,
 						By:          -1,
@@ -349,7 +378,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSProcessing:
 				if ourHCState.State == HSAvailable {
-					slog.Info("other is processing the order", "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Error("other is processing the order", "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}
