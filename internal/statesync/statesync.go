@@ -1,9 +1,7 @@
 package statesync
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"slices"
 	"sync"
@@ -145,7 +143,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			}
 			wv.mu.Unlock()
 
-			// Read-only operation: deep copy for broadcasting
 			wv.mu.RLock()
 			wvSnapshot := wv.deepCopy()
 			wv.mu.RUnlock()
@@ -175,12 +172,10 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-// SetHallCall changes the given floor's Up/Down state based on dir
+// setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
-
-	wv.HallCalls[floor][dir].By = wv.LocalID // REMOVE ME: for testing purposes
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -318,34 +313,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	// if hcJSON, err := json.MarshalIndent(other.HallCalls, "", "  "); err == nil {
-	// 	slog.Debug("merging", "from", other.LocalID, "HC", string(hcJSON))
-	// } else {
-	// 	slog.Debug("merging", "from", other.LocalID, "HC", other.HallCalls)
-	// }
-
-	jsonData, err := json.MarshalIndent(other.HallCalls[0], "", "  ")
-	if err != nil {
-		log.Fatal("Error marshalling JSON:", err)
-	}
-	fmt.Println("Elevators:")
-	// print only eleavtos id
-	for id := range wv.ElevatorStates {
-		fmt.Printf(" - Elevator ID: %d\n", id)
-	}
-
-	// Print the byte slice as a string
-	fmt.Println("HallCalls[0]:")
-	fmt.Println(string(jsonData))
-
-	jsonData, err = json.MarshalIndent(other.HallCalls[3], "", "  ")
-	if err != nil {
-		log.Fatal("Error marshalling JSON:", err)
-	}
-
-	fmt.Println("HallCalls[3]:")
-	fmt.Println(string(jsonData))
-
 	// -- Validate Hall Calls --
 	// Merge hall calls
 	for floor := range other.HallCalls {
@@ -355,8 +322,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			switch otherHCState.State {
 			case HSNone:
 				if ourHCState.State == HSProcessing {
-					slog.Warn("other has completed the order", "floor", floor, "dir", dir, "prevState", ourHCState.State)
-					slog.Warn("order completed by", "id", otherHCState.By, "otherLocalID", other.LocalID)
+					slog.Info("completed order", "by", otherHCState.By, "floor", floor, "dir", dir, "prevState", ourHCState.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:       HSNone,
@@ -367,14 +333,12 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
-						slog.Info("merging confirmation from other node", "floor", floor, "dir", dir, "id", id)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
-
 					}
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("other has new order", "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
 						slog.Info("confirming order", "floor", floor, "dir", dir)
@@ -383,7 +347,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSProcessing:
 				if ourHCState.State == HSAvailable {
-					slog.Error("other is processing the order", "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Error("processing order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}
