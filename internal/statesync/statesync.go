@@ -201,7 +201,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		confirmedBy = append(confirmedBy, wv.LocalID)
 	case HSProcessing:
 		if existing.By != wv.LocalID {
-			return fmt.Errorf("cannot complete hall call that is not assigned to local elevator")
+			return fmt.Errorf("cannot process hall call that is not assigned to local elevator")
 		}
 		confirmedBy = make([]int, len(existing.ConfirmedBy))
 		copy(confirmedBy, existing.ConfirmedBy)
