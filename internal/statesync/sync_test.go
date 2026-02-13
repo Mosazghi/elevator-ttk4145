@@ -1,0 +1,615 @@
+package statesync
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// Easier to create test worldviews with this helper function
+func NewTestWorldView(localID, numFloors int) *Worldview {
+	return NewWorldView(localID, numFloors, make(chan Worldview, 10))
+}
+
+// Merge with different number of floors should fail
+func TestMerge_DifferentNumFloors_ShouldError(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 3)
+
+	cs, _ := checksum.CalculateChecksum(wv2)
+	err := wv1.Merge(wv2, cs)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "doesnt match")
+}
+
+// Merge with checksum mismatch should fail
+func TestMerge_ChecksumMismatch_ShouldError(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+	checksum, _ := checksum.CalculateChecksum(wv2)
+	// Corrupt the checksum
+	wv2.LocalID = 999
+
+	err := wv1.Merge(wv2, checksum)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "checksum mismatch")
+}
+
+// Valid merge with same numFloors and valid checksum
+func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	// Add elevator state to wv2
+	wv2.HallCalls[1][HDUp] = HallCallPairState{
+		State: HSAvailable, By: 0,
+	}
+	wv2.HallCalls[1][HDDown] = HallCallPairState{
+		State: HSNone, By: 0,
+	}
+
+	checksum, _ := checksum.CalculateChecksum(wv2)
+	err := wv1.Merge(wv2, checksum)
+
+	require.NoError(t, err)
+	fmt.Println("ID: ", wv1.HallCalls[1][HDUp].By)
+	assert.Equal(t, wv1.HallCalls[1][HDUp].State, HSAvailable, "hall call from wv2 should be merged into wv1")
+	assert.Equal(t, wv1.HallCalls[1][HDUp].By, -1, "hall call from wv2 should be merged into wv1")
+}
+
+// Merge with empty worldview
+func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	checksum, _ := checksum.CalculateChecksum(wv2)
+
+	err := wv1.Merge(wv2, checksum)
+
+	require.NoError(t, err)
+}
+
+// Merge with elevator at different floors
+func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	// Test all valid floor positions
+	for floor := range 4 {
+		elevatorID := floor + 1
+		state := NewRemoteElevatorState(elevatorID, 4)
+		wv2.ElevatorStates[elevatorID] = state
+	}
+
+	checksum, _ := checksum.CalculateChecksum(wv2)
+
+	err := wv1.Merge(wv2, checksum)
+
+	require.NoError(t, err)
+
+	// verify that only the receiving elevator is merged and not the other ones
+	wv2ID := 2
+	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator %d should be in wv1", wv2ID)
+	for floor := range 4 {
+		elevatorID := floor + 1
+		if elevatorID == wv2ID || elevatorID == wv1.LocalID {
+			continue // already checked
+		}
+		_, exists := wv1.ElevatorStates[elevatorID]
+		assert.False(t, exists, "elevator %d should not be in merged worldview", elevatorID)
+	}
+}
+
+// Test merge nil worldview
+func TestMerge_NilWorldview_ShouldError(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+
+	err := wv1.Merge(nil, 0)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil")
+}
+
+// Test merge preserves local state
+func TestMerge_PreservesLocalState(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	originalLocalID := wv1.LocalID
+	originalLocalState := wv1.ElevatorStates[originalLocalID]
+
+	wv2 := NewTestWorldView(10, 4)
+	wv2.ElevatorStates[10] = NewRemoteElevatorState(10, 4)
+
+	checksum, _ := checksum.CalculateChecksum(wv2)
+	err := wv1.Merge(wv2, checksum)
+	require.NoError(t, err)
+
+	assert.Equal(t, originalLocalID, wv1.LocalID, "local ID should not change")
+	assert.Equal(t, originalLocalState.ID, wv1.ElevatorStates[originalLocalID].ID, "local state ID should not change")
+}
+
+// Test 15: Merge with edge case: PrevFloor and TargetFloor
+func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
+	wv2ID := 10
+	wv1 := NewTestWorldView(1, 4)
+
+	wv2 := NewTestWorldView(wv2ID, 4)
+
+	wv2.ElevatorStates[wv2ID] = &RemoteElevatorState{
+		ID:           wv2ID,
+		TargetFloor:  3,
+		CurrentFloor: 2,
+		Direction:    elevio.Up,
+		DoorState:    elevator.DSClosed,
+		CabCalls:     []bool{false, false, false, true},
+		Behavior:     elevator.BMoving,
+		LastSeenAt:   time.Now(),
+		NumFloors:    4,
+	}
+
+	checksum, _ := checksum.CalculateChecksum(wv2)
+	err := wv1.Merge(wv2, checksum)
+	require.NoError(t, err)
+
+	// Verify floor transition fields were merged correctly
+	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator should be in wv1")
+	assert.Equal(t, 3, wv1.ElevatorStates[wv2ID].TargetFloor, "target floor should match")
+	assert.Equal(t, 2, wv1.ElevatorStates[wv2ID].CurrentFloor, "current floor should match")
+	assert.Equal(t, elevio.Up, wv1.ElevatorStates[wv2ID].Direction, "direction should match")
+	assert.True(t, wv1.ElevatorStates[wv2ID].CabCalls[3], "cab call for floor 3 should be set")
+}
+
+// Test Hall call state machine transitions
+func TestMerge_HallCallStateTransitions(t *testing.T) {
+	tests := []struct {
+		name          string
+		ourState      HallCallState
+		theirState    HallCallState
+		expectedState HallCallState
+		shouldChange  bool
+	}{
+		// Valid transitions
+		{"None -> Available", HSNone, HSAvailable, HSAvailable, true},
+		{"Available -> Processing", HSAvailable, HSProcessing, HSProcessing, true},
+		{"Processing -> None (completed)", HSProcessing, HSNone, HSNone, true},
+
+		// Invalid/ignored transitions
+		{"Available -> Available (duplicate)", HSAvailable, HSAvailable, HSAvailable, false},
+		{"Processing -> Available (cannot go back)", HSProcessing, HSAvailable, HSProcessing, false},
+		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSNone, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wv1 := NewTestWorldView(1, 4)
+			wv2 := NewTestWorldView(2, 4)
+
+			wv1.HallCalls[1][HDUp] = HallCallPairState{State: tt.ourState, By: 1}
+
+			wv2.HallCalls[1][HDUp] = HallCallPairState{State: tt.theirState, By: 2}
+
+			checksum, _ := checksum.CalculateChecksum(wv2)
+			// Merge
+			err := wv1.Merge(wv2, checksum)
+			require.NoError(t, err)
+
+			// Verify transition
+			assert.Equal(t, tt.expectedState, wv1.HallCalls[1][HDUp].State,
+				"state transition %v -> %v should result in %v",
+				tt.ourState, tt.theirState, tt.expectedState)
+		})
+	}
+}
+
+func TestSetHallCall(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	err := wv.SetHallCall(3, HDUp, HSAvailable)
+
+	assert.NoError(t, err, "should be a valid state")
+
+	err = wv.SetHallCall(3, HDUp, HSNone)
+
+	assert.Error(t, err, "should not be able to transition from Available to None")
+
+	err = wv.SetHallCall(3, HDUp, HSProcessing)
+
+	assert.NoError(t, err, "should be able to transition from Available to Processing")
+
+	err = wv.SetHallCall(3, HDUp, HSAvailable)
+
+	assert.Error(t, err, "should not be able to transition from Processing to Available")
+
+	err = wv.SetHallCall(3, HDUp, HSNone)
+
+	assert.NoError(t, err, "should be able to transition from Processing to None")
+}
+
+func TestSetCabCall(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	err := wv.SetCabCall(2, true)
+
+	assert.NoError(t, err, "should be able to set valid cab call")
+	assert.True(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
+
+	err = wv.SetCabCall(2, false)
+
+	assert.NoError(t, err, "should be able to set valid cab call")
+	assert.False(t, wv.ElevatorStates[wv.LocalID].CabCalls[2], "cab call state should be updated")
+
+	err = wv.SetCabCall(5, true)
+
+	assert.Error(t, err, "should not be able to set cab call for invalid floor")
+}
+
+func TestSetLocalElevator(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	validState := NewRemoteElevatorState(1, 4)
+
+	err := wv.SetLocalElevator(validState)
+
+	assert.NoError(t, err, "should be able to set valid local elevator state")
+
+	invalidState := RemoteElevatorState{
+		ID:           1,
+		TargetFloor:  5, // invalid floor
+		CurrentFloor: 2,
+		Direction:    elevio.Up,
+		DoorState:    elevator.DSOpen,
+		CabCalls:     []bool{false, false, false, false},
+		Behavior:     elevator.BMoving,
+		LastSeenAt:   time.Now(),
+	}
+
+	err = wv.SetLocalElevator(&invalidState)
+
+	assert.Error(t, err, "should not be able to set invalid local elevator state")
+}
+
+// TestStartSyncing_BroadcastsOwnState verifies that the worldview broadcasts its state periodically
+func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	// Run StartSyncing in background
+	go wv.StartSyncing(txChan, rxChan, errChan)
+
+	// Wait for at least one broadcast
+	select {
+	case msg := <-txChan:
+		assert.NotNil(t, msg.Data, "broadcast should contain data")
+		assert.Greater(t, len(msg.Data), 0, "broadcast data should not be empty")
+
+		// Verify the message can be unmarshaled
+		var received Message
+		err := json.Unmarshal(msg.Data, &received)
+		require.NoError(t, err, "broadcast data should be valid JSON")
+		assert.Equal(t, wv.LocalID, received.Wv.LocalID, "broadcast should contain local ID")
+
+	case <-time.After(BroadcastInterval * 2):
+		t.Fatal("no broadcast received within expected time")
+	}
+}
+
+// TestStartSyncing_ReceivesAndMergesPeerData verifies that incoming peer data is merged
+func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	// Start syncing for wv1
+	go wv1.StartSyncing(txChan, rxChan, errChan)
+
+	// Set a hall call in wv2
+	wv2.SetHallCall(2, HDUp, HSAvailable)
+
+	// Create and send a message from wv2
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+
+	// Wait for merge to complete and verify
+	time.Sleep(100 * time.Millisecond)
+
+	wv1.mu.Lock()
+	assert.Equal(t, HSAvailable, wv1.HallCalls[2][HDUp].State, "hall call from wv2 should be merged")
+	assert.Contains(t, wv1.ElevatorStates, 2, "wv2's elevator state should be merged")
+	wv1.mu.Unlock()
+}
+
+// TestStartSyncing_IgnoresOwnBroadcast verifies that we don't merge our own broadcasts
+func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
+
+	// Set original state
+	originalFloor := 2
+	wv.SetHallCall(originalFloor, HDUp, HSAvailable)
+
+	// Create a message with the same LocalID but different state
+	fakeOwnMessage := NewTestWorldView(1, 4) // Same ID as wv
+	fakeOwnMessage.SetHallCall(3, HDDown, HSAvailable)
+
+	jsonData, err := BuildWvJson(fakeOwnMessage)
+	require.NoError(t, err)
+
+	// Send the "own" message
+	rxChan <- network.UDPMessage{Data: jsonData}
+
+	// Wait a bit
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify state was NOT changed by the ignored message
+	wv.mu.Lock()
+	assert.Equal(t, HSAvailable, wv.HallCalls[originalFloor][HDUp].State, "original state should remain")
+	assert.Equal(t, HSNone, wv.HallCalls[3][HDDown].State, "should not merge own broadcast")
+	wv.mu.Unlock()
+}
+
+// TestStartSyncing_HandlesInvalidJSON verifies graceful handling of malformed messages
+func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
+
+	// Send invalid JSON
+	rxChan <- network.UDPMessage{Data: []byte("not valid json")}
+
+	// Should not crash; wait and verify system still works
+	time.Sleep(100 * time.Millisecond)
+
+	// Send valid message to confirm system is still responsive
+	wv2 := NewTestWorldView(2, 4)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify valid message was processed
+	wv.mu.Lock()
+	assert.Contains(t, wv.ElevatorStates, 2, "should still process valid messages after invalid one")
+	wv.mu.Unlock()
+}
+
+// TestStartSyncing_DetectsLostPeers verifies timeout detection for lost peers
+func TestStartSyncing_DetectsLostPeers(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	// First, add wv2 to wv1
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	go wv1.StartSyncing(txChan, rxChan, errChan)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify wv2 is present
+	wv1.mu.Lock()
+	assert.Contains(t, wv1.ElevatorStates, 2, "peer should be added")
+	// Set LastSeenAt to old time to simulate timeout
+	wv1.ElevatorStates[2].LastSeenAt = time.Now().Add(-NodeTimeoutDelay - time.Second)
+	wv1.mu.Unlock()
+
+	// Wait for next broadcast cycle to detect timeout
+	time.Sleep(BroadcastInterval + 200*time.Millisecond)
+
+	// Verify peer was moved to lost state
+	wv1.mu.Lock()
+	_, existsActive := wv1.ElevatorStates[2]
+	_, existsLost := wv1.lostElevatorsState[2]
+	wv1.mu.Unlock()
+
+	assert.False(t, existsActive, "peer should be removed from active elevators")
+	assert.True(t, existsLost, "peer should be in lost elevators")
+}
+
+// TestStartSyncing_ReappearedPeers verifies handling of returning peers
+func TestStartSyncing_ReappearedPeers(t *testing.T) {
+	wv2ID := 2
+
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(wv2ID, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv1.StartSyncing(txChan, rxChan, errChan)
+
+	// Manually mark peer as lost
+	wv1.mu.Lock()
+	wv1.lostElevatorsState[wv2ID] = wv2.ElevatorStates[wv2ID]
+	wv1.mu.Unlock()
+
+	// Send message from "reappeared" peer
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify peer was restored
+	wv1.mu.Lock()
+	_, existsLost := wv1.lostElevatorsState[wv2ID]
+	_, existsActive := wv1.ElevatorStates[wv2ID]
+	wv1.mu.Unlock()
+
+	assert.False(t, existsLost, "peer should be removed from lost state")
+	assert.True(t, existsActive, "peer should be restored to active state")
+}
+
+// TestStartSyncing_ConcurrentAccess verifies thread safety during syncing
+func TestStartSyncing_ConcurrentAccess(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
+
+	// Concurrent operations
+	done := make(chan bool)
+
+	// Writer goroutine
+	go func() {
+		for i := 0; i < 50; i++ {
+			wv.SetHallCall(i%4, HDUp, HSAvailable)
+			time.Sleep(10 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	// Sender goroutine (simulating incoming messages)
+	go func() {
+		for i := 2; i < 10; i++ {
+			peer := NewTestWorldView(i, 4)
+			jsonData, err := BuildWvJson(peer)
+			require.NoError(t, err)
+			rxChan <- network.UDPMessage{Data: jsonData}
+			time.Sleep(15 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	// Reader goroutine
+	go func() {
+		for i := 0; i < 50; i++ {
+			_ = wv.GetAllHallCalls()
+			_ = wv.GetRemoteElevator()
+			time.Sleep(8 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	// Wait for all goroutines
+	for i := 0; i < 3; i++ {
+		<-done
+	}
+
+	// If we got here without deadlock or race condition, test passes
+	assert.True(t, true, "concurrent access should not cause issues")
+}
+
+// TestStartSyncing_NetworkErrors verifies error channel handling
+func TestStartSyncing_NetworkErrors(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
+
+	// Send a network error
+	errChan <- fmt.Errorf("simulated network error")
+
+	// System should continue working despite error
+	time.Sleep(100 * time.Millisecond)
+
+	// Send valid message to verify system is still functional
+	wv2 := NewTestWorldView(2, 4)
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify system still processes messages
+	wv.mu.Lock()
+	_, exists := wv.ElevatorStates[2]
+	wv.mu.Unlock()
+
+	assert.True(t, exists, "should continue operating after network error")
+}
+
+// TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
+func TestStartSyncing_ConfirmationMerging(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+	wv3 := NewTestWorldView(3, 4)
+
+	txChan := make(chan network.UDPMessage, 10)
+	rxChan := make(chan network.UDPMessage, 10)
+	errChan := make(chan error, 10)
+
+	go wv1.StartSyncing(txChan, rxChan, errChan)
+
+	// wv2 has a hall call confirmed by elevator 2 and 3
+	wv2.HallCalls[1][HDUp] = HallCallPairState{
+		State:       HSAvailable,
+		By:          2,
+		ConfirmedBy: []int{2, 3},
+	}
+
+	// Send wv2's state to wv1
+	jsonData, err := BuildWvJson(wv2)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify wv1 merged the confirmations and added its own
+	wv1.mu.Lock()
+	confirmations := wv1.HallCalls[1][HDUp].ConfirmedBy
+	wv1.mu.Unlock()
+
+	assert.Contains(t, confirmations, 1, "should add own ID to confirmations")
+	assert.Contains(t, confirmations, 2, "should merge confirmation from wv2")
+	assert.Contains(t, confirmations, 3, "should merge confirmation from wv3")
+	assert.Equal(t, HSAvailable, wv1.HallCalls[1][HDUp].State, "state should be Available")
+
+	// Now send wv3's state with more confirmations
+	wv3.HallCalls[1][HDUp] = HallCallPairState{
+		State:       HSAvailable,
+		By:          2,
+		ConfirmedBy: []int{2, 3, 4},
+	}
+
+	jsonData2, err := BuildWvJson(wv3)
+	require.NoError(t, err)
+
+	rxChan <- network.UDPMessage{Data: jsonData2}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify additional confirmation was merged
+	wv1.mu.Lock()
+	confirmations = wv1.HallCalls[1][HDUp].ConfirmedBy
+	wv1.mu.Unlock()
+
+	assert.Contains(t, confirmations, 4, "should merge new confirmation")
+	assert.Len(t, confirmations, 4, "should have all unique confirmations")
+}
