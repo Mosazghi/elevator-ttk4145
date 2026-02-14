@@ -7,7 +7,7 @@ import (
 
 // IsValidFloor validates a given floor
 func IsValidFloor(floor, maxFloors int) bool {
-	if floor > maxFloors || floor < 0 {
+	if floor >= maxFloors || floor < 0 {
 		return false
 	}
 	return true

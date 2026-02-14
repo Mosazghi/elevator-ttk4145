@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	elevator "github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
-	// network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 )
 
 func main() {
@@ -31,8 +31,7 @@ func main() {
 	} else {
 		slog.Info("Running in development mode (echo filtering disabled)")
 	}
-	slog.Info("Elevator started", "id", *localID)
-	slog.Info("Elevator started", "port", *port)
+	slog.Info("Elevator started with", "id", *localID, "port", *port)
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -43,19 +42,35 @@ func main() {
 	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, numFloors)
 
 	go elevIoDriver.PollButtons(drvButtons)
-
 	go elevIoDriver.PollFloorSensor(drvFloors)
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
 	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
 
-	wvChan := make(chan statesync.Worldview, 10)
-	wv := statesync.NewWorldView(1, 4, wvChan)
+	network, err := network.NewNetwork(prodMode)
+	if err != nil {
+		slog.Error("failed to create network", "err", err)
+		return
+	}
+
+	defer network.Close()
+
+	network.Start()
+
+	txChan := network.TxChan()
+	rxChan := network.RxChan()
+	errChan := network.ErrChan()
+
+	wvChan := make(chan statesync.Worldview, 20)
+	wv := statesync.NewWorldView(*localID, 4, wvChan)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	localElvevator := wv.GetRemoteElevator()
 	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
-	err := wv.SetLocalElevator(&localElvevator)
+
+	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
 		slog.Error("[StateMachine] SetHallCall", "error", err)
 	}
@@ -74,23 +89,13 @@ func stateMachine(
 	drvObst chan bool,
 	drvStop chan bool,
 	elev *elevator.ElevatorState,
-	worldView *statesync.Worldview,
+	wv *statesync.Worldview,
 ) {
-	// // Start network
-	// txChan, rxChan, errChan, err := network.UDPRunNetwork()
-	// if err != nil {
-	// 	fmt.Printf("Failed to start network: %v\n", err)
-	// 	return
-	// }
-	//
-	// ticker := time.NewTicker(2 * time.Second)
-	// defer ticker.Stop()
 	prevBehavior := elevator.BIdle
-	hallCallDir := 0
 	goal := 0
 
 	for {
-		localElvevator := worldView.GetRemoteElevator()
+		localElvevator := wv.GetRemoteElevator()
 
 		if prevBehavior != elev.Behavior {
 			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", elev.Behavior)
@@ -98,21 +103,30 @@ func stateMachine(
 		}
 
 		select {
-		// case msg := <-rxChan:
-		// 	fmt.Printf("Received: %s from %s\n", string(msg.Data), msg.Address.String())
-		//
-		// case err := <-errChan:
-		// 	fmt.Printf("Network error: %v\n", err)
-		//
-		// case <-ticker.C:
-		// 	txChan <- network.UDPMessage{Data: []byte("Hello from A")}
-		// 	fmt.Println("Sent broadcast message")
+		case a := <-drvButtons:
+			slog.Debug("Button event received", "event", a)
+			var err error
+			switch a.Button {
+			case elevio.Cab:
+				err = wv.SetCabCall(a.Floor, true)
+			case elevio.HallUp:
+				err = wv.NewHallCall(a.Floor, statesync.HDUp)
+			case elevio.HallDown:
+			default:
+				err = wv.NewHallCall(a.Floor, statesync.HDDown)
+			}
+
+			if err != nil {
+				slog.Error("failed to set new cab/hall call", "err", err)
+			}
 
 		case order := <-drvButtons:
+			var hcDir statesync.HallCallDir
+			// TODO: Why not just use order.Button instead of comparing floors?
 			if order.Floor > localElvevator.CurrentFloor {
-				hallCallDir = statesync.HDUp
+				hcDir = statesync.HDUp
 			} else {
-				hallCallDir = statesync.HDDown
+				hcDir = statesync.HDDown
 			}
 
 			goal = order.Floor
@@ -134,7 +148,7 @@ func stateMachine(
 
 				// worldView.SetCabCall(order.Floor, true)
 			} else {
-				err := worldView.SetHallCall(order.Floor, statesync.HallCallDir(hallCallDir), statesync.HSAvailable)
+				err := wv.NewHallCall(order.Floor, hcDir)
 				if err != nil {
 					slog.Error("[StateMachine] SetHallCall", "error", err)
 				}
@@ -143,7 +157,7 @@ func stateMachine(
 
 		case floor := <-drvFloors:
 			localElvevator.CurrentFloor = floor
-			err := worldView.SetLocalElevator(&localElvevator)
+			err := wv.SetLocalElevator(&localElvevator)
 			if err != nil {
 				slog.Error("[StateMachine] SetHallCall", "error", err)
 			}
@@ -157,6 +171,7 @@ func stateMachine(
 				elev.SetDoor(elevator.DSOpen)
 			}
 
+		// FIXME: Implement logic for this
 		// Our understanding: Cannot accur a obstruction during movment
 		// Example: someone is infront of the door!
 		// Obstruct means we cannot close the door
@@ -184,7 +199,7 @@ func SetupLogger() {
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
 			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
+			TimeFormat: time.DateTime,
 		}),
 	))
 }
