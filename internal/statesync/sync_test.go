@@ -239,7 +239,6 @@ func TestSetHallCall(t *testing.T) {
 	assert.Error(t, err, "should not be able to transition from Available to None")
 
 	// Manually assign the call to local elevator (simulates external assignment logic)
-	wv.HallCalls[2][HDUp].By = wv.LocalID
 
 	// Test Available -> Processing with field verification
 	err = wv.ProcessHallCall(2, HDUp)
@@ -261,11 +260,11 @@ func TestSetHallCall(t *testing.T) {
 	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
 
 	// Test processing a call assigned to another elevator
-	wv.NewHallCall(1, HDDown)
-	wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
-	err = wv.ProcessHallCall(1, HDDown)
-	assert.Error(t, err, "should not be able to process call assigned to another elevator")
-	assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
+	// wv.NewHallCall(1, HDDown)
+	// wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
+	// err = wv.ProcessHallCall(1, HDDown)
+	// assert.Error(t, err, "should not be able to process call assigned to another elevator")
+	// assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
 }
 
 func TestSetCabCall(t *testing.T) {

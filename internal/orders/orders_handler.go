@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"slices"
@@ -20,40 +21,40 @@ type ElevatorCost struct {
 // 3. If any of them are the same as our current pos -> stop || Go that said direction
 
 func GetNextOrder(wvChan chan statesync.Worldview, actionChan chan elevator.Action) {
-	for {
-		select {
-		case wv := <-wvChan:
-			slog.Debug("[GetNextOrder] Got new worldview")
-			RunCost(&wv)
-			nearestHallCall := CalculateNearestHallCall(&wv)
-			nearestCabCall := CalculateNearestCabCall(&wv)
-			slog.Debug("[GetNextOrder]", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+	for wv := range wvChan {
+		fmt.Print("HELLO\n")
+		slog.Debug("[GetNextOrder] Got new worldview")
+		RunCost(&wv)
+		nearestHallCall := CalculateNearestHallCall(&wv)
+		nearestCabCall := CalculateNearestCabCall(&wv)
+		slog.Debug("[GetNextOrder]", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 
-			local := wv.GetRemoteElevator()
+		local := wv.GetRemoteElevator()
 
-			if nearestHallCall == local.CurrentFloor {
-				wv.CompleteHallCall(nearestHallCall, statesync.HDNone)
-				slog.Debug("[GetNextOrder] Completed HallCall", "floor", nearestHallCall)
-			}
+		if nearestHallCall == local.CurrentFloor {
+			// FIXME: Fix the directions!!
+			wv.CompleteHallCall(nearestHallCall, statesync.HDUp)
+			wv.CompleteHallCall(nearestHallCall, statesync.HDDown)
+			slog.Debug("[GetNextOrder] Completed HallCall", "floor", nearestHallCall)
+		}
 
-			if nearestCabCall == local.CurrentFloor {
-				wv.SetCabCall(nearestCabCall, false)
-				slog.Debug("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
-			}
+		if nearestCabCall == local.CurrentFloor {
+			wv.SetCabCall(nearestCabCall, false)
+			slog.Debug("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
+		}
 
-			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
-				slog.Debug("[GetNextOrder] Arrived at order", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-				actionChan <- elevator.Action{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-				continue
-			}
+		if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
+			slog.Debug("[GetNextOrder] Arrived at order", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+			actionChan <- elevator.Action{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			continue
+		}
 
-			if nearestCabCall < local.CurrentFloor || nearestHallCall < local.CurrentFloor {
-				slog.Debug("[GetNextOrder] Moving down", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-				actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: elevio.MDDown}
-			} else {
-				slog.Debug("[GetNextOrder] Moving up", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-				actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: elevio.MDUp}
-			}
+		if nearestCabCall < local.CurrentFloor || nearestHallCall < local.CurrentFloor {
+			slog.Debug("[GetNextOrder] Moving down", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+			actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: elevio.MDDown}
+		} else {
+			slog.Debug("[GetNextOrder] Moving up", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+			actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: elevio.MDUp}
 		}
 	}
 }
@@ -62,7 +63,7 @@ func RunCost(wv *statesync.Worldview) {
 	hallCalls := wv.GetAllHallCalls()
 
 	for floor, hallCall := range hallCalls {
-		for dir := range 2 {
+		for dir := range hallCalls[floor] {
 			if hallCall[dir].State == statesync.HSNone {
 				continue
 			}
@@ -75,10 +76,13 @@ func RunCost(wv *statesync.Worldview) {
 			}
 
 			slog.Debug("[RunCost] Calculating cost")
-			winner := CalculateCost(wv, floor, dir)
+			winner := CalculateCost(wv, floor, statesync.HallCallDir(dir))
 			if winner.id == wv.LocalID {
+				fmt.Printf("PROCESSING!!\n")
 				wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 				slog.Debug("[RunCost] Set to processing", "floor", floor, "Direction", dir)
+			} else {
+				fmt.Printf("NOT PROCESSING!!\n")
 			}
 		}
 	}
@@ -124,7 +128,7 @@ func CalculateNearestHallCall(wv *statesync.Worldview) int {
 	skipUpCalls := local.Direction != elevio.MDUp && local.Direction != elevio.MDStop
 
 	for floor, hallCall := range hallCalls {
-		for dir := range 2 {
+		for dir := range hallCalls[floor] {
 			if hallCall[dir].State == statesync.HSNone || skipDownCalls && dir == 0 || skipUpCalls && dir == 1 {
 				continue
 			}
@@ -141,7 +145,7 @@ func CalculateNearestHallCall(wv *statesync.Worldview) int {
 
 // TODO: EDGE CASE: two or more elevators at same spot/floor. lowest id wins!
 // Theory it will automaticlay do this idea since we count from 0->largest id?
-func CalculateCost(wv *statesync.Worldview, floor int, dir int) ElevatorCost {
+func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir) ElevatorCost {
 	winner := ElevatorCost{-1, wv.NumFloors + 1}
 	for id, elev := range wv.ElevatorStates {
 		isObstructed := elev.Behavior == elevator.BObstructed

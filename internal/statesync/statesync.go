@@ -187,12 +187,13 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	existing := wv.HallCalls[floor][dir]
+
 	by := -1
 	if state == HSProcessing {
+		existing.By = wv.LocalID
 		by = wv.LocalID
 	}
-
-	existing := wv.HallCalls[floor][dir]
 
 	confirmedBy := []int{}
 
