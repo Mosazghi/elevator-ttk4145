@@ -2,8 +2,12 @@ package orders
 
 import (
 	"testing"
+	"time"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,123 +19,163 @@ const (
 
 func TestGetNextOrder(t *testing.T) {
 	TestGetNextOrder_HallCall(t)
+	TestGetNextOrder_HallCall_Complete(t)
+
 	TestGetNextOrder_CabCall(t)
-	TestGetNextOrder_Arrival_CabCall(t)
-	TestGetNextOrder_Arrival_HallCall(t)
+	TestGetNextOrder_CabCall_Complete(t)
+
 	TestGetNextOrder_CabCall_Direction(t)
-	TestGetNextOrder_Two_Elevators(t)
+	// TestGetNextOrder_Two_Elevators(t) //TODO: Method to check multiple elevators
 }
 
 // Helper
-func newTestCtx() (wv *statesync.Worldview, ctx OrdersContext) {
+func newTestCtx() (wv *statesync.Worldview, channel chan statesync.Worldview) {
 	wvChan := make(chan statesync.Worldview)
 	worldview := statesync.NewWorldView(1, 4, wvChan)
-	state := statesync.NewRemoteElevatorState(ID, 1, NumFloors)
+	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
+	_ = worldview.SetLocalElevator(elev)
 
-	return worldview, OrdersContext{*worldview}
+	return worldview, wvChan
 }
 
 // CASE 1: Given a Hall-Call
 func TestGetNextOrder_HallCall(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	go GetNextOrder(wvchan, actionChan)
 
-	wv.SetHallCall(4, statesync.HDUp, state statesync.HallCallState)
+	_ = wv.NewHallCall(4, statesync.HDUp)
+	cs, _ := checksum.CalculateChecksum(wv)
+	_ = wv.Merge(wv, cs)
 
-	// hallCall := statesync.HallCallPair{
-	// 	Up: statesync.HallCallPairState{State: statesync.HSAvailable},
-	// }
-	// wv.AddHallCall(4, hallCall)
+	select {
+	case action := <-actionChan:
+		hallCalls := wv.GetAllHallCalls()
+		call := hallCalls[3][statesync.HDUp]
 
-	behavior, dir := ctx.GetNextOrder(ID)
-	hallCalls := wv.GetHallCalls()
+		require.Equal(t, call.By, ID, "Elevator 1 should be assigend to hall-call order")
+		assert.Equal(t, action.Direction, elevio.MDUp, "Expected elevator 1 to move up from floor 1 to floor 4")
+		assert.Equal(t, action.Behavior, elevator.BMoving, "Elevator 1 should attempt to move")
 
-	require.Equal(t, hallCalls[3].Up.By, ID, "Elevator 1 should be assigend to hall-call order")
-	assert.Equal(t, dir, elevio.MDUp, "Expected elevator 1 to move up from floor 1 to floor 4")
-	assert.Equal(t, behavior, elevator.BMoving, "Elevator 1 should attempt to move")
-}
-
-// CASE 2: Given a Cab-call
-func TestGetNextOrder_CabCall(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
-
-	wv.SetCabCall(ID, 2, true)
-
-	behavior, dir := ctx.GetNextOrder(ID)
-	assert.Equal(t, dir, elevio.MDUp, "Expected elevator 1 to move up")
-	assert.Equal(t, behavior, elevator.BMoving, "Elevator 1 should attempt to be move")
-}
-
-// CASE 3: Arrived at Cab-call floor
-func TestGetNextOrder_Arrival_CabCall(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
-
-	elevators := wv.GetElevators()
-	elevator1 := elevators[0]
-	wv.SetCabCall(ID, 2, true)
-	wv.SetElevatorPosition(ID, 3)
-
-	behavior, dir := ctx.GetNextOrder(ID)
-	require.Equal(t, elevator1.CabCalls[2], false, "Cab-call should be set to false, arrived at floor")
-	assert.Equal(t, dir, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-	assert.Equal(t, behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
-}
-
-// CASE 4: Arrived at Hall-call floor
-func TestGetNextOrder_Arrival_HallCall(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
-
-	hallCall := statesync.HallCallPair{
-		Up: statesync.HallCallPairState{State: statesync.HSProcessing, By: ID},
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for action")
 	}
-	wv.AddHallCall(4, hallCall)
+}
 
-	hallCalls := wv.GetHallCalls()
-	wv.SetElevatorPosition(ID, 4)
+// CASE 2: At Hall-call order
+func TestGetNextOrder_HallCall_Complete(t *testing.T) {
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	elev := wv.GetRemoteElevator()
+	go GetNextOrder(wvchan, actionChan)
 
-	behavior, dir := ctx.GetNextOrder(ID)
-	require.Equal(t, hallCalls[3].Up, nil, "Hall call should be set to nil, arrived at floor")
-	assert.Equal(t, dir, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-	assert.Equal(t, behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
+	elev.CurrentFloor = 4
+	_ = wv.SetLocalElevator(&elev)
+	_ = wv.NewHallCall(4, statesync.HDUp)
+	cs, _ := checksum.CalculateChecksum(wv)
+	_ = wv.Merge(wv, cs)
+
+	select {
+	case action := <-actionChan:
+		hallCalls := wv.GetAllHallCalls()
+		call := hallCalls[3][statesync.HDUp]
+
+		require.Equal(t, call.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
+		assert.Equal(t, action.Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
+		assert.Equal(t, action.Behavior, elevator.BIdle, "Elevator 1 should open door when arrived at order floor")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for action")
+	}
+}
+
+// CASE 3: Given a Cab-call
+func TestGetNextOrder_CabCall(t *testing.T) {
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	go GetNextOrder(wvchan, actionChan)
+
+	_ = wv.SetCabCall(2, true)
+	cs, _ := checksum.CalculateChecksum(wv)
+	_ = wv.Merge(wv, cs)
+
+	select {
+	case action := <-actionChan:
+		elev := wv.GetRemoteElevator()
+
+		require.Equal(t, elev.CabCalls[1], true, "Cab-call should be set to true")
+		assert.Equal(t, action.Direction, elevio.MDUp, "Expected elevator 1 to move up")
+		assert.Equal(t, action.Behavior, elevator.BMoving, "Elevator 1 should attempt to be move")
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for action")
+	}
+}
+
+// CASE 4: At Cab-call order
+func TestGetNextOrder_CabCall_Complete(t *testing.T) {
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	elev := wv.GetRemoteElevator()
+	go GetNextOrder(wvchan, actionChan)
+
+	elev.CurrentFloor = 2
+	_ = wv.SetLocalElevator(&elev)
+	_ = wv.SetCabCall(2, true)
+	cs, _ := checksum.CalculateChecksum(wv)
+	_ = wv.Merge(wv, cs)
+
+	select {
+	case action := <-actionChan:
+		elev := wv.GetRemoteElevator()
+
+		require.Equal(t, elev.CabCalls[1], false, "Cab-call should be set to false, arrived at floor")
+		assert.Equal(t, action.Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
+		assert.Equal(t, action.Behavior, elevator.BIdle, "Elevator 1 should open door when arrived at order floor")
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for action")
+	}
 }
 
 // CASE 5: Moving while there are Cab-calls both above and under
 func TestGetNextOrder_CabCall_Direction(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	go GetNextOrder(wvchan, actionChan)
 
-	elevators := wv.GetElevators()
-	elevator1 := elevators[0]
-	wv.SetElevatorPosition(ID, 3)
-	wv.SetCabCall(ID, 3, true)
-	wv.SetCabCall(ID, 1, true)
-	elevator1.Direction = elevio.MDDown
+	elev := wv.GetRemoteElevator()
+	elev.Behavior = elevator.BMoving
+	elev.Direction = elevio.MDDown
+	_ = wv.SetLocalElevator(&elev)
 
-	behavior, dir := ctx.GetNextOrder(ID)
-	assert.Equal(t, dir, elevio.MDDown, "Elevator 1 should move down towards lower cab-call")
-	assert.Equal(t, behavior, elevator.BMoving, "Elevator 1 should be moving")
+	_ = wv.SetCabCall(3, true)
+	_ = wv.SetCabCall(1, true)
+	cs, _ := checksum.CalculateChecksum(wv)
+	_ = wv.Merge(wv, cs)
+
+	select {
+	case action := <-actionChan:
+		assert.Equal(t, action.Direction, elevio.MDDown, "Elevator 1 should move down towards lower cab-call")
+		assert.Equal(t, action.Behavior, elevator.BMoving, "Elevator 1 should be moving")
+
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for action")
+	}
 }
 
 // CASE 6: Two elevators gets order and you're not supposed to perform it
-func TestGetNextOrder_Two_Elevators(t *testing.T) {
-	t.Skip("NOT YET COMPLETE")
-	wv, ctx := newTestCtx()
-
-	state := statesync.NewRemoteElevatorState(ID+1, 3, NumFloors)
-	wv.AddElevator(state)
-
-	hallCall := statesync.HallCallPair{
-		Up: statesync.HallCallPairState{State: statesync.HSAvailable},
-	}
-	wv.AddHallCall(4, hallCall)
-
-	behavior, dir := ctx.GetNextOrder(ID)
-	hallCalls := wv.GetHallCalls()
-
-	require.Equal(t, hallCalls[3].Up.By, ID+1, "Elevator 2 should be assigend to hall-call order")
-	assert.Equal(t, dir, elevio.MDStop, "Expected Elevator 1 to stay still")
-	assert.Equal(t, behavior, elevator.BIdle, "Elevator 1 should be idle")
-}
+// func TestGetNextOrder_Two_Elevators(t *testing.T) {
+// 	wv, ctx := newTestCtx()
+//
+// 	otherElevator := statesync.NewRemoteElevatorState(ID+1, 3)
+// 	_ = wv.SetLocalElevator(otherElevator)
+// 	_ = wv.NewHallCall(4, statesync.HDUp)
+//
+// 	behavior, dir := ctx.GetNextOrder(ID)
+// 	hallCalls := wv.GetAllHallCalls()
+// 	call := hallCalls[4][statesync.HDUp]
+//
+// 	require.Equal(t, call.By, ID+1, "Elevator 2 should be assigend to hall-call order")
+// 	assert.Equal(t, dir, elevio.MDStop, "Expected Elevator 1 to stay still")
+// 	assert.Equal(t, behavior, elevator.BIdle, "Elevator 1 should be idle")
+// }

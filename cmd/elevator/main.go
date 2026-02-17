@@ -141,9 +141,9 @@ func stateMachine(
 				}
 
 				if order.Floor > localElvevator.CurrentFloor {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
+					_ = elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
 				} else {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
+					_ = elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
 				}
 
 				// worldView.SetCabCall(order.Floor, true)
@@ -166,7 +166,7 @@ func stateMachine(
 			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
 
 			if goal == floor {
-				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
+				_ = elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
 				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
 				elev.SetDoor(elevator.DSOpen)
 			}
