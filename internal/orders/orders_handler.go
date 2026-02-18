@@ -1,7 +1,6 @@
 package orders
 
 import (
-	"fmt"
 	"log/slog"
 	"math"
 	"slices"
@@ -12,9 +11,17 @@ import (
 )
 
 type ElevatorCost struct {
-	id       int
-	distance int
+	id    int
+	floor int
+	cost  int
 }
+
+type Penalty int
+
+const (
+	PenaltyObstructed     = 20
+	PenaltyWrongDirection = 10
+)
 
 // 1. Update the worldview
 // 2. Calculate the nearestcab and hallcall
@@ -28,21 +35,25 @@ func GetNextOrder(wvChan chan statesync.Worldview, actionChan chan elevator.Acti
 	for wv := range wvChan {
 		slog.Info("[GetNextOrder] Got new worldview")
 		RunCost(&wv)
-		nearestHallCall := CalculateNearestHallCall(&wv)
+		nearestHallCall, hallCallDirection := CalculateNearestHallCall(&wv)
 		nearestCabCall := CalculateNearestCabCall(&wv)
 		slog.Info("[GetNextOrder]", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 
 		local := wv.GetRemoteElevator()
 
 		if nearestHallCall == local.CurrentFloor {
-			// FIXME: Fix the directions!!
-			wv.CompleteHallCall(nearestHallCall, statesync.HDUp)
-			wv.CompleteHallCall(nearestHallCall, statesync.HDDown)
+			err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
+			if err != nil {
+				slog.Error("[GetNextOrder] Got worldview error", "error", err)
+			}
 			slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall)
 		}
 
 		if nearestCabCall == local.CurrentFloor {
-			wv.SetCabCall(nearestCabCall, false)
+			err := wv.SetCabCall(nearestCabCall, false)
+			if err != nil {
+				slog.Error("[GetNextOrder] Got worldview error", "error", err)
+			}
 			slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
 		}
 
@@ -81,10 +92,13 @@ func RunCost(wv *statesync.Worldview) {
 			slog.Info("[RunCost] Calculating cost")
 			winner := CalculateCost(wv, floor, statesync.HallCallDir(dir))
 			if winner.id == wv.LocalID {
-				wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
+				err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
+				if err != nil {
+					slog.Error("[RunCost] Got worldview error", "error", err)
+				}
 				slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir)
 			} else {
-				fmt.Printf("NOT PROCESSING!!\n")
+				slog.Info("[RunCost] Not processing", "winner id", winner.id, "local id", wv.LocalID)
 			}
 		}
 	}
@@ -127,11 +141,12 @@ func CalculateNearestCabCall(wv *statesync.Worldview) int {
 	return nearestCall
 }
 
-func CalculateNearestHallCall(wv *statesync.Worldview) int {
+func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallDir) {
 	slog.Info("[CalculateNearestHallCall] Starting")
 	local := wv.GetRemoteElevator()
 	hallCalls := wv.GetAllHallCalls()
 	nearestCall := wv.NumFloors + 1
+	direction := statesync.HDDown
 
 	skipDownCalls := local.Direction != elevio.MDDown && local.Direction != elevio.MDStop
 	skipUpCalls := local.Direction != elevio.MDUp && local.Direction != elevio.MDStop
@@ -147,42 +162,50 @@ func CalculateNearestHallCall(wv *statesync.Worldview) int {
 			distance := int(math.Abs(float64(local.CurrentFloor) - float64(floor)))
 			if hallCall[dir].By == wv.LocalID && distance < nearestCall {
 				nearestCall = floor
+				direction = statesync.HallCallDir(dir)
 				slog.Info("[CalculateNearestHallCall] New nearest hallcall", "floor", floor)
 			}
 		}
 	}
 
-	return nearestCall
+	return nearestCall, direction
 }
 
-// TODO: EDGE CASE: two or more elevators at same spot/floor. lowest id wins!
-// Theory it will automaticlay do this idea since we count from 0->largest id?
 func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir) ElevatorCost {
-	winner := ElevatorCost{-1, wv.NumFloors + 1}
+	winner := ElevatorCost{-1, wv.NumFloors + 1, 100}
+	slog.Info("[CalculateCost] Starting")
+	currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
+
 	for id, elev := range wv.ElevatorStates {
 		isObstructed := elev.Behavior == elevator.BObstructed
+		currentElevatorCost.id = id
+		currentElevatorCost.floor = 0
+		currentElevatorCost.cost = 0
 
 		if isObstructed {
 			slog.Info("[CalculateCost] Elevator is obstructed")
-			continue
+			currentElevatorCost.cost += PenaltyObstructed
 		}
 
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
 			slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			continue
+			currentElevatorCost.cost += PenaltyWrongDirection
 		}
 
 		if elev.Direction == elevio.MDUp && dir == statesync.HDDown {
 			slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			continue
+			currentElevatorCost.cost += PenaltyWrongDirection
 		}
 
-		distance := int(math.Abs(float64(elev.CurrentFloor) - float64(floor)))
+		cost := int(math.Abs(float64(currentElevatorCost.cost) - float64(floor)))
+		currentElevatorCost.floor = floor
+		slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
 
-		if distance < winner.distance {
-			winner.id = id
-			winner.distance = distance
-			slog.Info("[CalculateCost] Got new winner", "id", winner.id, "distance", winner.distance)
+		if cost < winner.cost {
+			winner.id = currentElevatorCost.id
+			winner.cost = cost
+			winner.floor = currentElevatorCost.floor
+			slog.Info("[CalculateCost] Got new winner", "id", winner.id, "cost", winner.cost, "floor", winner.floor)
 		}
 	}
 	return winner
