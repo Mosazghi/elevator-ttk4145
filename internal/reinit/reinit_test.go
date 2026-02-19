@@ -2,6 +2,7 @@ package reinit
 
 import (
 	_ "log/slog"
+	"flag"
 	"os"
 	"syscall"
 	"testing"
@@ -17,6 +18,12 @@ func TestReinitialization(t *testing.T) {
 		t.Error("[Overwatch] Failed to get executable path", "error", err)
 	}
 	args := os.Args
+
+	id := flag.Int("id", 0, "Node ID")
+	port := flag.Int("port", 5000, "Broadcast port")
+
+	flag.Parse()
+	t.Log("initialized", "id", *id, "port", *port)
 
 	wd := watchdog.Start(3)
 	defer wd.Stop()
