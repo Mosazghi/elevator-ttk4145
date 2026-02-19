@@ -176,6 +176,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
+	slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -324,6 +325,9 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
+	// pretty print floor 0 and 3 using json
+	slog.Info("Elevator state", "floor 0", other.HallCalls[0])
+	slog.Info("Elevator state", "floor 3", other.HallCalls[other.NumFloors-1])
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -344,7 +348,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
-					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+
+					// map contains
+					_, exists := wv.ElevatorStates[id]
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && exists {
 						slog.Warn("adding confirmed by", "id", id, "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}

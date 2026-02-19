@@ -29,7 +29,7 @@ func GetNextAction(wvChan chan statesync.Worldview, actionChan chan elevator.Act
 		nearestHallCall, hallCallDirection := CalculateNearestHallCall(&wv)
 		nearestCabCall := CalculateNearestCabCall(&wv)
 
-		if nearestHallCall == wv.NumFloors+1 && nearestCabCall == wv.NumFloors+1 {
+		if nearestHallCall == -1 && nearestCabCall == -1 {
 			continue
 		}
 
@@ -78,12 +78,16 @@ func RunCost(wv *statesync.Worldview) {
 				continue
 			}
 
-			isConfirmedByAll := len(hallCall[dir].ConfirmedBy) == len(wv.ElevatorStates)
+			// estates: [1 2]
+			// confirmedBy: [2]
+			// refactor
+			isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= len(wv.ElevatorStates)
 			isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 			slog.Info("[RunCost]", "state", hallCall[dir].State, "by", hallCall[dir].By, "ConfirmedBy", hallCall[dir].ConfirmedBy)
 
 			if !isConfirmedByAll || !isAvailable {
+				slog.Error("[RunCost]", "HallCall is not confirmed by all elevators or not available", "floor", floor, "dir", dir)
 				continue
 			}
 
@@ -106,17 +110,20 @@ func RunCost(wv *statesync.Worldview) {
 func CalculateNearestCabCall(wv *statesync.Worldview) int {
 	// slog.Info("[CalculateNearestCabCall] Starting")
 	localElevator := wv.GetRemoteElevator()
-	nearestCall := localElevator.NumFloors + 1
+	nearestCall := -1
 	cabCalls := localElevator.CabCalls
-	startPosition := 0
+	startPosition := -1
 	reversed := false
-
+	// [true true false false]
 	if localElevator.Direction == elevio.MDDown {
 		slices.Reverse(cabCalls)
+		// [false false true true]
 		reversed = true
 		startPosition = localElevator.NumFloors - localElevator.CurrentFloor
+		// 4 - 2 = 2
 		// slog.Info("[CalculateNearestCabCall] Reversed cabCalls (got call downwards)", "startPosition", startPosition)
 	} else {
+		// 2
 		startPosition = localElevator.CurrentFloor
 		// slog.Info("[CalculateNearestCabCall] Not reversed (got call upwards)", "startPosition", startPosition)
 	}
@@ -128,6 +135,7 @@ func CalculateNearestCabCall(wv *statesync.Worldview) int {
 
 		if reversed {
 			nearestCall = localElevator.NumFloors - (floor + startPosition)
+			// 4 - (1 + 2) =  1
 		} else {
 			nearestCall = floor + startPosition
 		}
@@ -143,7 +151,7 @@ func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallD
 	// slog.Info("[CalculateNearestHallCall] Starting")
 	local := wv.GetRemoteElevator()
 	hallCalls := wv.GetAllHallCalls()
-	nearestCall := wv.NumFloors + 1
+	nearestCall := -1
 	direction := statesync.HDDown
 
 	skipDownCalls := local.Direction != elevio.MDDown && local.Direction != elevio.MDStop
@@ -151,10 +159,11 @@ func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallD
 	// slog.Info("[CalculateNearestHallCall]", "Skip down?", skipDownCalls, "skip up?", skipUpCalls)
 
 	for floor, hallCall := range hallCalls {
-		for dir := range hallCalls[floor] {
+		for dirIdx := range hallCalls[floor] {
+			dir := statesync.HallCallDir(dirIdx)
 			if hallCall[dir].State == statesync.HSNone ||
-				skipDownCalls && dir == 0 ||
-				skipUpCalls && dir == 1 ||
+				skipDownCalls && dir == statesync.HDDown ||
+				skipUpCalls && dir == statesync.HDUp ||
 				hallCall[dir].By != wv.LocalID {
 				continue
 			}
@@ -162,7 +171,7 @@ func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallD
 
 			distance := int(math.Abs(float64(local.CurrentFloor) - float64(floor)))
 			slog.Info("[CalculateNearestHallCall]", "distance", distance)
-			if hallCall[dir].By == wv.LocalID && distance < nearestCall {
+			if distance < nearestCall || nearestCall == -1 {
 				nearestCall = floor
 				direction = statesync.HallCallDir(dir)
 				slog.Info("[CalculateNearestHallCall] New nearest hallcall", "floor", floor)
@@ -197,12 +206,15 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 			currentElevatorCost.cost += PenaltyWrongDirection
 		}
 
-		cost := int(math.Abs(float64(elev.CurrentFloor) - float64(floor)))
+		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))
+
+		currentElevatorCost.cost += distance
+
 		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
 
-		if cost < winner.cost {
+		if currentElevatorCost.cost < winner.cost {
 			winner.id = currentElevatorCost.id
-			winner.cost = cost
+			winner.cost = currentElevatorCost.cost
 			winner.floor = currentElevatorCost.floor
 			slog.Info("[CalculateCost] Got new winner", "id", winner.id, "cost", winner.cost, "floor", winner.floor)
 		}

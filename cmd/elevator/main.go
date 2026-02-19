@@ -47,7 +47,7 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver, elevIoDriver.GetFloor())
+	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
 
 	network, err := network.NewNetwork(prodMode)
 	if err != nil {
@@ -70,8 +70,15 @@ func main() {
 	go wv.StartSyncing(txChan, rxChan, errChan)
 	go orders.GetNextAction(wvChan, actionChan)
 
+	initFloor := elevIoDriver.GetFloor()
+	if initFloor == -1 {
+		slog.Warn("Elevator is between floors, moving down to the nearest floor")
+		elev.OnInitBetweenFloors()
+
+	}
+
 	localElvevator := wv.GetRemoteElevator()
-	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
+	localElvevator.CurrentFloor = 0
 
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
