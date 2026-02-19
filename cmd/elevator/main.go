@@ -27,9 +27,9 @@ func main() {
 	env := os.Getenv("ENV")
 	prodMode := env == "production" || env == "prod"
 	if prodMode {
-		slog.Info("Running in production mode (echo filtering enabled)")
+		slog.Warn("Running in production mode (echo filtering enabled)")
 	} else {
-		slog.Info("Running in development mode (echo filtering disabled)")
+		slog.Warn("Running in development mode (echo filtering disabled)")
 	}
 	slog.Info("Elevator started with", "id", *localID, "port", *port)
 
@@ -103,24 +103,35 @@ func stateMachine(
 		}
 
 		select {
-		case a := <-drvButtons:
-			slog.Debug("Button event received", "event", a)
+
+		case order := <-drvButtons:
 			var err error
-			switch a.Button {
+			var hc statesync.HallCallDir
+			switch order.Button {
 			case elevio.Cab:
-				err = wv.SetCabCall(a.Floor, true)
+				err = wv.SetCabCall(order.Floor, true)
 			case elevio.HallUp:
-				err = wv.NewHallCall(a.Floor, statesync.HDUp)
+				err = wv.NewHallCall(order.Floor, statesync.HDUp)
+				hc = statesync.HDUp
 			case elevio.HallDown:
 			default:
-				err = wv.NewHallCall(a.Floor, statesync.HDDown)
+				err = wv.NewHallCall(order.Floor, statesync.HDDown)
+				hc = statesync.HDDown
 			}
 
 			if err != nil {
 				slog.Error("failed to set new cab/hall call", "err", err)
 			}
 
-		case order := <-drvButtons:
+			slog.Warn("sleeping...")
+
+			time.Sleep(2 * time.Second)
+			err = wv.ProcessHallCall(order.Floor, hc)
+			slog.Info("should have processed")
+
+			if err != nil {
+				slog.Error("failed to process hall call", "err", err)
+			}
 			var hcDir statesync.HallCallDir
 			// TODO: Why not just use order.Button instead of comparing floors?
 			if order.Floor > localElvevator.CurrentFloor {
@@ -150,7 +161,7 @@ func stateMachine(
 			} else {
 				err := wv.NewHallCall(order.Floor, hcDir)
 				if err != nil {
-					slog.Error("[StateMachine] SetHallCall", "error", err)
+					slog.Error("[StateMachine] NewHallCall", "error", err)
 				}
 
 			}
@@ -159,7 +170,7 @@ func stateMachine(
 			localElvevator.CurrentFloor = floor
 			err := wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetHallCall", "error", err)
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
 			elev.SetCurrentFloorLight(floor)
@@ -169,6 +180,15 @@ func stateMachine(
 				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
 				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
 				elev.SetDoor(elevator.DSOpen)
+			}
+
+			err = wv.CompleteHallCall(floor, statesync.HDDown)
+			if err != nil {
+				slog.Error("[StateMachine] CompleteHallCall", "error", err)
+			}
+			err = wv.CompleteHallCall(floor, statesync.HDUp)
+			if err != nil {
+				slog.Error("[StateMachine] CompleteHallCall", "error", err)
 			}
 
 		// FIXME: Implement logic for this

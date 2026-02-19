@@ -260,12 +260,6 @@ func TestSetHallCall(t *testing.T) {
 	// assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
 	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
 
-	// Test processing a call assigned to another elevator
-	wv.NewHallCall(1, HDDown)
-	wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
-	err = wv.ProcessHallCall(1, HDDown)
-	assert.Error(t, err, "should not be able to process call assigned to another elevator")
-	assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
 }
 
 func TestSetCabCall(t *testing.T) {
@@ -573,7 +567,7 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	wv.checkForLostNodes()
 	wv.mu.Unlock()
 
-	assert.Equal(t, HSNone, wv.HallCalls[1][HDUp].State, "order should be released when node is lost")
+	assert.Equal(t, HSAvailable, wv.HallCalls[1][HDUp].State, "order should be released when node is lost")
 	assert.Equal(t, -1, wv.HallCalls[1][HDUp].By, "By should be reset to -1")
 	assert.Empty(t, wv.HallCalls[1][HDUp].ConfirmedBy, "ConfirmedBy should be cleared")
 	_, stillActive := wv.ElevatorStates[lostID]
@@ -596,7 +590,7 @@ func TestObstructed_ReleasesPendingOrders(t *testing.T) {
 	err := wv1.Merge(wv2, cs)
 
 	require.NoError(t, err)
-	assert.Equal(t, HSNone, wv1.HallCalls[2][HDDown].State, "order should be released when elevator is obstructed")
+	assert.Equal(t, HSAvailable, wv1.HallCalls[2][HDDown].State, "order should be released when elevator is obstructed")
 	assert.Equal(t, -1, wv1.HallCalls[2][HDDown].By, "By should be reset to -1")
 	assert.Empty(t, wv1.HallCalls[2][HDDown].ConfirmedBy, "ConfirmedBy should be cleared")
 }

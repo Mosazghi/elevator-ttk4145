@@ -184,7 +184,7 @@ func (wv *Worldview) checkForLostNodes() {
 					if wv.HallCalls[floor][dir].By == id {
 						slog.Warn("releaseing order (lost node)", "by", id)
 						wv.HallCalls[floor][dir] = HallCallPairState{
-							State:       HSNone,
+							State:       HSAvailable,
 							By:          -1,
 							ConfirmedBy: []int{},
 						}
@@ -203,19 +203,18 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
-
 	currDirState := wv.HallCalls[floor][dir]
 
 	if err := IsValidDirTransition(currDirState.State, state); err != nil {
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	existing := wv.HallCalls[floor][dir]
 	by := -1
 	if state == HSProcessing {
+		existing.By = wv.LocalID
 		by = wv.LocalID
 	}
-
-	existing := wv.HallCalls[floor][dir]
 
 	confirmedBy := []int{}
 
@@ -336,6 +335,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
+	//
+	slog.Info("hc floor 0", "hc", wv.HallCalls[0])
+	slog.Info("hc floor 3", "hc", wv.HallCalls[3])
+
 	// -- Validate Hall Calls --
 	// Merge hall calls
 	for floor := range other.HallCalls {
@@ -379,7 +382,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				if otherLocalState.IsObstructed && otherHCState.By == otherLocalState.ID {
 					slog.Warn("releaseing order (obstructed)", "by", otherLocalState.ID)
 					wv.HallCalls[floor][dir] = HallCallPairState{
-						State:       HSNone,
+						State:       HSAvailable,
 						By:          -1,
 						ConfirmedBy: []int{},
 					}
