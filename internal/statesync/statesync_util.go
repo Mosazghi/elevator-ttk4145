@@ -1,25 +1,23 @@
 package statesync
 
 import (
-	"encoding/json"
-
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
-func BuildWvJson(wv *Worldview) ([]byte, error) {
+// BuildWvJSON constructs a json message from a Worldview
+func BuildWvJSON(wv *Worldview) ([]byte, error) {
 	checksum, err := checksum.CalculateChecksum(wv)
-
 	if err != nil {
 		return nil, err
 	}
 
 	msg := Message{Wv: *wv, Checksum: checksum}
 
-	jsonData, err := json.Marshal(msg)
-
+	data, err := msgpack.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	return jsonData, nil
+	return data, nil
 }

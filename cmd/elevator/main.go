@@ -7,9 +7,6 @@ import (
 	"os"
 	"time"
 
-	//"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	//eIO "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
@@ -17,8 +14,8 @@ import (
 	"github.com/lmittmann/tint"
 )
 
-// var numFloors = 4
 func main() {
+	numFloors := 4
 	port := flag.Int("port", 15657, "specify port number")
 	localID := flag.Int("id", 1, "specify elevator ID")
 
@@ -34,8 +31,7 @@ func main() {
 	} else {
 		slog.Info("Running in development mode (echo filtering disabled)")
 	}
-	slog.Info("Elevator started", "id", *localID)
-	slog.Info("Elevator started", "port", *port)
+	slog.Info("Elevator started with", "id", *localID, "port", *port)
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -43,44 +39,66 @@ func main() {
 	drvStop := make(chan bool)
 
 	eIOAddr := fmt.Sprintf("localhost:%d", *port)
-	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, 4)
+	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, numFloors)
 
 	go elevIoDriver.PollButtons(drvButtons)
-
 	go elevIoDriver.PollFloorSensor(drvFloors)
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	initFloor := elevIoDriver.GetFloor()
+	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
 
-	elev := elevator.NewElevState(initFloor, elevIoDriver.ReadInitialButtons(), elevIoDriver)
-
-	if initFloor == -1 {
-		slog.Info("Elevator initialized between floors")
-		elev.OnInitBetweenFloors()
-	}
-
-	// Start network
-	txChan, rxChan, errChan, err := network.Start(prodMode)
+	network, err := network.NewNetwork(prodMode)
 	if err != nil {
-		slog.Error("Failed to start network", "error", err)
+		slog.Error("failed to create network", "err", err)
 		return
 	}
-	wvChan := make(chan statesync.Worldview, 10)
+
+	defer network.Close()
+
+	network.Start()
+
+	txChan := network.TxChan()
+	rxChan := network.RxChan()
+	errChan := network.ErrChan()
+
+	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	stateMachine(drvButtons, drvFloors, drvObstr, drvStop, elev, wv)
+	localElvevator := wv.GetRemoteElevator()
+	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
+
+	err = wv.SetLocalElevator(&localElvevator)
+	if err != nil {
+		slog.Error("[StateMachine] SetHallCall", "error", err)
+	}
+
+	stateMachine(drvButtons,
+		drvFloors,
+		drvObstr,
+		drvStop,
+		&elev,
+		wv)
 }
 
-func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObst chan bool, drvStop chan bool, elev *elevator.ElevState, wv *statesync.Worldview) {
+func stateMachine(
+	drvButtons chan elevio.ButtonEvent,
+	drvFloors chan int,
+	drvObst chan bool,
+	drvStop chan bool,
+	elev *elevator.ElevatorState,
+	wv *statesync.Worldview,
+) {
 	prevBehavior := elevator.BIdle
+	goal := 0
 
 	for {
+		localElvevator := wv.GetRemoteElevator()
 
 		if prevBehavior != elev.Behavior {
-			slog.Info("State Trans", "from", prevBehavior, "to", elev.Behavior)
+			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", elev.Behavior)
 			prevBehavior = elev.Behavior
 		}
 
@@ -92,21 +110,86 @@ func stateMachine(drvButtons chan elevio.ButtonEvent, drvFloors chan int, drvObs
 			case elevio.Cab:
 				err = wv.SetCabCall(a.Floor, true)
 			case elevio.HallUp:
-				err = wv.SetHallCall(a.Floor, statesync.HDUp, statesync.HSAvailable)
+				err = wv.NewHallCall(a.Floor, statesync.HDUp)
+			case elevio.HallDown:
 			default:
-				err = wv.SetHallCall(a.Floor, statesync.HDDown, statesync.HSAvailable)
-			}
-			if err != nil {
-				slog.Error("Failed to set call in worldview", "error", err)
+				err = wv.NewHallCall(a.Floor, statesync.HDDown)
 			}
 
-			elev.OnOrderRequest(a)
-		case a := <-drvFloors:
-			elev.OnNewFloorArrival(a)
-		case a := <-drvObst:
-			elev.OnObstructionSignal(a)
-		case a := <-drvStop:
-			elev.OnStopSignal(a)
+			if err != nil {
+				slog.Error("failed to set new cab/hall call", "err", err)
+			}
+
+		case order := <-drvButtons:
+			var hcDir statesync.HallCallDir
+			// TODO: Why not just use order.Button instead of comparing floors?
+			if order.Floor > localElvevator.CurrentFloor {
+				hcDir = statesync.HDUp
+			} else {
+				hcDir = statesync.HDDown
+			}
+
+			goal = order.Floor
+			elev.SetDoor(elevator.DSClosed)
+
+			if order.Button == elevio.Cab {
+				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
+
+				if order.Floor == localElvevator.CurrentFloor {
+					slog.Info("[StateMachine] Allready on floor")
+					continue
+				}
+
+				if order.Floor > localElvevator.CurrentFloor {
+					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
+				} else {
+					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
+				}
+
+				// worldView.SetCabCall(order.Floor, true)
+			} else {
+				err := wv.NewHallCall(order.Floor, hcDir)
+				if err != nil {
+					slog.Error("[StateMachine] SetHallCall", "error", err)
+				}
+
+			}
+
+		case floor := <-drvFloors:
+			localElvevator.CurrentFloor = floor
+			err := wv.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetHallCall", "error", err)
+			}
+
+			elev.SetCurrentFloorLight(floor)
+			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
+
+			if goal == floor {
+				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
+				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
+				elev.SetDoor(elevator.DSOpen)
+			}
+
+		// FIXME: Implement logic for this
+		// Our understanding: Cannot accur a obstruction during movment
+		// Example: someone is infront of the door!
+		// Obstruct means we cannot close the door
+		// Obsructuion is only resolved/accur during open door not movement
+		case isObstructed := <-drvObst:
+			if isObstructed {
+				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
+			}
+
+		case shouldStop := <-drvStop:
+			if shouldStop {
+				elev.StopAction()
+				elev.SetStopLight(elevator.LSOn)
+			} else {
+				elev.SetStopLight(elevator.LSOff)
+				elev.ContinueAction()
+
+			}
 		}
 	}
 }
@@ -116,7 +199,7 @@ func SetupLogger() {
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
 			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
+			TimeFormat: time.DateTime,
 		}),
 	))
 }

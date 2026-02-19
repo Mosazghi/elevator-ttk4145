@@ -1,7 +1,6 @@
 package statesync
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 // Easier to create test worldviews with this helper function
@@ -148,7 +148,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 		ID:           wv2ID,
 		TargetFloor:  3,
 		CurrentFloor: 2,
-		Direction:    elevio.Up,
+		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     []bool{false, false, false, true},
 		Behavior:     elevator.BMoving,
@@ -164,7 +164,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator should be in wv1")
 	assert.Equal(t, 3, wv1.ElevatorStates[wv2ID].TargetFloor, "target floor should match")
 	assert.Equal(t, 2, wv1.ElevatorStates[wv2ID].CurrentFloor, "current floor should match")
-	assert.Equal(t, elevio.Up, wv1.ElevatorStates[wv2ID].Direction, "direction should match")
+	assert.Equal(t, elevio.MDUp, wv1.ElevatorStates[wv2ID].Direction, "direction should match")
 	assert.True(t, wv1.ElevatorStates[wv2ID].CabCalls[3], "cab call for floor 3 should be set")
 }
 
@@ -213,25 +213,59 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 func TestSetHallCall(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
 
-	err := wv.SetHallCall(3, HDUp, HSAvailable)
+	// Test invalid floors
+	err := wv.NewHallCall(-1, HDUp)
+	assert.Error(t, err, "should reject negative floor")
 
-	assert.NoError(t, err, "should be a valid state")
+	err = wv.NewHallCall(4, HDUp)
+	assert.Error(t, err, "should reject floor > NumFloors")
 
-	err = wv.SetHallCall(3, HDUp, HSNone)
+	// Test boundary floors
+	err = wv.NewHallCall(0, HDUp)
+	assert.NoError(t, err, "should accept floor 0")
 
+	err = wv.NewHallCall(3, HDDown)
+	assert.NoError(t, err, "should accept last floor with HDDown")
+
+	// Test None -> Available with ConfirmedBy verification
+	err = wv.NewHallCall(2, HDUp)
+	assert.NoError(t, err, "should be a valid state transition")
+	assert.Equal(t, HSAvailable, wv.HallCalls[2][HDUp].State, "state should be Available")
+	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should contain localID")
+	assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be -1 for Available state")
+
+	// Test Available -> None (should fail without processing first)
+	err = wv.CompleteHallCall(2, HDUp)
 	assert.Error(t, err, "should not be able to transition from Available to None")
 
-	err = wv.SetHallCall(3, HDUp, HSProcessing)
+	// Manually assign the call to local elevator (simulates external assignment logic)
+	wv.HallCalls[2][HDUp].By = wv.LocalID
+
+	// Test Available -> Processing with field verification
+	err = wv.ProcessHallCall(2, HDUp)
 
 	assert.NoError(t, err, "should be able to transition from Available to Processing")
+	assert.Equal(t, HSProcessing, wv.HallCalls[2][HDUp].State, "state should be Processing")
+	assert.Equal(t, wv.LocalID, wv.HallCalls[2][HDUp].By, "By should be localID when processing")
+	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should be preserved")
 
-	err = wv.SetHallCall(3, HDUp, HSAvailable)
-
+	// Test Processing -> Available (should fail)
+	err = wv.NewHallCall(2, HDUp)
 	assert.Error(t, err, "should not be able to transition from Processing to Available")
 
-	err = wv.SetHallCall(3, HDUp, HSNone)
-
+	// Test Processing -> None (complete)
+	err = wv.CompleteHallCall(2, HDUp)
 	assert.NoError(t, err, "should be able to transition from Processing to None")
+	assert.Equal(t, HSNone, wv.HallCalls[2][HDUp].State, "state should be None")
+	// assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
+	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
+
+	// Test processing a call assigned to another elevator
+	wv.NewHallCall(1, HDDown)
+	wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
+	err = wv.ProcessHallCall(1, HDDown)
+	assert.Error(t, err, "should not be able to process call assigned to another elevator")
+	assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
 }
 
 func TestSetCabCall(t *testing.T) {
@@ -265,7 +299,7 @@ func TestSetLocalElevator(t *testing.T) {
 		ID:           1,
 		TargetFloor:  5, // invalid floor
 		CurrentFloor: 2,
-		Direction:    elevio.Up,
+		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSOpen,
 		CabCalls:     []bool{false, false, false, false},
 		Behavior:     elevator.BMoving,
@@ -295,8 +329,8 @@ func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 
 		// Verify the message can be unmarshaled
 		var received Message
-		err := json.Unmarshal(msg.Data, &received)
-		require.NoError(t, err, "broadcast data should be valid JSON")
+		err := msgpack.Unmarshal(msg.Data, &received)
+		require.NoError(t, err, "broadcast data should be valid msgpack")
 		assert.Equal(t, wv.LocalID, received.Wv.LocalID, "broadcast should contain local ID")
 
 	case <-time.After(BroadcastInterval * 2):
@@ -317,10 +351,10 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
 	// Set a hall call in wv2
-	wv2.SetHallCall(2, HDUp, HSAvailable)
+	wv2.NewHallCall(2, HDUp)
 
 	// Create and send a message from wv2
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -346,13 +380,13 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 
 	// Set original state
 	originalFloor := 2
-	wv.SetHallCall(originalFloor, HDUp, HSAvailable)
+	wv.NewHallCall(originalFloor, HDUp)
 
 	// Create a message with the same LocalID but different state
 	fakeOwnMessage := NewTestWorldView(1, 4) // Same ID as wv
-	fakeOwnMessage.SetHallCall(3, HDDown, HSAvailable)
+	fakeOwnMessage.NewHallCall(3, HDDown)
 
-	jsonData, err := BuildWvJson(fakeOwnMessage)
+	jsonData, err := BuildWvJSON(fakeOwnMessage)
 	require.NoError(t, err)
 
 	// Send the "own" message
@@ -386,7 +420,7 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 
 	// Send valid message to confirm system is still responsive
 	wv2 := NewTestWorldView(2, 4)
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -408,7 +442,7 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	errChan := make(chan error, 10)
 
 	// First, add wv2 to wv1
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
@@ -455,7 +489,7 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	wv1.mu.Unlock()
 
 	// Send message from "reappeared" peer
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -487,7 +521,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	// Writer goroutine
 	go func() {
 		for i := 0; i < 50; i++ {
-			wv.SetHallCall(i%4, HDUp, HSAvailable)
+			wv.NewHallCall(i%4, HDUp)
 			time.Sleep(10 * time.Millisecond)
 		}
 		done <- true
@@ -497,7 +531,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 2; i < 10; i++ {
 			peer := NewTestWorldView(i, 4)
-			jsonData, err := BuildWvJson(peer)
+			jsonData, err := BuildWvJSON(peer)
 			require.NoError(t, err)
 			rxChan <- network.UDPMessage{Data: jsonData}
 			time.Sleep(15 * time.Millisecond)
@@ -542,7 +576,7 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 	// Send valid message to verify system is still functional
 	wv2 := NewTestWorldView(2, 4)
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -576,7 +610,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	}
 
 	// Send wv2's state to wv1
-	jsonData, err := BuildWvJson(wv2)
+	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData}
@@ -599,7 +633,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 		ConfirmedBy: []int{2, 3, 4},
 	}
 
-	jsonData2, err := BuildWvJson(wv3)
+	jsonData2, err := BuildWvJSON(wv3)
 	require.NoError(t, err)
 
 	rxChan <- network.UDPMessage{Data: jsonData2}
