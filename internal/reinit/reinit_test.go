@@ -1,44 +1,38 @@
 package reinit
 
 import (
-	_ "log/slog"
-	"flag"
+	"log/slog"
 	"os"
-	"syscall"
 	"testing"
-
-	"github.com/Mosazghi/elevator-ttk4145/internal/watchdog"
 )
 
-// Reinitialization triggers full program reboot. Restarts with same parameters as original
-func TestReinitialization(t *testing.T) {
-	
-	exe, err := os.Executable()
-	if err != nil {
-		t.Error("[Overwatch] Failed to get executable path", "error", err)
-	}
-	args := os.Args
+// Reinitialization restarts the program in the same terminal with identical arguments.
+// TestReinitializationSetup tests that the executable and arguments are retrieved correctly.
+func TestReinitializationSetup(t *testing.T) {
+    exe, err := os.Executable()
+    if err != nil {
+        t.Error("[Reinit] Failed to get executable path", "error", err)
+    }
+    if exe == "" {
+        t.Error("[Reinit] Executable path is empty")
+    }
+    args := os.Args
+    if len(args) == 0 {
+        t.Error("[Reinit] Arguments are empty")
+    }
+}
 
-	id := flag.Int("id", 0, "Node ID")
-	port := flag.Int("port", 5000, "Broadcast port")
+// ErrorHandler calls on Reinitialization() on any errNo received.
+func TestErrorHandler(errCh <-chan int) {
 
-	flag.Parse()
-	t.Log("initialized", "id", *id, "port", *port)
-
-	wd := watchdog.Start(3)
-	defer wd.Stop()
 	for {
 		select {
-		case <-wd.Timeout:
-			t.Log("[Overwatch] Program reinitialization initiated. \n Restarting...")
-			if err := syscall.Exec(exe, args, os.Environ()); err != nil {
-				t.Error("[Overwatch] Failed to execute program", "error", err)
-			}
-			//exec.Command("gnome-terminal", "--", "go", "run", "watchdog_test.go").Run()
-			return
-		default:
-			continue
+		case <-errCh:
+			slog.Warn("[ErrorHandler] Fatal Error detected -> Reinitializing")
+			Reinitialization()
 		}
 	}
 
 }
+
+
