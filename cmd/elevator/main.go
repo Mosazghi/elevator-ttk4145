@@ -47,7 +47,7 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
+	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver, elevIoDriver.GetFloor())
 
 	network, err := network.NewNetwork(prodMode)
 	if err != nil {
@@ -75,7 +75,7 @@ func main() {
 
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
-		slog.Error("[StateMachine] SetHallCall", "error", err)
+		slog.Error("[StateMachine] SetLocalElevator", "error", err)
 	}
 
 	stateMachine(drvButtons,
@@ -152,7 +152,7 @@ func stateMachine(
 			localElvevator.CurrentFloor = floor
 			err := wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetHallCall", "error", err)
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			elev.SetCurrentFloorLight(floor)
 
@@ -176,7 +176,7 @@ func stateMachine(
 
 			err := wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetHallCall", "error", err)
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
 		case shouldStop := <-drvStop:

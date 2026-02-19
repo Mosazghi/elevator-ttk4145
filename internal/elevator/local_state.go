@@ -109,6 +109,13 @@ func (e *ElevatorState) ContinueAction() {
 	}
 }
 
+// OnInitBetweenFloors is called when the elevator is initialized between floors
+func (e *ElevatorState) OnInitBetweenFloors() {
+	fmt.Println("Initializing: Between floors")
+	e.io.SetMotorDirection(elevio.MDDown)
+	e.Behavior = BMoving
+}
+
 // Return an int along getNextAction func to indicate light on/off
 // Off happends when MDStop and BIdle while other is always on.
 
@@ -147,10 +154,16 @@ func (e *ElevatorState) String() {
 	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
 }
 
-func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
-	return ElevatorState{
-		driver,
-		direction,
-		behavior,
+func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver, initFloor int) ElevatorState {
+	elev := ElevatorState{
+		io:       driver,
+		Dir:      direction,
+		Behavior: behavior,
 	}
+
+	if initFloor == -1 {
+		elev.OnInitBetweenFloors()
+	}
+
+	return elev
 }

@@ -345,6 +345,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+						slog.Warn("adding confirmed by", "id", id, "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}
