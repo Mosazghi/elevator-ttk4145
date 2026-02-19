@@ -29,17 +29,17 @@ func newTestCtx() (wv *statesync.Worldview, channel chan statesync.Worldview) {
 }
 
 // CASE 1: Given a Hall-Call
-func TestGetNextOrder_HallCall(t *testing.T) {
+func TestGetNextAction_HallCall(t *testing.T) {
 	actionChan := make(chan elevator.Action)
 	wv, wvchan := newTestCtx()
-	go GetNextOrder(wvchan, actionChan)
+	go GetNextAction(wvchan, actionChan)
 
 	localElevator := wv.GetRemoteElevator()
 	localElevator.CurrentFloor = 0
 
-	errInit := wv.SetLocalElevator(&localElevator)
-	require.NoError(t, errInit, "Failed to set initial position of elevator")
-	err := wv.NewHallCall(3, statesync.HDUp)
+	err := wv.SetLocalElevator(&localElevator)
+	require.NoError(t, err, "Failed to set initial position of elevator")
+	err = wv.NewHallCall(3, statesync.HDUp)
 	require.NoError(t, err, "Failed to create new hall call")
 	cs, err := checksum.CalculateChecksum(wv)
 	require.NoError(t, err, "Failed to calculate checksum")
@@ -61,11 +61,11 @@ func TestGetNextOrder_HallCall(t *testing.T) {
 }
 
 // CASE 2: At Hall-call order
-func TestGetNextOrder_HallCall_Complete(t *testing.T) {
+func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	actionChan := make(chan elevator.Action)
 	wv, wvchan := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go GetNextOrder(wvchan, actionChan)
+	go GetNextAction(wvchan, actionChan)
 
 	elev.CurrentFloor = 3
 	err := wv.SetLocalElevator(&elev)
@@ -91,16 +91,16 @@ func TestGetNextOrder_HallCall_Complete(t *testing.T) {
 }
 
 // CASE 3: Given a Cab-call
-func TestGetNextOrder_CabCall(t *testing.T) {
+func TestGetNextAction_CabCall(t *testing.T) {
 	actionChan := make(chan elevator.Action)
 	wv, wvchan := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go GetNextOrder(wvchan, actionChan)
+	go GetNextAction(wvchan, actionChan)
 
 	elev.CurrentFloor = 0
-	errInit := wv.SetLocalElevator(&elev)
-	require.NoError(t, errInit, "Failed to set local elevator")
-	err := wv.SetCabCall(2, true)
+	err := wv.SetLocalElevator(&elev)
+	require.NoError(t, err, "Failed to set local elevator")
+	err = wv.SetCabCall(2, true)
 	require.NoError(t, err, "Failed to set cab call")
 	cs, err := checksum.CalculateChecksum(wv)
 	require.NoError(t, err, "Failed to calculate checksum")
@@ -121,11 +121,11 @@ func TestGetNextOrder_CabCall(t *testing.T) {
 }
 
 // CASE 4: At Cab-call order
-func TestGetNextOrder_CabCall_Complete(t *testing.T) {
+func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	actionChan := make(chan elevator.Action)
 	wv, wvchan := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go GetNextOrder(wvchan, actionChan)
+	go GetNextAction(wvchan, actionChan)
 
 	elev.CurrentFloor = 2
 	_ = wv.SetLocalElevator(&elev)
@@ -149,10 +149,10 @@ func TestGetNextOrder_CabCall_Complete(t *testing.T) {
 }
 
 // CASE 5: Moving while there are Cab-calls both above and under
-func TestGetNextOrder_CabCall_Direction(t *testing.T) {
+func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	actionChan := make(chan elevator.Action)
 	wv, wvchan := newTestCtx()
-	go GetNextOrder(wvchan, actionChan)
+	go GetNextAction(wvchan, actionChan)
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 3
@@ -182,19 +182,101 @@ func TestGetNextOrder_CabCall_Direction(t *testing.T) {
 	}
 }
 
-// CASE 6: Two elevators gets order and you're not supposed to perform it
-// func TestGetNextOrder_Two_Elevators(t *testing.T) {
-// 	wv, ctx := newTestCtx()
-//
-// 	otherElevator := statesync.NewRemoteElevatorState(ID+1, 3)
-// 	_ = wv.SetLocalElevator(otherElevator)
-// 	_ = wv.NewHallCall(4, statesync.HDUp)
-//
-// 	behavior, dir := ctx.GetNextOrder(ID)
-// 	hallCalls := wv.GetAllHallCalls()
-// 	call := hallCalls[4][statesync.HDUp]
-//
-// 	require.Equal(t, call.By, ID+1, "Elevator 2 should be assigend to hall-call order")
-// 	assert.Equal(t, dir, elevio.MDStop, "Expected Elevator 1 to stay still")
-// 	assert.Equal(t, behavior, elevator.BIdle, "Elevator 1 should be idle")
-// }
+// CASE 6: Two elevators
+func TestGetNextAction_multiElevator(t *testing.T) {
+	actionChan := make(chan elevator.Action)
+	wv, wvchan := newTestCtx()
+	go GetNextAction(wvchan, actionChan)
+
+	local := wv.GetRemoteElevator()
+	other := statesync.NewRemoteElevatorState(2, 4)
+	local.CurrentFloor = 2
+	other.CurrentFloor = 1
+
+	err := wv.SetLocalElevator(&local)
+	require.NoError(t, err, "Failed to set local elevator")
+	err = wv.SetOtherElevator(other, 2)
+	require.NoError(t, err, "Failed to set local elevator")
+
+	err = wv.NewHallCall(3, statesync.HDUp)
+	require.NoError(t, err, "Failed to create new hall call")
+	err = wv.NewHallCall(0, statesync.HDDown)
+	require.NoError(t, err, "Failed to create new hall call")
+	cs, err := checksum.CalculateChecksum(wv)
+	require.NoError(t, err, "Failed to calculate checksum")
+	err = wv.Merge(wv, cs)
+	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
+
+	select {
+	case action := <-actionChan:
+		hallCalls := wv.GetAllHallCalls()
+		callUp := hallCalls[3][statesync.HDUp]
+		callDown := hallCalls[0][statesync.HDDown]
+
+		// require.Equal(t, callUp.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
+		// require.Equal(t, callDown.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
+		require.Equal(t, callUp.By, 2, "Should be elevator 2 to take the task")
+		require.Equal(t, callDown.By, 1, "Should be elevator 1 to take the task")
+
+		assert.Equal(t, action.Direction, elevio.MDDown, "Expected elevator 1 to stop at order floor")
+		assert.Equal(t, action.Behavior, elevator.BMoving, "Elevator 1 should open door when arrived at order floor")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for action")
+	}
+}
+
+// Testing if we have mutliple hall calls that it chooses the closest
+func TestCalculateNearestHallCall(t *testing.T) {
+	wv, _ := newTestCtx()
+
+	elev := wv.GetRemoteElevator()
+	elev.CurrentFloor = 1
+	elev.Behavior = elevator.BMoving
+	elev.Direction = elevio.MDUp
+	err := wv.SetLocalElevator(&elev)
+	require.NoError(t, err, "Failed to set local elevator")
+
+	err = wv.NewHallCall(3, statesync.HDUp)
+	require.NoError(t, err, "Failed to create new hall call")
+	err = wv.NewHallCall(2, statesync.HDUp)
+	require.NoError(t, err, "Failed to create new hall call")
+	err = wv.NewHallCall(1, statesync.HDDown)
+	require.NoError(t, err, "Failed to create new hall call")
+	cs, err := checksum.CalculateChecksum(wv)
+	require.NoError(t, err, "Failed to calculate checksum")
+	err = wv.Merge(wv, cs)
+	require.NoError(t, err, "Failed to merge worldview after setting cab calls")
+	RunCost(wv)
+
+	nearestCall, direction := CalculateNearestHallCall(wv)
+
+	assert.Equal(t, 2, nearestCall, "Expected nearestCall to be on floor 3")
+	assert.Equal(t, statesync.HDUp, direction, "Expected the nearestCall to be upwards")
+}
+
+func TestCalculateNearestCabCall(t *testing.T) {
+	wv, _ := newTestCtx()
+
+	elev := wv.GetRemoteElevator()
+	elev.CurrentFloor = 1
+	elev.Behavior = elevator.BMoving
+	elev.Direction = elevio.MDUp
+	err := wv.SetLocalElevator(&elev)
+	require.NoError(t, err, "Failed to set local elevator")
+
+	err = wv.SetCabCall(3, true)
+	require.NoError(t, err, "Failed to create cab call")
+	err = wv.SetCabCall(2, true)
+	require.NoError(t, err, "Failed to create cab call")
+	err = wv.SetCabCall(0, true)
+	require.NoError(t, err, "Failed to create cab call")
+
+	cs, err := checksum.CalculateChecksum(wv)
+	require.NoError(t, err, "Failed to calculate checksum")
+	err = wv.Merge(wv, cs)
+	require.NoError(t, err, "Failed to merge worldview after setting cab calls")
+	RunCost(wv)
+
+	nearestCall := CalculateNearestCabCall(wv)
+	assert.Equal(t, 2, nearestCall, "Expected nearestCall to be on floor 2")
+}

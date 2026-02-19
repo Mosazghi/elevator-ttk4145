@@ -260,6 +260,17 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	return nil
 }
 
+func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+	if err := ValidateStateRemote(elev); err != nil {
+		return err
+	}
+
+	wv.ElevatorStates[id] = elev
+	return nil
+}
+
 // GetRemoteElevator returns the local elevator state from the worldview
 func (wv *Worldview) GetRemoteElevator() RemoteElevatorState {
 	wv.mu.RLock()
