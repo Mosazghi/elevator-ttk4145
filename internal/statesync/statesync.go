@@ -27,6 +27,30 @@ type Worldview struct {
 	mu                 *sync.RWMutex
 }
 
+// NewWorldView creates a new instance
+func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
+	wv := &Worldview{
+		LocalID:            localID,
+		ElevatorStates:     make(map[int]*RemoteElevatorState),
+		lostElevatorsState: make(map[int]*RemoteElevatorState),
+		HallCalls:          make([][2]HallCallPairState, numFloors),
+		NumFloors:          numFloors,
+		wvChan:             wvChan,
+		mu:                 &sync.RWMutex{},
+	}
+
+	for i := range wv.HallCalls {
+		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDDown].By = -1
+		wv.HallCalls[i][HDUp].By = -1
+	}
+
+	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
+
+	return wv
+}
+
 // deepCopy creates a deep copy of the worldview for safe concurrent marshaling
 // Must be called with read lock (RLock) held
 func (wv *Worldview) deepCopy() Worldview {
@@ -61,30 +85,7 @@ func (wv *Worldview) deepCopy() Worldview {
 	return wvCopy
 }
 
-// NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
-	wv := &Worldview{
-		LocalID:            localID,
-		ElevatorStates:     make(map[int]*RemoteElevatorState),
-		lostElevatorsState: make(map[int]*RemoteElevatorState),
-		HallCalls:          make([][2]HallCallPairState, numFloors),
-		NumFloors:          numFloors,
-		wvChan:             wvChan,
-		mu:                 &sync.RWMutex{},
-	}
-
-	for i := range wv.HallCalls {
-		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
-		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
-		wv.HallCalls[i][HDDown].By = -1
-		wv.HallCalls[i][HDUp].By = -1
-	}
-
-	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
-
-	return wv
-}
-
+// String converts worldview into string format
 func (wv Worldview) String() string {
 	return fmt.Sprintf("Worldview{LocalID: %d, ElevatorStates: %v, HallCalls: %v, NumFloors: %d}",
 		wv.LocalID, wv.ElevatorStates, wv.HallCalls, wv.NumFloors)
@@ -113,34 +114,18 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			}
 
 			wv.mu.Lock()
-			_, exists := wv.lostElevatorsState[otherWv.LocalID]
-			if exists {
-				slog.Info("Reappeared peer", "id", otherWv.LocalID)
-				delete(wv.lostElevatorsState, otherWv.LocalID)
-			}
+			wv.checkHasNodeReappeared(otherWv.LocalID)
 			wv.mu.Unlock()
 
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
-				continue
 			}
 
 		case <-ticker.C:
 			wv.mu.Lock()
 			wv.ElevatorStates[localID].LastSeenAt = time.Now()
-
-			for id, state := range wv.ElevatorStates {
-				if id == localID {
-					continue
-				}
-
-				if time.Since(state.LastSeenAt) > NodeTimeoutDelay {
-					slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
-					wv.lostElevatorsState[id] = state
-					delete(wv.ElevatorStates, id)
-				}
-			}
+			wv.checkForLostNodes()
 			wv.mu.Unlock()
 
 			wv.mu.RLock()
@@ -162,12 +147,50 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				slog.Error("Failed to marshal worldview", "error", err)
 				continue
 			}
-			// NOTE!: We can optimize by only sending diffs instead of the whole worldview
 			txChan <- network.UDPMessage{
 				Data:    data,
-				Address: nil, // Broadcast address is handled by the network layer
+				Address: nil,
 			}
 
+		}
+	}
+}
+
+// checkHasNodeReappeared deletes from `lostElevatorsState` if a node has reappeared
+func (wv *Worldview) checkHasNodeReappeared(id int) {
+	_, exists := wv.lostElevatorsState[id]
+	if exists {
+		slog.Info("Reappeared peer", "id", id)
+		delete(wv.lostElevatorsState, id)
+	}
+}
+
+// checkForLostNodes inserts into `lostElevatorsState` if a node has timed out
+func (wv *Worldview) checkForLostNodes() {
+	localID := wv.LocalID
+
+	for id, state := range wv.ElevatorStates {
+		if id == localID {
+			continue
+		}
+
+		if time.Since(state.LastSeenAt) > NodeTimeoutDelay {
+			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
+			wv.lostElevatorsState[id] = state
+			delete(wv.ElevatorStates, id)
+			// check if the lost node has pending orders
+			for floor := range wv.HallCalls {
+				for dir := range wv.HallCalls[floor] {
+					if wv.HallCalls[floor][dir].By == id {
+						slog.Warn("releaseing order (lost node)", "by", id)
+						wv.HallCalls[floor][dir] = HallCallPairState{
+							State:       HSNone,
+							By:          -1,
+							ConfirmedBy: []int{},
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -351,6 +374,17 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}
+
+				// release if elevator has been obstructed
+				if otherLocalState.IsObstructed && otherHCState.By == otherLocalState.ID {
+					slog.Warn("releaseing order (obstructed)", "by", otherLocalState.ID)
+					wv.HallCalls[floor][dir] = HallCallPairState{
+						State:       HSNone,
+						By:          -1,
+						ConfirmedBy: []int{},
+					}
+				}
+
 			}
 		}
 	}

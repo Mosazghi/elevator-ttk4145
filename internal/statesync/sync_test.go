@@ -559,6 +559,48 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 }
 
 // TestStartSyncing_NetworkErrors verifies error channel handling
+// TestLostNode_ReleasesPendingOrders verifies that hall calls assigned to a timed-out node are reset
+func TestLostNode_ReleasesPendingOrders(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+	lostID := 2
+
+	// Add peer and assign a hall call to it
+	wv.ElevatorStates[lostID] = NewRemoteElevatorState(lostID, 4)
+	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-NodeTimeoutDelay - time.Second)
+	wv.HallCalls[1][HDUp] = HallCallPairState{State: HSProcessing, By: lostID, ConfirmedBy: []int{lostID}}
+
+	wv.mu.Lock()
+	wv.checkForLostNodes()
+	wv.mu.Unlock()
+
+	assert.Equal(t, HSNone, wv.HallCalls[1][HDUp].State, "order should be released when node is lost")
+	assert.Equal(t, -1, wv.HallCalls[1][HDUp].By, "By should be reset to -1")
+	assert.Empty(t, wv.HallCalls[1][HDUp].ConfirmedBy, "ConfirmedBy should be cleared")
+	_, stillActive := wv.ElevatorStates[lostID]
+	assert.False(t, stillActive, "lost node should be removed from active elevators")
+}
+
+// TestObstructed_ReleasesPendingOrders verifies that orders assigned to an obstructed elevator are reset on merge
+func TestObstructed_ReleasesPendingOrders(t *testing.T) {
+	wv1 := NewTestWorldView(1, 4)
+	wv2 := NewTestWorldView(2, 4)
+
+	// wv1 believes wv2 is processing a call
+	wv1.HallCalls[2][HDDown] = HallCallPairState{State: HSProcessing, By: 2, ConfirmedBy: []int{1, 2}}
+
+	// wv2 reports itself as obstructed and still processing
+	wv2.ElevatorStates[2].IsObstructed = true
+	wv2.HallCalls[2][HDDown] = HallCallPairState{State: HSProcessing, By: 2, ConfirmedBy: []int{1, 2}}
+
+	cs, _ := checksum.CalculateChecksum(wv2)
+	err := wv1.Merge(wv2, cs)
+
+	require.NoError(t, err)
+	assert.Equal(t, HSNone, wv1.HallCalls[2][HDDown].State, "order should be released when elevator is obstructed")
+	assert.Equal(t, -1, wv1.HallCalls[2][HDDown].By, "By should be reset to -1")
+	assert.Empty(t, wv1.HallCalls[2][HDDown].ConfirmedBy, "ConfirmedBy should be cleared")
+}
+
 func TestStartSyncing_NetworkErrors(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
 

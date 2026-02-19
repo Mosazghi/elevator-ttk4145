@@ -12,6 +12,7 @@ type RemoteElevatorState struct {
 	ID           int                   `json:"id"`
 	TargetFloor  int                   `json:"target_floor"`
 	CurrentFloor int                   `json:"current_floor"`
+	IsObstructed bool                  `json:"is_obstructed"`
 	Direction    elevio.MotorDirection `json:"direction"`
 	DoorState    elevator.DoorState    `json:"door_state"`
 	CabCalls     []bool                `json:"cab_calls"`
