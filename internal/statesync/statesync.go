@@ -231,7 +231,6 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 	existing := wv.HallCalls[floor][dir]
 
-	existing := wv.HallCalls[floor][dir]
 	by := -1
 	timestamp := int64(0)
 	if state == HSProcessing {
