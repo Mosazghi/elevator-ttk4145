@@ -76,7 +76,7 @@ type ElevatorCallbacks interface {
 	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
 	SetCurrentFloorLight(floor int)
 	SetStopLight(state bool)
-	SetDoor(state bool)
+	SetDoor(state DoorState)
 	String()
 	Stop()
 }
@@ -161,5 +161,4 @@ func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elev
 		direction,
 		behavior,
 	}
-
 }

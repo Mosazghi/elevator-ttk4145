@@ -24,7 +24,6 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
-	trigger            chan struct{}
 	mu                 *sync.RWMutex
 }
 
@@ -63,7 +62,7 @@ func (wv *Worldview) deepCopy() Worldview {
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, trigger chan struct{}) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -71,7 +70,6 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview, trigger chan st
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
-		trigger:            trigger,
 		mu:                 &sync.RWMutex{},
 	}
 
@@ -247,10 +245,6 @@ func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
-	select {
-	case wv.trigger <- struct{}{}:
-	default:
-	}
 
 	return nil
 }
@@ -264,10 +258,6 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID] = elev
-	select {
-	case wv.trigger <- struct{}{}:
-	default:
-	}
 	return nil
 }
 

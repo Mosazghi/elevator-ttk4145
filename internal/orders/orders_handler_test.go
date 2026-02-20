@@ -22,7 +22,7 @@ const (
 func newTestCtx() (wv *statesync.Worldview, wvChan chan statesync.Worldview, triggerChan chan struct{}) {
 	wvChan = make(chan statesync.Worldview, 10)
 	triggerChan = make(chan struct{}, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, triggerChan)
+	worldview := statesync.NewWorldView(1, 4, wvChan)
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 

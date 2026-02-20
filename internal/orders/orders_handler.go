@@ -75,7 +75,6 @@ func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan ch
 				dir = elevio.MDUp
 			}
 			actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: dir}
-
 		}
 	}
 }
@@ -90,13 +89,8 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}) {
 					continue
 				}
 
-				// estates: [1 2]
-				// confirmedBy: [2]
-				// refactor
 				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= len(wv.ElevatorStates)
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
-
-				// slog.Info("[RunCost]", "state", hallCall[dir].State, "by", hallCall[dir].By, "ConfirmedBy", hallCall[dir].ConfirmedBy)
 
 				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
 					trigger <- struct{}{}
@@ -115,8 +109,6 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}) {
 						slog.Error("[RunCost] Got worldview error", "error", err)
 					}
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
-				} else {
-					// slog.Info("[RunCost] Not processing", "winner id", winner.id, "local id", wv.LocalID)
 				}
 			}
 		}

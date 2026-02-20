@@ -63,14 +63,14 @@ func main() {
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
 
-	trigger := make(chan struct{}, 1)
+	triggerAction := make(chan struct{}, 1)
 	actionChan := make(chan elevator.Action)
 	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(*localID, 4, wvChan, trigger)
+	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
-	go orders.GetNextAction(wv, trigger, actionChan)
+	go orders.GetNextAction(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
-	go orders.RunCost(wvChan, trigger)
+	go orders.RunCost(wvChan, triggerAction)
 
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
@@ -91,7 +91,7 @@ func main() {
 		drvFloors,
 		drvObstr,
 		drvStop,
-		trigger,
+		triggerAction,
 		actionChan,
 		&elev,
 		wv)
@@ -124,6 +124,10 @@ func stateMachine(
 			switch order.Button {
 			case elevio.Cab:
 				err = wv.SetCabCall(order.Floor, true)
+				select {
+				case trigger <- struct{}{}:
+				default:
+				}
 			case elevio.HallUp:
 				err = wv.NewHallCall(order.Floor, statesync.HDUp)
 			case elevio.HallDown:
@@ -141,6 +145,10 @@ func stateMachine(
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			elev.SetCurrentFloorLight(floor)
+			select {
+			case trigger <- struct{}{}:
+			default:
+			}
 
 		case action := <-actionChan:
 			err := elev.SetAction(action)
