@@ -10,6 +10,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
 )
@@ -58,27 +59,40 @@ func main() {
 
 	network.Start()
 
+	errChan := network.ErrChan()
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
-	errChan := network.ErrChan()
 
+	triggerAction := make(chan struct{}, 1)
+	actionChan := make(chan elevator.Action)
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
+	go orders.GetNextAction(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
+	go orders.RunCost(wvChan, triggerAction)
+
+	initFloor := elevIoDriver.GetFloor()
+	if initFloor == -1 {
+		slog.Warn("Elevator is between floors, moving down to the nearest floor")
+		elev.OnInitBetweenFloors()
+
+	}
 
 	localElvevator := wv.GetRemoteElevator()
-	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
+	localElvevator.CurrentFloor = 0
 
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
-		slog.Error("[StateMachine] SetHallCall", "error", err)
+		slog.Error("[StateMachine] SetLocalElevator", "error", err)
 	}
 
 	stateMachine(drvButtons,
 		drvFloors,
 		drvObstr,
 		drvStop,
+		triggerAction,
+		actionChan,
 		&elev,
 		wv)
 }
@@ -88,11 +102,12 @@ func stateMachine(
 	drvFloors chan int,
 	drvObst chan bool,
 	drvStop chan bool,
+	trigger chan struct{},
+	actionChan chan elevator.Action,
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
 ) {
 	prevBehavior := elevator.BIdle
-	goal := 0
 
 	for {
 		localElvevator := wv.GetRemoteElevator()
@@ -103,72 +118,43 @@ func stateMachine(
 		}
 
 		select {
-		case a := <-drvButtons:
-			slog.Debug("Button event received", "event", a)
+		case order := <-drvButtons:
+			slog.Debug("Button event received", "event", order)
 			var err error
-			switch a.Button {
+			switch order.Button {
 			case elevio.Cab:
-				err = wv.SetCabCall(a.Floor, true)
+				err = wv.SetCabCall(order.Floor, true)
+				select {
+				case trigger <- struct{}{}:
+				default:
+				}
 			case elevio.HallUp:
-				err = wv.NewHallCall(a.Floor, statesync.HDUp)
+				err = wv.NewHallCall(order.Floor, statesync.HDUp)
 			case elevio.HallDown:
-			default:
-				err = wv.NewHallCall(a.Floor, statesync.HDDown)
+				err = wv.NewHallCall(order.Floor, statesync.HDDown)
 			}
 
 			if err != nil {
 				slog.Error("failed to set new cab/hall call", "err", err)
 			}
 
-		case order := <-drvButtons:
-			var hcDir statesync.HallCallDir
-			// TODO: Why not just use order.Button instead of comparing floors?
-			if order.Floor > localElvevator.CurrentFloor {
-				hcDir = statesync.HDUp
-			} else {
-				hcDir = statesync.HDDown
-			}
-
-			goal = order.Floor
-			elev.SetDoor(elevator.DSClosed)
-
-			if order.Button == elevio.Cab {
-				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
-
-				if order.Floor == localElvevator.CurrentFloor {
-					slog.Info("[StateMachine] Allready on floor")
-					continue
-				}
-
-				if order.Floor > localElvevator.CurrentFloor {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
-				} else {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
-				}
-
-				// worldView.SetCabCall(order.Floor, true)
-			} else {
-				err := wv.NewHallCall(order.Floor, hcDir)
-				if err != nil {
-					slog.Error("[StateMachine] SetHallCall", "error", err)
-				}
-
-			}
-
 		case floor := <-drvFloors:
 			localElvevator.CurrentFloor = floor
 			err := wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetHallCall", "error", err)
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+			}
+			elev.SetCurrentFloorLight(floor)
+			select {
+			case trigger <- struct{}{}:
+			default:
 			}
 
-			elev.SetCurrentFloorLight(floor)
-			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
-
-			if goal == floor {
-				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
-				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
-				elev.SetDoor(elevator.DSOpen)
+		case action := <-actionChan:
+			err := elev.SetAction(action)
+			slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
+			if err != nil {
+				slog.Error("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 			}
 
 		// FIXME: Implement logic for this
@@ -178,7 +164,14 @@ func stateMachine(
 		// Obsructuion is only resolved/accur during open door not movement
 		case isObstructed := <-drvObst:
 			if isObstructed {
-				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
+				localElvevator.Behavior = elevator.BObstructed
+			} else {
+				localElvevator.Behavior = elevator.BIdle
+			}
+
+			err := wv.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
 		case shouldStop := <-drvStop:
@@ -188,7 +181,6 @@ func stateMachine(
 			} else {
 				elev.SetStopLight(elevator.LSOff)
 				elev.ContinueAction()
-
 			}
 		}
 	}

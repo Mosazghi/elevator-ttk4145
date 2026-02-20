@@ -176,6 +176,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
+	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -187,12 +188,13 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	existing := wv.HallCalls[floor][dir]
+
 	by := -1
 	if state == HSProcessing {
+		existing.By = wv.LocalID
 		by = wv.LocalID
 	}
-
-	existing := wv.HallCalls[floor][dir]
 
 	confirmedBy := []int{}
 
@@ -259,6 +261,17 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	return nil
 }
 
+func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+	if err := ValidateStateRemote(elev); err != nil {
+		return err
+	}
+
+	wv.ElevatorStates[id] = elev
+	return nil
+}
+
 // GetRemoteElevator returns the local elevator state from the worldview
 func (wv *Worldview) GetRemoteElevator() RemoteElevatorState {
 	wv.mu.RLock()
@@ -312,6 +325,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
+	// slog.Info("merging", "hc", wv.HallCalls)
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -332,22 +346,26 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
-					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+
+					// map contains
+					_, exists := wv.ElevatorStates[id]
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && exists {
+						slog.Warn("[Merge] adding confirmed by", "id", id, "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("[Merge] new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
-						slog.Info("confirming order", "floor", floor, "dir", dir)
+						slog.Info("[Merge] confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 					}
 				}
 			case HSProcessing:
 				if ourHCState.State == HSAvailable {
-					slog.Error("processing order", "by", otherHCState.By, "floor", floor, "dir", dir)
+					slog.Error("[Merge] processing order", "by", otherHCState.By, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}
