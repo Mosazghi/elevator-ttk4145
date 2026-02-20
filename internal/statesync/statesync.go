@@ -24,6 +24,7 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
+	trigger            chan struct{}
 	mu                 *sync.RWMutex
 }
 
@@ -62,7 +63,7 @@ func (wv *Worldview) deepCopy() Worldview {
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, trigger chan struct{}) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -70,6 +71,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
+		trigger:            trigger,
 		mu:                 &sync.RWMutex{},
 	}
 
@@ -176,7 +178,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
-	slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
+	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -245,6 +247,10 @@ func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
+	select {
+	case wv.trigger <- struct{}{}:
+	default:
+	}
 
 	return nil
 }
@@ -258,6 +264,10 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID] = elev
+	select {
+	case wv.trigger <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -325,9 +335,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
-	// pretty print floor 0 and 3 using json
-	slog.Info("Elevator state", "floor 0", other.HallCalls[0])
-	slog.Info("Elevator state", "floor 3", other.HallCalls[other.NumFloors-1])
+	// slog.Info("merging", "hc", wv.HallCalls)
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -352,22 +360,22 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					// map contains
 					_, exists := wv.ElevatorStates[id]
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && exists {
-						slog.Warn("adding confirmed by", "id", id, "floor", floor, "dir", dir)
+						slog.Warn("[Merge] adding confirmed by", "id", id, "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("[Merge] new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
-						slog.Info("confirming order", "floor", floor, "dir", dir)
+						slog.Info("[Merge] confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 					}
 				}
 			case HSProcessing:
 				if ourHCState.State == HSAvailable {
-					slog.Error("processing order", "by", otherHCState.By, "floor", floor, "dir", dir)
+					slog.Error("[Merge] processing order", "by", otherHCState.By, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 				}

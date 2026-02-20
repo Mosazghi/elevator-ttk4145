@@ -59,16 +59,18 @@ func main() {
 
 	network.Start()
 
+	errChan := network.ErrChan()
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
-	errChan := network.ErrChan()
 
-	wvChan := make(chan statesync.Worldview, 20)
+	trigger := make(chan struct{}, 1)
 	actionChan := make(chan elevator.Action)
-	wv := statesync.NewWorldView(*localID, 4, wvChan)
+	wvChan := make(chan statesync.Worldview, 20)
+	wv := statesync.NewWorldView(*localID, 4, wvChan, trigger)
 
+	go orders.GetNextAction(wv, trigger, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
-	go orders.GetNextAction(wvChan, actionChan)
+	go orders.RunCost(wvChan, trigger)
 
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
@@ -89,17 +91,18 @@ func main() {
 		drvFloors,
 		drvObstr,
 		drvStop,
+		trigger,
 		actionChan,
 		&elev,
 		wv)
 }
 
-// /FIXME: Not receivng new worldview when cab call
 func stateMachine(
 	drvButtons chan elevio.ButtonEvent,
 	drvFloors chan int,
 	drvObst chan bool,
 	drvStop chan bool,
+	trigger chan struct{},
 	actionChan chan elevator.Action,
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
@@ -115,45 +118,21 @@ func stateMachine(
 		}
 
 		select {
-		case a := <-drvButtons:
-			slog.Debug("Button event received", "event", a)
+		case order := <-drvButtons:
+			slog.Debug("Button event received", "event", order)
 			var err error
-			switch a.Button {
+			switch order.Button {
 			case elevio.Cab:
-				err = wv.SetCabCall(a.Floor, true)
+				err = wv.SetCabCall(order.Floor, true)
 			case elevio.HallUp:
-				err = wv.NewHallCall(a.Floor, statesync.HDUp)
+				err = wv.NewHallCall(order.Floor, statesync.HDUp)
 			case elevio.HallDown:
-			default:
-				err = wv.NewHallCall(a.Floor, statesync.HDDown)
+				err = wv.NewHallCall(order.Floor, statesync.HDDown)
 			}
 
 			if err != nil {
 				slog.Error("failed to set new cab/hall call", "err", err)
 			}
-
-		// case order := <-drvButtons:
-		// 	var hcDir statesync.HallCallDir
-		//
-		// 	if order.Button == elevio.HallUp {
-		// 		hcDir = statesync.HDUp
-		// 	} else {
-		// 		hcDir = statesync.HDDown
-		// 	}
-		//
-		// 	if order.Button == elevio.Cab {
-		// 		slog.Info("[StateMachine] Set cabcall", "floor", order.Floor)
-		// 		err := wv.SetCabCall(order.Floor, true)
-		// 		if err != nil {
-		// 			slog.Error("[StateMachine] SetCabCall", "err", err)
-		// 		}
-		// 		elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
-		// 	} else {
-		// 		err := wv.NewHallCall(order.Floor, hcDir)
-		// 		if err != nil {
-		// 			slog.Error("[StateMachine] SetHallCall", "error", err)
-		// 		}
-		// 	}
 
 		case floor := <-drvFloors:
 			localElvevator.CurrentFloor = floor
@@ -165,6 +144,7 @@ func stateMachine(
 
 		case action := <-actionChan:
 			err := elev.SetAction(action)
+			slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 			if err != nil {
 				slog.Error("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 			}
