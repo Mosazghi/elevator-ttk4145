@@ -2,10 +2,11 @@ package config
 
 import (
 	"flag"
-	"fmt"
 	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParse_Defaults(t *testing.T) {
@@ -21,17 +22,10 @@ func TestParse_Defaults(t *testing.T) {
 
 	cfg := Parse()
 
-	if cfg.id != 1 {
-		t.Errorf("expected id 1, got %d", cfg.id)
-	}
-	if cfg.port != 10000 {
-		t.Errorf("expected port 10000, got %d", cfg.port)
-	}
+	assert.Equal(t, 1, cfg.id)
+	assert.Equal(t, 30000, cfg.port)
 	slog.Info("[Default values]", "port", cfg.port, "id", cfg.id)
 }
-
-
-
 
 func TestParse_Id(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
@@ -43,13 +37,8 @@ func TestParse_Id(t *testing.T) {
 
 	cfg := Parse()
 
-	if cfg.id != 42 {
-		t.Errorf("expected id 42, got %d", cfg.id)
-	}
-
-	if cfg.port != 10000 {
-		t.Errorf("expected port 10000, got %d", cfg.port)
-	}
+	assert.Equal(t, 42, cfg.id)
+	assert.Equal(t, 30000, cfg.port)
 }
 
 func TestParse_Port(t *testing.T) {
@@ -62,13 +51,8 @@ func TestParse_Port(t *testing.T) {
 
 	cfg := Parse()
 
-	if cfg.port != 8080 {
-		t.Errorf("expected port 8080, got %d", cfg.port)
-	}
-	if cfg.id != 1 {
-		t.Errorf("expected id 1, got %d", cfg.id)
-	}
-	fmt.Printf("port: %v\n", cfg.port)
+	assert.Equal(t, 8080, cfg.port)
+	assert.Equal(t, 1, cfg.id)
 }
 
 func TestParse_All(t *testing.T) {
@@ -81,10 +65,6 @@ func TestParse_All(t *testing.T) {
 
 	cfg := Parse()
 
-	if cfg.id != 3 {
-		t.Errorf("expected id 3, got %d", cfg.id)
-	}
-	if cfg.port != 9999 {
-		t.Errorf("expected port 9999, got %d", cfg.port)
-	}
+	assert.Equal(t, 3, cfg.id)
+	assert.Equal(t, 9999, cfg.port)
 }
