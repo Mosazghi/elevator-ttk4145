@@ -68,14 +68,19 @@ func main() {
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	localElvevator := wv.GetRemoteElevator()
-	localElvevator.CurrentFloor = elevIoDriver.GetFloor()
+	initFloor := elevIoDriver.GetFloor()
 
+	if initFloor == -1 {
+		elev.OnInitBetweenFloors()
+	}
+
+	localElvevator.CurrentFloor = 0
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
 		slog.Error("[StateMachine] SetHallCall", "error", err)
 	}
 
-	stateMachine(drvButtons,
+	stateMachineSimulationOnly(drvButtons,
 		drvFloors,
 		drvObstr,
 		drvStop,
@@ -83,7 +88,17 @@ func main() {
 		wv)
 }
 
-func stateMachine(
+func SetupLogger() {
+	w := os.Stderr
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level:      slog.LevelDebug,
+			TimeFormat: time.DateTime,
+		}),
+	))
+}
+
+func stateMachineSimulationOnly(
 	drvButtons chan elevio.ButtonEvent,
 	drvFloors chan int,
 	drvObst chan bool,
@@ -107,6 +122,7 @@ func stateMachine(
 		case order := <-drvButtons:
 			var err error
 			var hc statesync.HallCallDir
+
 			switch order.Button {
 			case elevio.Cab:
 				err = wv.SetCabCall(order.Floor, true)
@@ -114,7 +130,6 @@ func stateMachine(
 				err = wv.NewHallCall(order.Floor, statesync.HDUp)
 				hc = statesync.HDUp
 			case elevio.HallDown:
-			default:
 				err = wv.NewHallCall(order.Floor, statesync.HDDown)
 				hc = statesync.HDDown
 			}
@@ -125,45 +140,12 @@ func stateMachine(
 
 			slog.Warn("sleeping...")
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(1000 * time.Millisecond)
 			err = wv.ProcessHallCall(order.Floor, hc)
 			slog.Info("should have processed")
 
 			if err != nil {
 				slog.Error("failed to process hall call", "err", err)
-			}
-			var hcDir statesync.HallCallDir
-			// TODO: Why not just use order.Button instead of comparing floors?
-			if order.Floor > localElvevator.CurrentFloor {
-				hcDir = statesync.HDUp
-			} else {
-				hcDir = statesync.HDDown
-			}
-
-			goal = order.Floor
-			elev.SetDoor(elevator.DSClosed)
-
-			if order.Button == elevio.Cab {
-				elev.SetCallLight(elevio.Cab, order.Floor, elevator.LSOn)
-
-				if order.Floor == localElvevator.CurrentFloor {
-					slog.Info("[StateMachine] Allready on floor")
-					continue
-				}
-
-				if order.Floor > localElvevator.CurrentFloor {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDUp})
-				} else {
-					elev.SetAction(elevator.Action{elevator.BMoving, elevio.MDDown})
-				}
-
-				// worldView.SetCabCall(order.Floor, true)
-			} else {
-				err := wv.NewHallCall(order.Floor, hcDir)
-				if err != nil {
-					slog.Error("[StateMachine] NewHallCall", "error", err)
-				}
-
 			}
 
 		case floor := <-drvFloors:
@@ -197,9 +179,8 @@ func stateMachine(
 		// Obstruct means we cannot close the door
 		// Obsructuion is only resolved/accur during open door not movement
 		case isObstructed := <-drvObst:
-			if isObstructed {
-				// worldView.UpdateLocalElevatorBehavior(elevator.BObstructed)
-			}
+			localElvevator.IsObstructed = isObstructed
+			wv.SetLocalElevator(&localElvevator)
 
 		case shouldStop := <-drvStop:
 			if shouldStop {
@@ -210,16 +191,7 @@ func stateMachine(
 				elev.ContinueAction()
 
 			}
+			elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
 		}
 	}
-}
-
-func SetupLogger() {
-	w := os.Stderr
-	slog.SetDefault(slog.New(
-		tint.NewHandler(w, &tint.Options{
-			Level:      slog.LevelDebug,
-			TimeFormat: time.DateTime,
-		}),
-	))
 }

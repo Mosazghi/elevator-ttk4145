@@ -109,6 +109,13 @@ func (e *ElevatorState) ContinueAction() {
 	}
 }
 
+func (e *ElevatorState) OnInitBetweenFloors() {
+	fmt.Println("Initializing: Between floors")
+
+	e.io.SetMotorDirection(elevio.MDDown)
+	e.Behavior = BMoving
+}
+
 // Return an int along getNextAction func to indicate light on/off
 // Off happends when MDStop and BIdle while other is always on.
 
