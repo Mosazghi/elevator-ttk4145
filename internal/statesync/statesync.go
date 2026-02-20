@@ -218,6 +218,7 @@ func (wv *Worldview) releaseAnyOrders() {
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
+	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -229,9 +230,12 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	}
 
 	existing := wv.HallCalls[floor][dir]
+
+	existing := wv.HallCalls[floor][dir]
 	by := -1
 	timestamp := int64(0)
 	if state == HSProcessing {
+		existing.By = wv.LocalID
 		existing.By = wv.LocalID
 		by = wv.LocalID
 		timestamp = time.Now().UnixMilli()
@@ -300,6 +304,17 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID] = elev
+	return nil
+}
+
+func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
+	wv.mu.Lock()
+	defer wv.mu.Unlock()
+	if err := ValidateStateRemote(elev); err != nil {
+		return err
+	}
+
+	wv.ElevatorStates[id] = elev
 	return nil
 }
 
@@ -389,10 +404,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("[Merge] new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
-						slog.Info("confirming order", "floor", floor, "dir", dir)
+						slog.Info("[Merge] confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 
 					}

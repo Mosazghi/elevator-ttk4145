@@ -76,7 +76,7 @@ type ElevatorCallbacks interface {
 	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
 	SetCurrentFloorLight(floor int)
 	SetStopLight(state bool)
-	SetDoor(state bool)
+	SetDoor(state DoorState)
 	String()
 	Stop()
 }
@@ -102,13 +102,14 @@ func (e *ElevatorState) StopAction() {
 	e.io.SetMotorDirection(elevio.MDStop)
 }
 
-// Continue the currently active order
+// ContinueAction the currently active order
 func (e *ElevatorState) ContinueAction() {
 	if e.Behavior == BMoving {
 		e.io.SetMotorDirection(e.Dir)
 	}
 }
 
+// OnInitBetweenFloors is called when the elevator is initialized between floors
 func (e *ElevatorState) OnInitBetweenFloors() {
 	fmt.Println("Initializing: Between floors")
 
@@ -127,8 +128,6 @@ func (e *ElevatorState) SetDoor(state DoorState) {
 
 	if state == DSOpen {
 		e.io.SetDoorOpenLamp(true)
-	} else {
-		e.io.SetDoorOpenLamp(false)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
 )
@@ -58,32 +59,40 @@ func main() {
 
 	network.Start()
 
+	errChan := network.ErrChan()
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
-	errChan := network.ErrChan()
 
+	triggerAction := make(chan struct{}, 1)
+	actionChan := make(chan elevator.Action)
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
+	go orders.GetNextAction(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
+	go orders.RunCost(wvChan, triggerAction)
 
-	localElvevator := wv.GetRemoteElevator()
 	initFloor := elevIoDriver.GetFloor()
-
 	if initFloor == -1 {
+		slog.Warn("Elevator is between floors, moving down to the nearest floor")
 		elev.OnInitBetweenFloors()
+
 	}
 
+	localElvevator := wv.GetRemoteElevator()
 	localElvevator.CurrentFloor = 0
+
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
-		slog.Error("[StateMachine] SetHallCall", "error", err)
+		slog.Error("[StateMachine] SetLocalElevator", "error", err)
 	}
 
 	stateMachineSimulationOnly(drvButtons,
 		drvFloors,
 		drvObstr,
 		drvStop,
+		triggerAction,
+		actionChan,
 		&elev,
 		wv)
 }
@@ -103,11 +112,12 @@ func stateMachineSimulationOnly(
 	drvFloors chan int,
 	drvObst chan bool,
 	drvStop chan bool,
+	trigger chan struct{},
+	actionChan chan elevator.Action,
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
 ) {
 	prevBehavior := elevator.BIdle
-	goal := 0
 
 	for {
 		localElvevator := wv.GetRemoteElevator()
@@ -118,34 +128,24 @@ func stateMachineSimulationOnly(
 		}
 
 		select {
-
 		case order := <-drvButtons:
+			slog.Debug("Button event received", "event", order)
 			var err error
-			var hc statesync.HallCallDir
-
 			switch order.Button {
 			case elevio.Cab:
 				err = wv.SetCabCall(order.Floor, true)
+				select {
+				case trigger <- struct{}{}:
+				default:
+				}
 			case elevio.HallUp:
 				err = wv.NewHallCall(order.Floor, statesync.HDUp)
-				hc = statesync.HDUp
 			case elevio.HallDown:
 				err = wv.NewHallCall(order.Floor, statesync.HDDown)
-				hc = statesync.HDDown
 			}
 
 			if err != nil {
 				slog.Error("failed to set new cab/hall call", "err", err)
-			}
-
-			slog.Warn("sleeping...")
-
-			time.Sleep(1000 * time.Millisecond)
-			err = wv.ProcessHallCall(order.Floor, hc)
-			slog.Info("should have processed")
-
-			if err != nil {
-				slog.Error("failed to process hall call", "err", err)
 			}
 
 		case floor := <-drvFloors:
@@ -154,23 +154,17 @@ func stateMachineSimulationOnly(
 			if err != nil {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
-
 			elev.SetCurrentFloorLight(floor)
-			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
-
-			if goal == floor {
-				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
-				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
-				elev.SetDoor(elevator.DSOpen)
+			select {
+			case trigger <- struct{}{}:
+			default:
 			}
 
-			err = wv.CompleteHallCall(floor, statesync.HDDown)
+		case action := <-actionChan:
+			err := elev.SetAction(action)
+			slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 			if err != nil {
-				slog.Error("[StateMachine] CompleteHallCall", "error", err)
-			}
-			err = wv.CompleteHallCall(floor, statesync.HDUp)
-			if err != nil {
-				slog.Error("[StateMachine] CompleteHallCall", "error", err)
+				slog.Error("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 			}
 
 		// FIXME: Implement logic for this
@@ -179,8 +173,16 @@ func stateMachineSimulationOnly(
 		// Obstruct means we cannot close the door
 		// Obsructuion is only resolved/accur during open door not movement
 		case isObstructed := <-drvObst:
-			localElvevator.IsObstructed = isObstructed
-			wv.SetLocalElevator(&localElvevator)
+			if isObstructed {
+				localElvevator.Behavior = elevator.BObstructed
+			} else {
+				localElvevator.Behavior = elevator.BIdle
+			}
+
+			err := wv.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+			}
 
 		case shouldStop := <-drvStop:
 			if shouldStop {
@@ -189,9 +191,17 @@ func stateMachineSimulationOnly(
 			} else {
 				elev.SetStopLight(elevator.LSOff)
 				elev.ContinueAction()
-
 			}
-			elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
 		}
 	}
+}
+
+func SetupLogger() {
+	w := os.Stderr
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level:      slog.LevelDebug,
+			TimeFormat: time.DateTime,
+		}),
+	))
 }
