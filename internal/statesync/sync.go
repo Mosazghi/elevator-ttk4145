@@ -211,7 +211,6 @@ func (wv *Worldview) releaseAnyOrders() {
 
 		}
 	}
-
 }
 
 // setHallCall changes the given floor's Up/Down state based on dir

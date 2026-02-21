@@ -1,5 +1,6 @@
 package orders
 
+// TODO: Refactor order handler by merging FSM/GetNextAction/RunCost etc...
 import (
 	"log/slog"
 	"math"
@@ -28,6 +29,7 @@ type Calls struct {
 	CabCalls  []bool
 }
 
+// NOTE: Currently used for testing purposes
 func FSM(floorTrigger chan statesync.Worldview, actionChan chan any) {
 	for wv := range floorTrigger {
 		remote := wv.GetRemoteElevator()
@@ -119,7 +121,6 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 		hallCalls := wv.GetAllHallCalls()
 
 		// Propagate light changes driven by any hall call state transition
-		// (e.g. a new order arriving from another node).
 		for floor := range hallCalls {
 			for d := range hallCalls[floor] {
 				dir := statesync.HallCallDir(d)

@@ -5,8 +5,8 @@ import (
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 )
 
+// HasOrdersAbove checks if local elevator has active/processing orders above
 func HasOrdersAbove(e *statesync.RemoteElevatorState, calls Calls) bool {
-	// has any hall calls above?
 	for f := e.CurrentFloor + 1; f < len(calls.CabCalls); f++ {
 		for b := range calls.HallCalls[f] {
 			if calls.HallCalls[f][b].By == e.ID && calls.HallCalls[f][b].State == statesync.HSProcessing {
@@ -15,7 +15,6 @@ func HasOrdersAbove(e *statesync.RemoteElevatorState, calls Calls) bool {
 		}
 	}
 
-	// has any cab calls above?
 	for f := e.CurrentFloor + 1; f < len(e.CabCalls); f++ {
 		if e.CabCalls[f] {
 			return true
@@ -24,6 +23,7 @@ func HasOrdersAbove(e *statesync.RemoteElevatorState, calls Calls) bool {
 	return false
 }
 
+// HasOrdersAbove checks if local elevator has active/processing orders below
 func HasOrdersBelow(e *statesync.RemoteElevatorState, calls Calls) bool {
 	for f := 0; f < e.CurrentFloor; f++ {
 		for b := range calls.HallCalls[f] {
@@ -32,7 +32,6 @@ func HasOrdersBelow(e *statesync.RemoteElevatorState, calls Calls) bool {
 			}
 		}
 	}
-	// has any cab calls below?
 	for f := 0; f < e.CurrentFloor; f++ {
 		if calls.CabCalls[f] {
 			return true
@@ -42,6 +41,7 @@ func HasOrdersBelow(e *statesync.RemoteElevatorState, calls Calls) bool {
 	return false
 }
 
+// ShouldStop checks if local elevator should stop based current orders
 func ShouldStop(e *statesync.RemoteElevatorState, calls Calls) bool {
 	switch e.Direction {
 	case elevio.MDDown:
