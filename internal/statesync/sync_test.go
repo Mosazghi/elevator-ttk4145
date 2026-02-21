@@ -634,7 +634,6 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
 func TestStartSyncing_ConfirmationMerging(t *testing.T) {
-	t.Skip("skipping")
 	wv1 := NewTestWorldView(1, 4)
 	wv2 := NewTestWorldView(2, 4)
 	wv3 := NewTestWorldView(3, 4)

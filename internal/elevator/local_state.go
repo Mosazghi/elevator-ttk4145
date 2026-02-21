@@ -18,6 +18,7 @@ const (
 	BIdle Behavior = iota
 	BMoving
 	BObstructed
+	BDoorOpen
 )
 
 const (
@@ -66,13 +67,28 @@ type ElevatorState struct {
 	Behavior Behavior
 }
 
-type Action struct {
+type MoveAction struct {
 	Behavior  Behavior
 	Direction elevio.MotorDirection
 }
 
+type StopAction struct{}
+type LightAction struct {
+	ButtonType elevio.ButtonType
+	Floor      int
+	State      LightState
+}
+
+type DoorAction struct {
+	Open bool
+}
+
+type ClearOrdersAction struct {
+	Floor int
+}
+
 type ElevatorCallbacks interface {
-	SetAction(behavior Behavior, direction elevio.MotorDirection)
+	DoMotorAction(action MoveAction)
 	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
 	SetCurrentFloorLight(floor int)
 	SetStopLight(state bool)
@@ -81,7 +97,7 @@ type ElevatorCallbacks interface {
 	Stop()
 }
 
-func (e *ElevatorState) SetAction(action Action) error {
+func (e *ElevatorState) DoMotorAction(action MoveAction) error {
 	if action.Behavior != BIdle &&
 		action.Behavior != BMoving &&
 		action.Behavior != BObstructed {
@@ -128,6 +144,8 @@ func (e *ElevatorState) SetDoor(state DoorState) {
 
 	if state == DSOpen {
 		e.io.SetDoorOpenLamp(true)
+	} else {
+		e.io.SetDoorOpenLamp(false)
 	}
 }
 
@@ -151,14 +169,26 @@ func (e *ElevatorState) SetCurrentFloorLight(floor int) {
 	e.io.SetFloorIndicator(floor)
 }
 
+// SetAllLights syncs all button lamps to the given call state.
+// hallCalls[floor][0] = HallDown light (matches statesync.HDDown=0),
+// hallCalls[floor][1] = HallUp light (matches statesync.HDUp=1).
+// The caller is responsible for converting statesync types to [][2]bool before calling this.
+func (e *ElevatorState) SetAllLights(numFloors int, cabCalls []bool, hallCalls [][2]bool) {
+	for floor := 0; floor < numFloors; floor++ {
+		e.io.SetButtonLamp(elevio.HallDown, floor, hallCalls[floor][0])
+		e.io.SetButtonLamp(elevio.HallUp, floor, hallCalls[floor][1])
+		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
+	}
+}
+
 func (e *ElevatorState) String() {
 	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
 }
 
 func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
 	return ElevatorState{
-		driver,
-		direction,
-		behavior,
+		io:       driver,
+		Dir:      direction,
+		Behavior: behavior,
 	}
 }

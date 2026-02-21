@@ -3,6 +3,7 @@ package orders
 import (
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
@@ -22,17 +23,40 @@ const (
 	PenaltyWrongDirection = 10
 )
 
-func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan chan elevator.Action) {
+type Calls struct {
+	HallCalls [][2]statesync.HallCallPairState
+	CabCalls  []bool
+}
+
+func FSM(floorTrigger chan statesync.Worldview, actionChan chan any) {
+	for wv := range floorTrigger {
+		remote := wv.GetRemoteElevator()
+		calls := Calls{
+			HallCalls: wv.GetAllHallCalls(),
+			CabCalls:  remote.CabCalls,
+		}
+		if ShouldStop(&remote, calls) {
+			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			actionChan <- elevator.DoorAction{Open: true}
+
+			time.Sleep(2 * time.Second)
+			actionChan <- elevator.DoorAction{Open: false}
+
+			slog.Info("Should stop")
+		}
+	}
+}
+
+func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any) {
 	for range trigger {
 		nearestHallCall, hallCallDirection := CalculateNearestHallCall(wv)
 		nearestCabCall := CalculateNearestCabCall(wv)
 
+		slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+
 		if nearestHallCall == -1 && nearestCabCall == -1 {
-			slog.Info("[GetNextOrder]", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 			continue
 		}
-
-		slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 
 		local := wv.GetRemoteElevator()
 
@@ -54,7 +78,7 @@ func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan ch
 
 		if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
 			slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-			actionChan <- elevator.Action{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 			continue
 		}
 
@@ -66,7 +90,7 @@ func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan ch
 			} else {
 				dir = elevio.MDUp
 			}
-			actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: dir}
+			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
 		} else {
 			// slog.Info("[GetNextOrder] sending action for hallcall", "floor", nearestHallCall)
 			if nearestHallCall < local.CurrentFloor {
@@ -74,14 +98,48 @@ func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan ch
 			} else {
 				dir = elevio.MDUp
 			}
-			actionChan <- elevator.Action{Behavior: elevator.BMoving, Direction: dir}
+			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
 		}
 	}
 }
 
-func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}) {
+// hallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
+// statesync: HDDown=0, HDUp=1 | elevio: HallUp=0, HallDown=1
+func hallDirToButtonType(dir statesync.HallCallDir) elevio.ButtonType {
+	if dir == statesync.HDDown {
+		return elevio.HallDown
+	}
+	return elevio.HallUp
+}
+
+func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan chan any) {
+	prevHC := make(map[int][2]statesync.HallCallPairState)
+
 	for wv := range wvChan {
 		hallCalls := wv.GetAllHallCalls()
+
+		// Propagate light changes driven by any hall call state transition
+		// (e.g. a new order arriving from another node).
+		for floor := range hallCalls {
+			for d := range hallCalls[floor] {
+				dir := statesync.HallCallDir(d)
+				prevState := prevHC[floor][dir]
+				currentState := hallCalls[floor][dir]
+
+				if prevState.State != currentState.State {
+					btn := hallDirToButtonType(dir)
+					switch currentState.State {
+					case statesync.HSNone:
+						actionChan <- elevator.LightAction{ButtonType: btn, Floor: floor, State: elevator.LSOff}
+					case statesync.HSAvailable, statesync.HSProcessing:
+						actionChan <- elevator.LightAction{ButtonType: btn, Floor: floor, State: elevator.LSOn}
+					}
+				}
+				temp := prevHC[floor]
+				temp[dir] = currentState
+				prevHC[floor] = temp
+			}
+		}
 
 		for floor, hallCall := range hallCalls {
 			for dir := range hallCalls[floor] {
@@ -110,6 +168,8 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}) {
 					}
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
+				slog.Warn("[RunCost] Order picked up!")
+				actionChan <- elevator.LightAction{ButtonType: hallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: elevator.LSOn}
 			}
 		}
 
@@ -210,6 +270,8 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))
 
 		currentElevatorCost.cost += distance
+
+		currentElevatorCost.cost += id
 
 		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
 

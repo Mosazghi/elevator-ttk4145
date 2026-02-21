@@ -229,39 +229,35 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	var result HallCallPairState
+
 	existing := wv.HallCalls[floor][dir]
 
-	by := -1
-	timestamp := int64(0)
 	if state == HSProcessing {
 		existing.By = wv.LocalID
-		existing.By = wv.LocalID
-		by = wv.LocalID
-		timestamp = time.Now().UnixMilli()
+		result.By = wv.LocalID
+		result.Timestamp = time.Now().UnixMilli()
+	} else {
+		result.By = -1
+		result.Timestamp = 0
 	}
-
-	confirmedBy := []int{}
 
 	switch state {
 	case HSAvailable:
-		confirmedBy = append(confirmedBy, wv.LocalID)
+		result.ConfirmedBy = append(result.ConfirmedBy, wv.LocalID)
 	case HSProcessing:
 		if existing.By != wv.LocalID {
 			return fmt.Errorf("cannot process hall call that is not assigned to local elevator")
 		}
-		confirmedBy = make([]int, len(existing.ConfirmedBy))
-		copy(confirmedBy, existing.ConfirmedBy)
+		result.ConfirmedBy = make([]int, len(existing.ConfirmedBy))
+		copy(result.ConfirmedBy, existing.ConfirmedBy)
 	case HSNone:
 	default:
 	}
 
-	wv.HallCalls[floor][dir] = HallCallPairState{
-		State:       state,
-		By:          by,
-		ConfirmedBy: confirmedBy,
-		Timestamp:   timestamp,
-	}
+	result.State = state
 
+	wv.HallCalls[floor][dir] = result
 	return nil
 }
 
@@ -372,8 +368,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
 	//
-	slog.Debug("hc[0]", "0", wv.HallCalls[0])
-	slog.Debug("hc[3]", "3", wv.HallCalls[3])
+	slog.Debug("hc[0]", "hc", wv.HallCalls[0])
+	slog.Debug("hc[3]", "hc", wv.HallCalls[3])
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -383,8 +379,9 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			ourHCState := wv.HallCalls[floor][dir]
 			switch otherHCState.State {
 			case HSNone:
-				if ourHCState.State == HSProcessing && otherHCState.By == other.LocalID {
-					slog.Info("order completed", "by", otherHCState.By, "floor", floor, "dir", dir, "prevState", ourHCState.State)
+				// ourHCState.By holds who was assigned; otherHCState.By is -1 after reset.
+				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {
+					slog.Info("order completed", "by", ourHCState.By, "floor", floor, "dir", dir, "prevState", ourHCState.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:       HSNone,
@@ -403,10 +400,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("[Merge] new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
-						slog.Info("[Merge] confirming order", "floor", floor, "dir", dir)
+						slog.Info("confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 
 					}
@@ -427,6 +424,22 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
 					wv.HallCalls[floor][dir].Timestamp = otherHCState.Timestamp
+					// Carry over ConfirmedBy from the winning node and add ourselves.
+					for _, id := range otherHCState.ConfirmedBy {
+						if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+							wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
+						}
+					}
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
+						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
+					}
+				} else if ourHCState.State == HSProcessing {
+					// Already processing — merge ConfirmedBy lists so all nodes converge.
+					for _, id := range otherHCState.ConfirmedBy {
+						if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+							wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
+						}
+					}
 				}
 
 			}

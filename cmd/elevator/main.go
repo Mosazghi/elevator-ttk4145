@@ -64,13 +64,15 @@ func main() {
 	rxChan := network.RxChan()
 
 	triggerAction := make(chan struct{}, 1)
-	actionChan := make(chan elevator.Action)
+	floorTrigger := make(chan statesync.Worldview, 1)
+	actionChan := make(chan any)
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
+	go orders.FSM(floorTrigger, actionChan)
 	go orders.GetNextAction(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
-	go orders.RunCost(wvChan, triggerAction)
+	go orders.RunCost(wvChan, triggerAction, actionChan)
 
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
@@ -92,9 +94,10 @@ func main() {
 		drvObstr,
 		drvStop,
 		triggerAction,
+		floorTrigger,
 		actionChan,
 		&elev,
-		wv)
+		*wv)
 }
 
 func stateMachine(
@@ -103,9 +106,10 @@ func stateMachine(
 	drvObst chan bool,
 	drvStop chan bool,
 	trigger chan struct{},
-	actionChan chan elevator.Action,
+	floorTrigger chan statesync.Worldview,
+	actionChan chan any,
 	elev *elevator.ElevatorState,
-	wv *statesync.Worldview,
+	wv statesync.Worldview,
 ) {
 	prevBehavior := elevator.BIdle
 
@@ -146,15 +150,42 @@ func stateMachine(
 			}
 			elev.SetCurrentFloorLight(floor)
 			select {
-			case trigger <- struct{}{}:
+			case floorTrigger <- wv:
 			default:
 			}
 
 		case action := <-actionChan:
-			err := elev.SetAction(action)
-			slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
-			if err != nil {
-				slog.Error("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
+			slog.Debug("Action received", "action", fmt.Sprintf("%T", action), "value", action)
+			switch action := action.(type) {
+			case elevator.MoveAction:
+				err := elev.DoMotorAction(action)
+				slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
+
+				if err != nil {
+					slog.Error("failed to set action", "err", err)
+				}
+
+				if action.Behavior == elevator.BDoorOpen {
+					remote := wv.GetRemoteElevator()
+					rawHallCalls := wv.GetAllHallCalls()
+
+					hallLights := make([][2]bool, remote.NumFloors)
+					for f, pair := range rawHallCalls {
+						hallLights[f][statesync.HDDown] = pair[statesync.HDDown].State != statesync.HSNone
+						hallLights[f][statesync.HDUp] = pair[statesync.HDUp].State != statesync.HSNone
+					}
+
+					elev.SetAllLights(remote.NumFloors, remote.CabCalls, hallLights)
+					// elev.SetCallLight()
+				}
+			case elevator.DoorAction:
+				if action.Open {
+					elev.SetDoor(elevator.DSOpen)
+				} else {
+					elev.SetDoor(elevator.DSClosed)
+				}
+			case elevator.LightAction:
+				elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			}
 
 		// FIXME: Implement logic for this
@@ -248,7 +279,7 @@ func stateMachineSimulationOnly(
 			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
 
 			if goal == floor {
-				elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
+				elev.DoMotorAction(elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop})
 				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
 				elev.SetDoor(elevator.DSOpen)
 			}
@@ -280,7 +311,7 @@ func stateMachineSimulationOnly(
 				elev.ContinueAction()
 
 			}
-			elev.SetAction(elevator.Action{elevator.BIdle, elevio.MDStop})
+			elev.DoMotorAction(elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop})
 		}
 	}
 }
