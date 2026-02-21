@@ -367,8 +367,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
 	//
-	slog.Debug("hc[0]", "hc", wv.HallCalls[0])
-	slog.Debug("hc[3]", "hc", wv.HallCalls[3])
+	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
+	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
 
 	// -- Validate Hall Calls --
 	// Merge hall calls

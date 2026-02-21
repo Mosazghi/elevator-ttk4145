@@ -64,29 +64,29 @@ func main() {
 	rxChan := network.RxChan()
 
 	triggerAction := make(chan struct{}, 1)
-	floorTrigger := make(chan statesync.Worldview, 1)
-	actionChan := make(chan any)
+	actionChan := make(chan any, 2)
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
-	go orders.FSM(floorTrigger, actionChan)
 	go orders.GetNextAction(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
 	go orders.RunCost(wvChan, triggerAction, actionChan)
 
+	localElvevator := wv.GetRemoteElevator()
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
 		slog.Warn("Elevator is between floors, moving down to the nearest floor")
 		elev.OnInitBetweenFloors()
+		localElvevator.Behavior = elevator.BMoving
+		localElvevator.Direction = elevio.MDDown
 
 	}
 
-	localElvevator := wv.GetRemoteElevator()
 	localElvevator.CurrentFloor = 0
 
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
-		slog.Error("[StateMachine] SetLocalElevator", "error", err)
+		slog.Error("SetLocalElevator", "error", err)
 	}
 
 	stateMachine(drvButtons,
@@ -94,10 +94,9 @@ func main() {
 		drvObstr,
 		drvStop,
 		triggerAction,
-		floorTrigger,
 		actionChan,
 		&elev,
-		*wv)
+		wv)
 }
 
 func stateMachine(
@@ -106,10 +105,9 @@ func stateMachine(
 	drvObst chan bool,
 	drvStop chan bool,
 	trigger chan struct{},
-	floorTrigger chan statesync.Worldview,
 	actionChan chan any,
 	elev *elevator.ElevatorState,
-	wv statesync.Worldview,
+	wv *statesync.Worldview,
 ) {
 	prevBehavior := elevator.BIdle
 
@@ -149,10 +147,7 @@ func stateMachine(
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			elev.SetCurrentFloorLight(floor)
-			select {
-			case floorTrigger <- wv:
-			default:
-			}
+			orders.FSM(wv, actionChan)
 
 		case action := <-actionChan:
 			slog.Debug("Action received", "action", fmt.Sprintf("%T", action), "value", action)
@@ -165,19 +160,26 @@ func stateMachine(
 					slog.Error("failed to set action", "err", err)
 				}
 
+				localElvevator.Behavior = action.Behavior
+				localElvevator.Direction = action.Direction
+				wv.SetLocalElevator(&localElvevator)
+				if err != nil {
+					slog.Error("SetLocalElevator", "err", err)
+				}
+
 				if action.Behavior == elevator.BDoorOpen {
-					remote := wv.GetRemoteElevator()
 					rawHallCalls := wv.GetAllHallCalls()
 
-					hallLights := make([][2]bool, remote.NumFloors)
+					hallLights := make([][2]bool, localElvevator.NumFloors)
 					for f, pair := range rawHallCalls {
 						hallLights[f][statesync.HDDown] = pair[statesync.HDDown].State != statesync.HSNone
 						hallLights[f][statesync.HDUp] = pair[statesync.HDUp].State != statesync.HSNone
 					}
 
-					elev.SetAllLights(remote.NumFloors, remote.CabCalls, hallLights)
+					elev.SetAllLights(localElvevator.NumFloors, localElvevator.CabCalls, hallLights)
 					// elev.SetCallLight()
 				}
+
 			case elevator.DoorAction:
 				if action.Open {
 					elev.SetDoor(elevator.DSOpen)

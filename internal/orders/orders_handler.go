@@ -4,7 +4,6 @@ package orders
 import (
 	"log/slog"
 	"math"
-	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
@@ -30,21 +29,24 @@ type Calls struct {
 }
 
 // NOTE: Currently used for testing purposes
-func FSM(floorTrigger chan statesync.Worldview, actionChan chan any) {
-	for wv := range floorTrigger {
-		remote := wv.GetRemoteElevator()
-		calls := Calls{
-			HallCalls: wv.GetAllHallCalls(),
-			CabCalls:  remote.CabCalls,
-		}
+func FSM(wv *statesync.Worldview, actionChan chan any) {
+	remote := wv.GetRemoteElevator()
+	calls := Calls{
+		HallCalls: wv.GetAllHallCalls(),
+		CabCalls:  remote.CabCalls,
+	}
+	slog.Warn("cab", "c", calls.CabCalls)
+	if remote.Behavior == elevator.BMoving {
 		if ShouldStop(&remote, calls) {
 			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 			actionChan <- elevator.DoorAction{Open: true}
 
-			time.Sleep(2 * time.Second)
-			actionChan <- elevator.DoorAction{Open: false}
-
 			slog.Info("Should stop")
+			// time.Sleep(2 * time.Second)
+			// actionChan <- elevator.DoorAction{Open: false}
+
+			remote.Behavior = elevator.BDoorOpen
+			wv.SetLocalElevator(&remote)
 		}
 	}
 }
