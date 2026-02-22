@@ -22,9 +22,9 @@ func TestParse_Defaults(t *testing.T) {
 
 	cfg := Parse()
 
-	assert.Equal(t, 1, cfg.id)
-	assert.Equal(t, 30000, cfg.port)
-	slog.Info("[Default values]", "port", cfg.port, "id", cfg.id)
+	assert.Equal(t, 1, cfg.Id)
+	assert.Equal(t, 30000, cfg.Port)
+	slog.Info("[Default values]", "port", cfg.Port, "id", cfg.Id)
 }
 
 func TestParse_Id(t *testing.T) {
@@ -37,8 +37,8 @@ func TestParse_Id(t *testing.T) {
 
 	cfg := Parse()
 
-	assert.Equal(t, 42, cfg.id)
-	assert.Equal(t, 30000, cfg.port)
+	assert.Equal(t, 42, cfg.Id)
+	assert.Equal(t, 30000, cfg.Port)
 }
 
 func TestParse_Port(t *testing.T) {
@@ -51,8 +51,8 @@ func TestParse_Port(t *testing.T) {
 
 	cfg := Parse()
 
-	assert.Equal(t, 8080, cfg.port)
-	assert.Equal(t, 1, cfg.id)
+	assert.Equal(t, 8080, cfg.Port)
+	assert.Equal(t, 1, cfg.Id)
 }
 
 func TestParse_All(t *testing.T) {
@@ -65,6 +65,6 @@ func TestParse_All(t *testing.T) {
 
 	cfg := Parse()
 
-	assert.Equal(t, 3, cfg.id)
-	assert.Equal(t, 9999, cfg.port)
+	assert.Equal(t, 3, cfg.Id)
+	assert.Equal(t, 9999, cfg.Port)
 }
