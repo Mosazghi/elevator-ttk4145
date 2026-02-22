@@ -12,8 +12,8 @@ const (
 )
 
 const (
-	HDDown HallCallDir = iota
-	HDUp
+	HDUp HallCallDir = iota
+	HDDown
 )
 
 type HallCallPairState struct {

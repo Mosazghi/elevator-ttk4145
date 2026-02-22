@@ -57,6 +57,10 @@ func (b Behavior) String() string {
 		return "IDLE"
 	case BMoving:
 		return "MOVING"
+	case BObstructed:
+		return "OBSTRUCTED"
+	case BDoorOpen:
+		return "DOOR_OPEN"
 	}
 	return "UNKNOWN"
 }
@@ -73,12 +77,14 @@ type MoveAction struct {
 }
 
 type (
-	StopAction  struct{}
-	LightAction struct {
+	StopAction        struct{}
+	SingleLightAction struct {
 		ButtonType elevio.ButtonType
 		Floor      int
 		State      LightState
 	}
+
+	SetAllLightsAction struct{}
 )
 
 type DoorAction struct {

@@ -140,6 +140,12 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
+			// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
+			select {
+			case wv.wvChan <- *wv:
+			default:
+			}
+
 			txChan <- network.UDPMessage{
 				Data:    data,
 				Address: nil,
@@ -215,6 +221,7 @@ func (wv *Worldview) releaseAnyOrders() {
 
 // setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
+	slog.Info("Setting hall call", "floor", floor, "dir", dir, "state", state)
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
@@ -229,6 +236,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	}
 
 	var result HallCallPairState
+	result.State = state
 
 	existing := wv.HallCalls[floor][dir]
 
@@ -251,10 +259,11 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		result.ConfirmedBy = make([]int, len(existing.ConfirmedBy))
 		copy(result.ConfirmedBy, existing.ConfirmedBy)
 	case HSNone:
+		if existing.State == HSProcessing && existing.By != wv.LocalID {
+			return fmt.Errorf("cannot complete hall call that is being processed by another elevator")
+		}
 	default:
 	}
-
-	result.State = state
 
 	wv.HallCalls[floor][dir] = result
 	return nil
@@ -277,6 +286,7 @@ func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
 
 // SetCabCall changes cab call state at floor
 func (wv *Worldview) SetCabCall(floor int, state bool) error {
+	slog.Info("setting cab call", "floor", floor, "state", state)
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
@@ -443,12 +453,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 			}
 		}
-	}
-
-	// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
-	select {
-	case wv.wvChan <- *wv:
-	default:
 	}
 
 	return nil

@@ -64,7 +64,7 @@ func main() {
 	rxChan := network.RxChan()
 
 	triggerAction := make(chan struct{}, 1)
-	actionChan := make(chan any, 2)
+	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
@@ -115,17 +115,16 @@ func stateMachine(
 		localElvevator := wv.GetRemoteElevator()
 
 		if prevBehavior != elev.Behavior {
-			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", elev.Behavior)
 			prevBehavior = elev.Behavior
 		}
 
 		select {
 		case order := <-drvButtons:
-			slog.Debug("Button event received", "event", order)
 			var err error
 			switch order.Button {
 			case elevio.Cab:
 				err = wv.SetCabCall(order.Floor, true)
+				elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
 				select {
 				case trigger <- struct{}{}:
 				default:
@@ -150,11 +149,10 @@ func stateMachine(
 			orders.FSM(wv, actionChan)
 
 		case action := <-actionChan:
-			slog.Debug("Action received", "action", fmt.Sprintf("%T", action), "value", action)
+			slog.Info("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
 			switch action := action.(type) {
 			case elevator.MoveAction:
 				err := elev.DoMotorAction(action)
-				slog.Info("[StateMachine] SetAction", "Behavior", action.Behavior.String(), "Direction", action.Direction.String())
 
 				if err != nil {
 					slog.Error("failed to set action", "err", err)
@@ -167,27 +165,52 @@ func stateMachine(
 					slog.Error("SetLocalElevator", "err", err)
 				}
 
-				if action.Behavior == elevator.BDoorOpen {
-					rawHallCalls := wv.GetAllHallCalls()
-
-					hallLights := make([][2]bool, localElvevator.NumFloors)
-					for f, pair := range rawHallCalls {
-						hallLights[f][statesync.HDDown] = pair[statesync.HDDown].State != statesync.HSNone
-						hallLights[f][statesync.HDUp] = pair[statesync.HDUp].State != statesync.HSNone
+			case elevator.SingleLightAction:
+				elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+			case elevator.SetAllLightsAction:
+				hcs := wv.GetAllHallCalls()
+				slog.Info("Hc", "hc", hcs)
+				for floor, active := range localElvevator.CabCalls {
+					if active {
+						elev.SetCallLight(elevio.Cab, floor, elevator.LSOn)
+					} else {
+						elev.SetCallLight(elevio.Cab, floor, elevator.LSOff)
 					}
-
-					elev.SetAllLights(localElvevator.NumFloors, localElvevator.CabCalls, hallLights)
-					// elev.SetCallLight()
 				}
 
+				for floor := range hcs {
+					for dir, state := range hcs[floor] {
+						btnType := elevio.HallUp
+						if dir == int(statesync.HDDown) {
+							btnType = elevio.HallDown
+						}
+
+						if state.State != statesync.HSNone {
+							slog.Warn("Setting light for hall call",
+								"floor", floor,
+								"direction", dir,
+								"state", state.State)
+							elev.SetCallLight(btnType, floor, elevator.LSOn)
+						} else {
+
+							slog.Warn("Clearing light for hall call",
+								"floor", floor,
+								"direction", dir,
+								"state", state.State)
+							elev.SetCallLight(btnType, floor, elevator.LSOff)
+						}
+					}
+				}
 			case elevator.DoorAction:
 				if action.Open {
 					elev.SetDoor(elevator.DSOpen)
 				} else {
 					elev.SetDoor(elevator.DSClosed)
 				}
-			case elevator.LightAction:
-				elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+			default:
+				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
+
+				// elev.SetCallLight()
 			}
 
 		// FIXME: Implement logic for this
@@ -324,6 +347,7 @@ func SetupLogger() {
 		tint.NewHandler(w, &tint.Options{
 			Level:      slog.LevelDebug,
 			TimeFormat: time.DateTime,
+			AddSource:  true,
 		}),
 	))
 }

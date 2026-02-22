@@ -35,28 +35,27 @@ func FSM(wv *statesync.Worldview, actionChan chan any) {
 		HallCalls: wv.GetAllHallCalls(),
 		CabCalls:  remote.CabCalls,
 	}
-	slog.Warn("cab", "c", calls.CabCalls)
 	if remote.Behavior == elevator.BMoving {
-		if ShouldStop(&remote, calls) {
+		if ShouldStop(remote, calls) {
+			slog.Info("Should stop")
 			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 			actionChan <- elevator.DoorAction{Open: true}
+			ClearAtCurrentFloor(wv, remote, &calls)
+			actionChan <- elevator.SetAllLightsAction{}
 
-			slog.Info("Should stop")
 			// time.Sleep(2 * time.Second)
-			// actionChan <- elevator.DoorAction{Open: false}
-
-			remote.Behavior = elevator.BDoorOpen
-			wv.SetLocalElevator(&remote)
+			actionChan <- elevator.DoorAction{Open: false}
+			slog.Info("Finished stopping")
 		}
 	}
 }
 
 func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any) {
 	for range trigger {
-		nearestHallCall, hallCallDirection := CalculateNearestHallCall(wv)
+		nearestHallCall, _ := CalculateNearestHallCall(wv)
 		nearestCabCall := CalculateNearestCabCall(wv)
 
-		slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+		// slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 
 		if nearestHallCall == -1 && nearestCabCall == -1 {
 			continue
@@ -64,25 +63,25 @@ func GetNextAction(wv *statesync.Worldview, trigger chan struct{}, actionChan ch
 
 		local := wv.GetRemoteElevator()
 
-		if nearestHallCall == local.CurrentFloor {
-			err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
-			if err != nil {
-				slog.Error("[GetNextOrder] Got worldview error", "error", err)
-			}
-			slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
-		}
+		// if nearestHallCall == local.CurrentFloor {
+		// 	err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
+		// 	if err != nil {
+		// 		// slog.Error("[GetNextOrder] Got worldview error", "error", err)
+		// 	}
+		// 	// slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
+		// }
 
-		if nearestCabCall == local.CurrentFloor {
-			err := wv.SetCabCall(nearestCabCall, false)
-			if err != nil {
-				slog.Error("[GetNextOrder] Got worldview error", "error", err)
-			}
-			slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
-		}
+		// if nearestCabCall == local.CurrentFloor {
+		// 	err := wv.SetCabCall(nearestCabCall, false)
+		// 	if err != nil {
+		// 		// slog.Error("[GetNextOrder] Got worldview error", "error", err)
+		// 	}
+		// 	// slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
+		// }
 
 		if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
-			slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			// slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+			// actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 			continue
 		}
 
@@ -133,9 +132,9 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 					btn := hallDirToButtonType(dir)
 					switch currentState.State {
 					case statesync.HSNone:
-						actionChan <- elevator.LightAction{ButtonType: btn, Floor: floor, State: elevator.LSOff}
+						actionChan <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOff}
 					case statesync.HSAvailable, statesync.HSProcessing:
-						actionChan <- elevator.LightAction{ButtonType: btn, Floor: floor, State: elevator.LSOn}
+						actionChan <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOn}
 					}
 				}
 				temp := prevHC[floor]
@@ -158,7 +157,7 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 				}
 
 				if !isConfirmedByAll || !isAvailable {
-					slog.Info("[RunCost]", "confirmed by all", isConfirmedByAll, "available", isAvailable)
+					// slog.Info("[RunCost]", "confirmed by all", isConfirmedByAll, "available", isAvailable)
 					continue
 				}
 
@@ -167,12 +166,12 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 				if winner.id == wv.LocalID {
 					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 					if err != nil {
-						slog.Error("[RunCost] Got worldview error", "error", err)
+						// slog.Error("[RunCost] Got worldview error", "error", err)
 					}
-					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
+					// slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
 				slog.Warn("[RunCost] Order picked up!")
-				actionChan <- elevator.LightAction{ButtonType: hallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: elevator.LSOn}
+				actionChan <- elevator.SingleLightAction{ButtonType: hallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: elevator.LSOn}
 			}
 		}
 
