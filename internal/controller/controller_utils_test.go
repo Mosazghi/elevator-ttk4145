@@ -1,21 +1,21 @@
-package orders
+package controller
 
 import (
 	"testing"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/stretchr/testify/assert"
 )
 
 const utilsTestID = 1
 const utilsNumFloors = 4
 
-func newElev(id, floor int, dir elevio.MotorDirection) *statesync.RemoteElevatorState {
+func newElev(id, floor int, dir elevio.MotorDirection) statesync.RemoteElevatorState {
 	e := statesync.NewRemoteElevatorState(id, utilsNumFloors)
 	e.CurrentFloor = floor
 	e.Direction = dir
-	return e
+	return *e
 }
 
 func emptyCalls() Calls {

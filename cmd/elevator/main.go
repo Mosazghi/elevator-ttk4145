@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
@@ -68,7 +69,7 @@ func main() {
 	wvChan := make(chan statesync.Worldview, 20)
 	wv := statesync.NewWorldView(*localID, 4, wvChan)
 
-	go orders.GetNextAction(wv, triggerAction, actionChan)
+	go controller.Start(wv, triggerAction, actionChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
 	go orders.RunCost(wvChan, triggerAction, actionChan)
 
@@ -146,7 +147,7 @@ func stateMachine(
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			elev.SetCurrentFloorLight(floor)
-			orders.FSM(wv, actionChan)
+			controller.OnFloorArrival(wv, actionChan)
 
 		case action := <-actionChan:
 			slog.Info("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)

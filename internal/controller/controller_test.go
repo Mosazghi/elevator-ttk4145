@@ -1,4 +1,4 @@
-package orders
+package controller
 
 import (
 	"fmt"
@@ -52,7 +52,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	trigger <- struct{}{}
 	select {
@@ -88,7 +88,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	trigger <- struct{}{}
 	select {
@@ -109,7 +109,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	actionChan := make(chan any)
 	wv, _, trigger := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 0
 	err := wv.SetLocalElevator(&elev)
@@ -140,7 +140,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	actionChan := make(chan any)
 	wv, _, trigger := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 2
 	_ = wv.SetLocalElevator(&elev)
@@ -168,7 +168,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	actionChan := make(chan any)
 	wv, _, trigger := newTestCtx()
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 2
@@ -200,7 +200,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 func TestGetNextAction_multiElevator(t *testing.T) {
 	actionChan := make(chan any)
 	wv, _, trigger := newTestCtx()
-	go GetNextAction(wv, trigger, actionChan)
+	go Start(wv, trigger, actionChan)
 
 	local := wv.GetRemoteElevator()
 	other := statesync.NewRemoteElevatorState(2, 4)
