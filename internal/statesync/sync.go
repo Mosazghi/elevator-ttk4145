@@ -27,8 +27,33 @@ type Worldview struct {
 	mu                 *sync.RWMutex
 }
 
+// NewWorldView creates a new instance
+func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
+	wv := &Worldview{
+		LocalID:            localID,
+		ElevatorStates:     make(map[int]*RemoteElevatorState),
+		lostElevatorsState: make(map[int]*RemoteElevatorState),
+		HallCalls:          make([][2]HallCallPairState, numFloors),
+		NumFloors:          numFloors,
+		wvChan:             wvChan,
+		mu:                 &sync.RWMutex{},
+	}
+
+	for i := range wv.HallCalls {
+		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
+		wv.HallCalls[i][HDDown].By = -1
+		wv.HallCalls[i][HDUp].By = -1
+	}
+
+	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
+
+	return wv
+}
+
 // deepCopy creates a deep copy of the worldview for safe concurrent marshaling
 // Must be called with read lock (RLock) held
+// NOTE: when adding new fields, make sure to include them in the deep copy as well.
 func (wv *Worldview) deepCopy() Worldview {
 	wvCopy := Worldview{
 		LocalID:   wv.LocalID,
@@ -54,6 +79,7 @@ func (wv *Worldview) deepCopy() Worldview {
 				State:       call.State,
 				By:          call.By,
 				ConfirmedBy: confirmedCopy,
+				Timestamp:   call.Timestamp,
 			}
 		}
 	}
@@ -61,30 +87,7 @@ func (wv *Worldview) deepCopy() Worldview {
 	return wvCopy
 }
 
-// NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
-	wv := &Worldview{
-		LocalID:            localID,
-		ElevatorStates:     make(map[int]*RemoteElevatorState),
-		lostElevatorsState: make(map[int]*RemoteElevatorState),
-		HallCalls:          make([][2]HallCallPairState, numFloors),
-		NumFloors:          numFloors,
-		wvChan:             wvChan,
-		mu:                 &sync.RWMutex{},
-	}
-
-	for i := range wv.HallCalls {
-		wv.HallCalls[i][HDDown].ConfirmedBy = make([]int, 0)
-		wv.HallCalls[i][HDUp].ConfirmedBy = make([]int, 0)
-		wv.HallCalls[i][HDDown].By = -1
-		wv.HallCalls[i][HDUp].By = -1
-	}
-
-	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
-
-	return wv
-}
-
+// String converts worldview into string format
 func (wv Worldview) String() string {
 	return fmt.Sprintf("Worldview{LocalID: %d, ElevatorStates: %v, HallCalls: %v, NumFloors: %d}",
 		wv.LocalID, wv.ElevatorStates, wv.HallCalls, wv.NumFloors)
@@ -113,59 +116,103 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			}
 
 			wv.mu.Lock()
-			_, exists := wv.lostElevatorsState[otherWv.LocalID]
-			if exists {
-				slog.Info("Reappeared peer", "id", otherWv.LocalID)
-				delete(wv.lostElevatorsState, otherWv.LocalID)
-			}
+			wv.checkHasNodeReappeared(otherWv.LocalID)
 			wv.mu.Unlock()
 
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
-				continue
 			}
 
 		case <-ticker.C:
 			wv.mu.Lock()
 			wv.ElevatorStates[localID].LastSeenAt = time.Now()
-
-			for id, state := range wv.ElevatorStates {
-				if id == localID {
-					continue
-				}
-
-				if time.Since(state.LastSeenAt) > NodeTimeoutDelay {
-					slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
-					wv.lostElevatorsState[id] = state
-					delete(wv.ElevatorStates, id)
-				}
-			}
+			wv.releaseAnyOrders()
 			wv.mu.Unlock()
 
 			wv.mu.RLock()
 			wvSnapshot := wv.deepCopy()
 			wv.mu.RUnlock()
 
-			checksum, err := checksum.CalculateChecksum(wvSnapshot)
+			data, err := BuildWvJSON(&wvSnapshot)
 			if err != nil {
-				slog.Error("Failed to calculate checksum", "error", err)
+				slog.Error("Failed to build worldview message", "error", err)
 				continue
-			}
-			msg := Message{
-				Wv:       wvSnapshot,
-				Checksum: checksum,
 			}
 
-			data, err := msgpack.Marshal(msg)
-			if err != nil {
-				slog.Error("Failed to marshal worldview", "error", err)
-				continue
+			// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
+			select {
+			case wv.wvChan <- *wv:
+			default:
 			}
-			// NOTE!: We can optimize by only sending diffs instead of the whole worldview
+
 			txChan <- network.UDPMessage{
 				Data:    data,
-				Address: nil, // Broadcast address is handled by the network layer
+				Address: nil,
+			}
+
+		}
+	}
+}
+
+// checkHasNodeReappeared deletes from `lostElevatorsState` if a node with given id has reappeared
+func (wv *Worldview) checkHasNodeReappeared(id int) {
+	_, exists := wv.lostElevatorsState[id]
+	if exists {
+		slog.Info("Reappeared peer", "id", id)
+		delete(wv.lostElevatorsState, id)
+	}
+}
+
+// releaseAnyOrders releases orders that are assigned to lost
+// or obstructed nodes,
+// or orders that have been processing for too long without completion.
+// At release, it immediately signs off its id for confirmation
+func (wv *Worldview) releaseAnyOrders() {
+	localID := wv.LocalID
+
+	for id, state := range wv.ElevatorStates {
+		if id == localID {
+			continue
+		}
+
+		if time.Since(state.LastSeenAt) > NodeLostTimeout {
+			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
+			wv.lostElevatorsState[id] = state
+			delete(wv.ElevatorStates, id)
+		}
+	}
+
+	for floor := range wv.HallCalls {
+		for dir := range wv.HallCalls[floor] {
+			hc := wv.HallCalls[floor][dir]
+
+			assignedNode, aNExists := wv.ElevatorStates[hc.By]
+			isObstructed := aNExists && assignedNode.IsObstructed
+
+			_, isNodeLost := wv.lostElevatorsState[hc.By]
+
+			hasOrderTimedout := hc.State == HSProcessing && hc.Timestamp != 0 &&
+				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout && hc.By == wv.LocalID
+
+			if isNodeLost || hasOrderTimedout || isObstructed {
+				reason := "unknown"
+				switch {
+				case isNodeLost:
+					reason = "node lost"
+				case hasOrderTimedout:
+					reason = "order timed out"
+				case isObstructed:
+					reason = "node obstructed"
+				}
+
+				slog.Warn("releasing order", "by", hc.By, "floor", floor, "dir", dir, "reason", reason)
+				wv.HallCalls[floor][dir] = HallCallPairState{
+					State:       HSAvailable,
+					By:          -1,
+					ConfirmedBy: []int{wv.LocalID},
+					Timestamp:   0,
+				}
 			}
 
 		}
@@ -174,6 +221,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 
 // setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
+	slog.Info("Setting hall call", "floor", floor, "dir", dir, "state", state)
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
@@ -181,42 +229,43 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
-
 	currDirState := wv.HallCalls[floor][dir]
 
 	if err := IsValidDirTransition(currDirState.State, state); err != nil {
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	}
 
+	var result HallCallPairState
+	result.State = state
+
 	existing := wv.HallCalls[floor][dir]
 
-	by := -1
 	if state == HSProcessing {
 		existing.By = wv.LocalID
-		by = wv.LocalID
+		result.By = wv.LocalID
+		result.Timestamp = time.Now().UnixMilli()
+	} else {
+		result.By = -1
+		result.Timestamp = 0
 	}
-
-	confirmedBy := []int{}
 
 	switch state {
 	case HSAvailable:
-		confirmedBy = append(confirmedBy, wv.LocalID)
+		result.ConfirmedBy = append(result.ConfirmedBy, wv.LocalID)
 	case HSProcessing:
 		if existing.By != wv.LocalID {
 			return fmt.Errorf("cannot process hall call that is not assigned to local elevator")
 		}
-		confirmedBy = make([]int, len(existing.ConfirmedBy))
-		copy(confirmedBy, existing.ConfirmedBy)
+		result.ConfirmedBy = make([]int, len(existing.ConfirmedBy))
+		copy(result.ConfirmedBy, existing.ConfirmedBy)
 	case HSNone:
+		if existing.State == HSProcessing && existing.By != wv.LocalID {
+			return fmt.Errorf("cannot complete hall call that is being processed by another elevator")
+		}
 	default:
 	}
 
-	wv.HallCalls[floor][dir] = HallCallPairState{
-		State:       state,
-		By:          by,
-		ConfirmedBy: confirmedBy,
-	}
-
+	wv.HallCalls[floor][dir] = result
 	return nil
 }
 
@@ -237,6 +286,7 @@ func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
 
 // SetCabCall changes cab call state at floor
 func (wv *Worldview) SetCabCall(floor int, state bool) error {
+	slog.Info("setting cab call", "floor", floor, "state", state)
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
@@ -325,7 +375,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
-	// slog.Info("merging", "hc", wv.HallCalls)
+
+	//
+	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
+	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -335,48 +388,71 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			ourHCState := wv.HallCalls[floor][dir]
 			switch otherHCState.State {
 			case HSNone:
-				if ourHCState.State == HSProcessing {
-					slog.Info("completed order", "by", otherHCState.By, "floor", floor, "dir", dir, "prevState", ourHCState.State)
+				// ourHCState.By holds who was assigned; otherHCState.By is -1 after reset.
+				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {
+					slog.Info("order completed", "by", ourHCState.By, "floor", floor, "dir", dir, "prevState", ourHCState.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:       HSNone,
 						By:          -1,
 						ConfirmedBy: []int{},
+						Timestamp:   0,
 					}
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
-
-					// map contains
-					_, exists := wv.ElevatorStates[id]
-					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && exists {
-						slog.Warn("[Merge] adding confirmed by", "id", id, "floor", floor, "dir", dir)
+					_, isLost := wv.lostElevatorsState[id]
+					_, isAlive := wv.ElevatorStates[id]
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive && !isLost {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}
 
 				if ourHCState.State == HSNone {
-					slog.Info("[Merge] new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
+					slog.Info("new order", "by", otherHCState.By, "floor", floor, "dir", dir, "by", otherHCState.By)
 					wv.HallCalls[floor][dir].State = HSAvailable
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
-						slog.Info("[Merge] confirming order", "floor", floor, "dir", dir)
+						slog.Info("confirming order", "floor", floor, "dir", dir)
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
+
+					}
+				}
+
+				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {
+					slog.Warn("order has been released", "by", otherHCState.By, "floor", floor, "dir", dir)
+					wv.HallCalls[floor][dir] = HallCallPairState{
+						State:       HSAvailable,
+						By:          -1,
+						ConfirmedBy: []int{wv.LocalID},
+						Timestamp:   0,
 					}
 				}
 			case HSProcessing:
-				if ourHCState.State == HSAvailable {
-					slog.Error("[Merge] processing order", "by", otherHCState.By, "floor", floor, "dir", dir)
+				if ourHCState.State == HSAvailable && otherHCState.By == other.LocalID {
+					slog.Info("processing order", "by", otherHCState.By, "floor", floor, "dir", dir, "timestamp", otherHCState.Timestamp)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing
+					wv.HallCalls[floor][dir].Timestamp = otherHCState.Timestamp
+					// Carry over ConfirmedBy from the winning node and add ourselves.
+					for _, id := range otherHCState.ConfirmedBy {
+						if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+							wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
+						}
+					}
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID) {
+						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
+					}
+				} else if ourHCState.State == HSProcessing {
+					// Already processing — merge ConfirmedBy lists so all nodes converge.
+					for _, id := range otherHCState.ConfirmedBy {
+						if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) {
+							wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
+						}
+					}
 				}
+
 			}
 		}
-	}
-
-	// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
-	select {
-	case wv.wvChan <- *wv:
-	default:
 	}
 
 	return nil

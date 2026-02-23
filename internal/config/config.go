@@ -4,22 +4,31 @@ import (
 	"flag"
 )
 
-type config struct {
-	id   int
-	port int
+const (
+	DefaultPort   = 30000
+	DefaultFloors = 4
+)
+
+type Config struct {
+	Id     int
+	Port   int
+	Floors int
 }
 
 // Parse parses commandline arguments and returns them in the form of a struct
-func Parse() config {
+func Parse() Config {
 
 	id := flag.Int("id", 1, "Node ID")
-	port := flag.Int("port", 30000, "Broadcast port")
+	port := flag.Int("port", DefaultPort, "Broadcast port")
+	floors := flag.Int("floors", DefaultFloors, "Number of floors in the building")
 
 	flag.Parse()
 
-	cfg := config{
-		id:   *id,
-		port: *port,
+	cfg := Config{
+		Id:     *id,
+		Port:   *port,
+		Floors: *floors,
 	}
+
 	return cfg
 }

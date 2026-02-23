@@ -184,7 +184,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 
 		// Invalid/ignored transitions
 		{"Available -> Available (duplicate)", HSAvailable, HSAvailable, HSAvailable, false},
-		{"Processing -> Available (cannot go back)", HSProcessing, HSAvailable, HSProcessing, false},
+		{"Processing -> Available (order released)", HSProcessing, HSAvailable, HSAvailable, true},
 		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSNone, false},
 	}
 
@@ -193,7 +193,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 			wv1 := NewTestWorldView(1, 4)
 			wv2 := NewTestWorldView(2, 4)
 
-			wv1.HallCalls[1][HDUp] = HallCallPairState{State: tt.ourState, By: 1}
+			wv1.HallCalls[1][HDUp] = HallCallPairState{State: tt.ourState, By: 2}
 
 			wv2.HallCalls[1][HDUp] = HallCallPairState{State: tt.theirState, By: 2}
 
@@ -258,13 +258,6 @@ func TestSetHallCall(t *testing.T) {
 	assert.Equal(t, HSNone, wv.HallCalls[2][HDUp].State, "state should be None")
 	// assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
 	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
-
-	// Test processing a call assigned to another elevator
-	// wv.NewHallCall(1, HDDown)
-	// wv.HallCalls[1][HDDown].By = 999 // Simulate another elevator claimed this
-	// err = wv.ProcessHallCall(1, HDDown)
-	// assert.Error(t, err, "should not be able to process call assigned to another elevator")
-	// assert.Contains(t, err.Error(), "not assigned to local elevator", "error should mention assignment")
 }
 
 func TestSetCabCall(t *testing.T) {
@@ -453,7 +446,7 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	wv1.mu.Lock()
 	assert.Contains(t, wv1.ElevatorStates, 2, "peer should be added")
 	// Set LastSeenAt to old time to simulate timeout
-	wv1.ElevatorStates[2].LastSeenAt = time.Now().Add(-NodeTimeoutDelay - time.Second)
+	wv1.ElevatorStates[2].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
 	wv1.mu.Unlock()
 
 	// Wait for next broadcast cycle to detect timeout
@@ -558,6 +551,56 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 }
 
 // TestStartSyncing_NetworkErrors verifies error channel handling
+// TestLostNode_ReleasesPendingOrders verifies that hall calls assigned to a timed-out node are reset
+func TestLostNode_ReleasesPendingOrders(t *testing.T) {
+	wv := NewTestWorldView(1, 4)
+	lostID := 2
+
+	// Add peer and assign a hall call to it
+	wv.ElevatorStates[lostID] = NewRemoteElevatorState(lostID, 4)
+	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+	wv.HallCalls[1][HDUp] = HallCallPairState{State: HSProcessing, By: lostID, ConfirmedBy: []int{lostID}, Timestamp: time.Now().UnixMilli()}
+
+	wv.mu.Lock()
+	wv.releaseAnyOrders()
+	wv.mu.Unlock()
+
+	assert.Equal(t, HSAvailable, wv.HallCalls[1][HDUp].State, "order should be released when node is lost")
+	assert.Equal(t, -1, wv.HallCalls[1][HDUp].By, "By should be reset to -1")
+	assert.NotContains(t, wv.HallCalls[1][HDUp].ConfirmedBy, lostID, "ConfirmedBy should be cleared")
+	_, stillActive := wv.ElevatorStates[lostID]
+	assert.False(t, stillActive, "lost node should be removed from active elevators")
+
+	// test for an obstructed evlator that is processing an order
+	obstructedID := 3
+	wv.ElevatorStates[obstructedID] = NewRemoteElevatorState(obstructedID, 4)
+	wv.ElevatorStates[obstructedID].LastSeenAt = time.Now()
+	wv.ElevatorStates[obstructedID].IsObstructed = true
+	wv.HallCalls[2][HDDown] = HallCallPairState{State: HSProcessing, By: obstructedID, ConfirmedBy: []int{obstructedID}, Timestamp: time.Now().UnixMilli()}
+
+	wv.mu.Lock()
+	wv.releaseAnyOrders()
+	wv.mu.Unlock()
+
+	assert.Equal(t, HSAvailable, wv.HallCalls[2][HDDown].State, "order should be released when node is lost")
+	assert.Equal(t, -1, wv.HallCalls[2][HDDown].By, "By should be reset to -1")
+	assert.NotContains(t, wv.HallCalls[2][HDDown].ConfirmedBy, obstructedID, "ConfirmedBy should be cleared")
+
+	// test for an elevator taking too long to process an order (finish)
+	processingID := 1
+	wv.ElevatorStates[processingID] = NewRemoteElevatorState(processingID, 4)
+	wv.ElevatorStates[processingID].LastSeenAt = time.Now()
+	wv.HallCalls[3][HDUp] = HallCallPairState{State: HSProcessing, By: processingID, ConfirmedBy: []int{processingID}, Timestamp: time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli()}
+
+	wv.mu.Lock()
+	wv.releaseAnyOrders()
+	wv.mu.Unlock()
+
+	assert.Equal(t, HSAvailable, wv.HallCalls[3][HDUp].State, "order should be released when processing timeout is exceeded")
+	assert.Equal(t, -1, wv.HallCalls[3][HDUp].By, "By should be reset to -1")
+	assert.Contains(t, wv.HallCalls[3][HDUp].ConfirmedBy, processingID, "ConfirmedBy should be cleared")
+}
+
 func TestStartSyncing_NetworkErrors(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
 
@@ -591,7 +634,6 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
 func TestStartSyncing_ConfirmationMerging(t *testing.T) {
-	t.Skip("skipping")
 	wv1 := NewTestWorldView(1, 4)
 	wv2 := NewTestWorldView(2, 4)
 	wv3 := NewTestWorldView(3, 4)
@@ -599,6 +641,11 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
 	errChan := make(chan error, 10)
+
+	// fill elevator states for wv1
+	for i := 1; i <= 3; i++ {
+		wv1.ElevatorStates[i] = NewRemoteElevatorState(i, 4)
+	}
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
@@ -625,6 +672,9 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	assert.Contains(t, confirmations, 2, "should merge confirmation from wv2")
 	assert.Contains(t, confirmations, 3, "should merge confirmation from wv3")
 	assert.Equal(t, HSAvailable, wv1.HallCalls[1][HDUp].State, "state should be Available")
+	wv1.mu.Lock()
+	wv1.ElevatorStates[4] = NewRemoteElevatorState(4, 4) // Add another elevator to wv1 to test merging new confirmation
+	wv1.mu.Unlock()
 
 	// Now send wv3's state with more confirmations
 	wv3.HallCalls[1][HDUp] = HallCallPairState{
