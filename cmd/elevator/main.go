@@ -30,7 +30,7 @@ func main() {
 	} else {
 		slog.Warn("Running in development mode (echo filtering disabled)")
 	}
-	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port)
+	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors)
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
