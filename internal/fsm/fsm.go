@@ -3,7 +3,6 @@ package fsm
 import (
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
@@ -56,23 +55,50 @@ func (sm *StateMachine) Run() {
 
 		select {
 		case order := <-sm.drvButtons:
-			var err error
-			switch order.Button {
-			case elevio.Cab:
-				err = sm.wv.SetCabCall(order.Floor, true)
-				sm.elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
-				select {
-				case sm.trigger <- struct{}{}:
-				default:
+			switch localElvevator.Behavior {
+			case elevator.BDoorOpen:
+				if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
+					slog.Info("Should clear immediately", "floor", order.Floor, "button", order.Button)
+				} else {
+					err := sm.makeNewOrder(order)
+					if err != nil {
+						slog.Error("Failed to make new order", "error", err)
+					}
 				}
-			case elevio.HallUp:
-				err = sm.wv.NewHallCall(order.Floor, statesync.HDUp)
-			case elevio.HallDown:
-				err = sm.wv.NewHallCall(order.Floor, statesync.HDDown)
-			}
+				// if(requests_shouldClearImmediately(*e, btn_floor, btn_type)){
+				//     timer_start(e->config.doorOpenDuration_s);
+				// } else {
+				//     e->requests[btn_floor][btn_type] = 1;
+				// }
+				// break;
+			case elevator.BMoving:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+			case elevator.BIdle:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+				// DirnBehaviourPair pair = requests_chooseDirection(*e);
+				// e->dirn = pair.dirn;
+				// e->behaviour = pair.behaviour;
+				// switch(pair.behaviour){
+				// case EB_DoorOpen:
+				//     elevator_doorLight(1);
+				//     timer_start(e->config.doorOpenDuration_s);
+				//     *e = requests_clearAtCurrentFloor(*e);
+				//     break;
 
-			if err != nil {
-				slog.Error("failed to set new cab/hall call", "err", err)
+				// case EB_Moving:
+				//     elevator_motorDirection(e->dirn);
+				//     break;
+
+				// case EB_Idle:
+				//     break;
+				// }
+				// break;
 			}
 
 		case floor := <-sm.drvFloors:
@@ -89,7 +115,6 @@ func (sm *StateMachine) Run() {
 			switch action := action.(type) {
 			case elevator.MoveAction:
 				err := sm.elev.DoMotorAction(action)
-
 				if err != nil {
 					slog.Error("failed to set action", "err", err)
 				}
@@ -105,7 +130,6 @@ func (sm *StateMachine) Run() {
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.SetAllLightsAction:
 				hcs := sm.wv.GetAllHallCalls()
-				slog.Info("Hc", "hc", hcs)
 				for floor, active := range localElvevator.CabCalls {
 					if active {
 						sm.elev.SetCallLight(elevio.Cab, floor, elevator.LSOn)
@@ -122,17 +146,9 @@ func (sm *StateMachine) Run() {
 						}
 
 						if state.State != statesync.HSNone {
-							slog.Warn("Setting light for hall call",
-								"floor", floor,
-								"direction", dir,
-								"state", state.State)
 							sm.elev.SetCallLight(btnType, floor, elevator.LSOn)
 						} else {
 
-							slog.Warn("Clearing light for hall call",
-								"floor", floor,
-								"direction", dir,
-								"state", state.State)
 							sm.elev.SetCallLight(btnType, floor, elevator.LSOff)
 						}
 					}
@@ -178,101 +194,24 @@ func (sm *StateMachine) Run() {
 	}
 }
 
-// DO NOT DELETE: Used for simulation and testing
-func stateMachineSimulationOnly(
-	drvButtons chan elevio.ButtonEvent,
-	drvFloors chan int,
-	drvObst chan bool,
-	drvStop chan bool,
-	elev *elevator.ElevatorState,
-	wv *statesync.Worldview,
-) {
-	prevBehavior := elevator.BIdle
-	goal := 0
-
-	for {
-		localElvevator := wv.GetRemoteElevator()
-
-		if prevBehavior != elev.Behavior {
-			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", elev.Behavior)
-			prevBehavior = elev.Behavior
-		}
-
+func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
+	var err error
+	switch order.Button {
+	case elevio.Cab:
+		err = sm.wv.SetCabCall(order.Floor, true)
+		sm.elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
 		select {
-
-		case order := <-drvButtons:
-			var err error
-			var hc statesync.HallCallDir
-
-			switch order.Button {
-			case elevio.Cab:
-				err = wv.SetCabCall(order.Floor, true)
-			case elevio.HallUp:
-				err = wv.NewHallCall(order.Floor, statesync.HDUp)
-				hc = statesync.HDUp
-			case elevio.HallDown:
-				err = wv.NewHallCall(order.Floor, statesync.HDDown)
-				hc = statesync.HDDown
-			}
-
-			if err != nil {
-				slog.Error("failed to set new cab/hall call", "err", err)
-			}
-
-			slog.Warn("sleeping...")
-
-			time.Sleep(1000 * time.Millisecond)
-			err = wv.ProcessHallCall(order.Floor, hc)
-			slog.Info("should have processed")
-
-			if err != nil {
-				slog.Error("failed to process hall call", "err", err)
-			}
-
-		case floor := <-drvFloors:
-			localElvevator.CurrentFloor = floor
-			err := wv.SetLocalElevator(&localElvevator)
-			if err != nil {
-				slog.Error("[StateMachine] SetLocalElevator", "error", err)
-			}
-
-			elev.SetCurrentFloorLight(floor)
-			slog.Info("[StateMachine] Reached new floor", "floor", floor, "goal", goal)
-
-			if goal == floor {
-				elev.DoMotorAction(elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop})
-				elev.SetCallLight(elevio.Cab, goal, elevator.LSOff)
-				elev.SetDoor(elevator.DSOpen)
-			}
-
-			err = wv.CompleteHallCall(floor, statesync.HDDown)
-			if err != nil {
-				slog.Error("[StateMachine] CompleteHallCall", "error", err)
-			}
-			err = wv.CompleteHallCall(floor, statesync.HDUp)
-			if err != nil {
-				slog.Error("[StateMachine] CompleteHallCall", "error", err)
-			}
-
-		// FIXME: Implement logic for this
-		// Our understanding: Cannot accur a obstruction during movment
-		// Example: someone is infront of the door!
-		// Obstruct means we cannot close the door
-		// Obsructuion is only resolved/accur during open door not movement
-		case isObstructed := <-drvObst:
-			localElvevator.IsObstructed = isObstructed
-			wv.SetLocalElevator(&localElvevator)
-
-		case shouldStop := <-drvStop:
-			if shouldStop {
-				elev.StopAction()
-				elev.SetStopLight(elevator.LSOn)
-			} else {
-				elev.SetStopLight(elevator.LSOff)
-				elev.ContinueAction()
-
-			}
-			elev.DoMotorAction(elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop})
+		case sm.trigger <- struct{}{}:
+		default:
 		}
+	case elevio.HallUp:
+		err = sm.wv.NewHallCall(order.Floor, statesync.HDUp)
+	case elevio.HallDown:
+		err = sm.wv.NewHallCall(order.Floor, statesync.HDDown)
 	}
+
+	if err != nil {
+		slog.Error("failed to set new cab/hall call", "err", err)
+	}
+	return err
 }

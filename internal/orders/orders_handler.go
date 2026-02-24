@@ -15,48 +15,58 @@ type ElevatorCost struct {
 	cost  int
 }
 
-type Penalty int
-
-const (
-	PenaltyObstructed     = 20
-	PenaltyWrongDirection = 10
-)
-
-// hallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
-func hallDirToButtonType(dir statesync.HallCallDir) elevio.ButtonType {
+// HallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
+func HallDirToButtonType(dir statesync.HallCallDir) elevio.ButtonType {
 	if dir == statesync.HDDown {
 		return elevio.HallDown
 	}
 	return elevio.HallUp
 }
 
-func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan chan any) {
-	prevHC := make(map[int][2]statesync.HallCallPairState)
+type OrderHandler struct {
+	wvChan    chan statesync.Worldview
+	trigger   chan struct{}
+	actionCah chan any
+}
 
-	for wv := range wvChan {
+func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan chan any) *OrderHandler {
+	return &OrderHandler{
+		wvChan:    wvChan,
+		trigger:   trigger,
+		actionCah: actionChan,
+	}
+}
+
+func (o *OrderHandler) Run() {
+	// prevHC := make(map[int][2]statesync.HallCallPairState)
+
+	// for wv := range o.wvChan {
+	// 	hallCalls := wv.GetAllHallCalls()
+
+	// 	// Propagate light changes driven by any hall call state transition
+	// 	for floor := range hallCalls {
+	// 		for d := range hallCalls[floor] {
+	// 			dir := statesync.HallCallDir(d)
+	// 			prevState := prevHC[floor][dir]
+	// 			currentState := hallCalls[floor][dir]
+
+	// 			if prevState.State != currentState.State {
+	// 				btn := HallDirToButtonType(dir)
+	// 				switch currentState.State {
+	// 				case statesync.HSNone:
+	// 					o.actionCah <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOff}
+	// 				case statesync.HSAvailable, statesync.HSProcessing:
+	// 					o.actionCah <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOn}
+	// 				}
+	// 			}
+	// 			temp := prevHC[floor]
+	// 			temp[dir] = currentState
+	// 			prevHC[floor] = temp
+	// 		}
+	// 	}
+
+	for wv := range o.wvChan {
 		hallCalls := wv.GetAllHallCalls()
-
-		// Propagate light changes driven by any hall call state transition
-		for floor := range hallCalls {
-			for d := range hallCalls[floor] {
-				dir := statesync.HallCallDir(d)
-				prevState := prevHC[floor][dir]
-				currentState := hallCalls[floor][dir]
-
-				if prevState.State != currentState.State {
-					btn := hallDirToButtonType(dir)
-					switch currentState.State {
-					case statesync.HSNone:
-						actionChan <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOff}
-					case statesync.HSAvailable, statesync.HSProcessing:
-						actionChan <- elevator.SingleLightAction{ButtonType: btn, Floor: floor, State: elevator.LSOn}
-					}
-				}
-				temp := prevHC[floor]
-				temp[dir] = currentState
-				prevHC[floor] = temp
-			}
-		}
 
 		for floor, hallCall := range hallCalls {
 			for dir := range hallCalls[floor] {
@@ -68,7 +78,7 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-					trigger <- struct{}{}
+					o.trigger <- struct{}{}
 				}
 
 				if !isConfirmedByAll || !isAvailable {
@@ -81,15 +91,14 @@ func RunCost(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan 
 				if winner.id == wv.LocalID {
 					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 					if err != nil {
-						// slog.Error("[RunCost] Got worldview error", "error", err)
+						slog.Error("[RunCost] Got worldview error", "error", err)
 					}
-					// slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
+					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
-				slog.Warn("[RunCost] Order picked up!")
-				actionChan <- elevator.SingleLightAction{ButtonType: hallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: elevator.LSOn}
+				slog.Warn("[RunCost] Order picked up", "by", winner.id)
+				o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: elevator.LSOn}
 			}
 		}
-
 	}
 }
 
@@ -129,7 +138,6 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 			winner.id = currentElevatorCost.id
 			winner.cost = currentElevatorCost.cost
 			winner.floor = currentElevatorCost.floor
-			slog.Info("[CalculateCost] Got new winner", "id", winner.id, "cost", winner.cost, "floor", winner.floor)
 		}
 	}
 	return winner

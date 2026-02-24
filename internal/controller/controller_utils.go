@@ -7,6 +7,34 @@ import (
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 )
 
+// int requests_shouldClearImmediately(Elevator e, int btn_floor, Button btn_type){
+//     return
+//         e.floor == btn_floor &&
+//         (
+//             (e.dirn == D_Up   && btn_type == B_HallUp)    ||
+//             (e.dirn == D_Down && btn_type == B_HallDown)  ||
+//             e.dirn == D_Stop ||
+//             btn_type == B_Cab
+//         );
+// }
+
+func ShouldClearImmediately(e statesync.RemoteElevatorState, btnFloor int, btnType elevio.ButtonType) bool {
+	if e.CurrentFloor != btnFloor {
+		return false
+	}
+
+	switch e.Direction {
+	case elevio.MDUp:
+		return btnType == elevio.HallUp || btnType == elevio.Cab
+	case elevio.MDDown:
+		return btnType == elevio.HallDown || btnType == elevio.Cab
+	case elevio.MDStop:
+		fallthrough
+	default:
+		return true
+	}
+}
+
 // HasOrdersAbove checks if local elevator has active/processing orders above
 func HasOrdersAbove(e statesync.RemoteElevatorState, calls Calls) bool {
 	for f := e.CurrentFloor + 1; f < len(calls.CabCalls); f++ {

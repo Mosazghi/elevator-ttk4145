@@ -16,7 +16,7 @@ import (
 
 // Easier to create test worldviews with this helper function
 func NewTestWorldView(localID, numFloors int) *Worldview {
-	return NewWorldView(localID, numFloors, make(chan Worldview, 10))
+	return NewWorldView(localID, numFloors, make(chan Worldview, 10), make(chan Order, 10))
 }
 
 // Merge with different number of floors should fail

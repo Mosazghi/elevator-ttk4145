@@ -12,6 +12,12 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+type Order struct {
+	Floor     int
+	Dir       HallCallDir
+	Completed bool
+}
+
 type Message struct {
 	Wv       Worldview
 	Checksum uint64
@@ -24,11 +30,12 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
+	newOrderChan       chan Order
 	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan chan Order) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -36,6 +43,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview) *Worldview {
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
+		newOrderChan:       newOrderChan,
 		mu:                 &sync.RWMutex{},
 	}
 
@@ -221,7 +229,6 @@ func (wv *Worldview) releaseAnyOrders() {
 
 // setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
-	slog.Info("Setting hall call", "floor", floor, "dir", dir, "state", state)
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
@@ -398,6 +405,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						ConfirmedBy: []int{},
 						Timestamp:   0,
 					}
+					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
@@ -416,6 +424,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 
 					}
+					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 				}
 
 				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {

@@ -61,14 +61,17 @@ func main() {
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
 
-	triggerAction := make(chan struct{}, 1)
+	triggerAction := make(chan struct{}, cfg.Floors) // Buffered channel to avoid blocking
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan)
+	newOrderChan := make(chan statesync.Order, 10)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, newOrderChan)
 
-	go controller.Start(wv, triggerAction, actionChan)
+	go controller.Start(wv, triggerAction, actionChan, newOrderChan)
 	go wv.StartSyncing(txChan, rxChan, errChan)
-	go orders.RunCost(wvChan, triggerAction, actionChan)
+
+	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
+	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()
 	initFloor := elevIoDriver.GetFloor()
