@@ -49,6 +49,14 @@ func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, 
 
 		case <-trigger:
 			slog.Warn("trigger!!!")
+			local := wv.GetRemoteElevator()
+
+			// If already moving, don't re-issue movement commands — OnFloorArrival handles stopping.
+			// Re-issuing causes direction oscillation when multiple orders are pending.
+			if local.Behavior == elevator.BMoving {
+				continue
+			}
+
 			nearestHallCall, _ := CalculateNearestHallCall(wv)
 			nearestCabCall := CalculateNearestCabCall(wv)
 
@@ -57,8 +65,6 @@ func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, 
 			if nearestHallCall == -1 && nearestCabCall == -1 {
 				continue
 			}
-
-			local := wv.GetRemoteElevator()
 
 			// if nearestHallCall == local.CurrentFloor {
 			// 	err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
