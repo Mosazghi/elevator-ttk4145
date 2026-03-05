@@ -1,8 +1,10 @@
 package fsm
 
 import (
+	"fmt"
 	"log/slog"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
@@ -48,29 +50,56 @@ func (sm *StateMachine) Run() {
 		localElvevator := sm.wv.GetRemoteElevator()
 
 		if prevBehavior != sm.elev.Behavior {
-			slog.Info("[StateMachine] Transition", "prevBehavior", prevBehavior, "current Behavior", sm.elev.Behavior)
 			prevBehavior = sm.elev.Behavior
 		}
 
 		select {
 		case order := <-sm.drvButtons:
-			slog.Debug("Button event received", "event", order)
-			var err error
-			switch order.Button {
-			case elevio.Cab:
-				err = sm.wv.SetCabCall(order.Floor, true)
-				select {
-				case sm.trigger <- struct{}{}:
-				default:
+			switch localElvevator.Behavior {
+			case elevator.BDoorOpen:
+				if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
+					slog.Info("Should clear immediately", "floor", order.Floor, "button", order.Button)
+				} else {
+					err := sm.makeNewOrder(order)
+					if err != nil {
+						slog.Error("Failed to make new order", "error", err)
+					}
 				}
-			case elevio.HallUp:
-				err = sm.wv.NewHallCall(order.Floor, statesync.HDUp)
-			case elevio.HallDown:
-				err = sm.wv.NewHallCall(order.Floor, statesync.HDDown)
-			}
+				// if(requests_shouldClearImmediately(*e, btn_floor, btn_type)){
+				//     timer_start(e->config.doorOpenDuration_s);
+				// } else {
+				//     e->requests[btn_floor][btn_type] = 1;
+				// }
+				// break;
+			case elevator.BMoving:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+			case elevator.BIdle:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+				// TOOD: Implement similar logic either here or in controller.go
+				// DirnBehaviourPair pair = requests_chooseDirection(*e);
+				// e->dirn = pair.dirn;
+				// e->behaviour = pair.behaviour;
+				// switch(pair.behaviour){
+				// case EB_DoorOpen:
+				//     elevator_doorLight(1);
+				//     timer_start(e->config.doorOpenDuration_s);
+				//     *e = requests_clearAtCurrentFloor(*e);
+				//     break;
 
-			if err != nil {
-				slog.Error("failed to set new cab/hall call", "err", err)
+				// case EB_Moving:
+				//     elevator_motorDirection(e->dirn);
+				//     break;
+
+				// case EB_Idle:
+				//     break;
+				// }
+				// break;
 			}
 
 		case floor := <-sm.drvFloors:
@@ -80,26 +109,16 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			sm.elev.SetCurrentFloorLight(floor)
-			select {
-			case sm.trigger <- struct{}{}:
-			default:
-			}
+			controller.OnFloorArrival(sm.wv, sm.actionChan, sm.trigger)
 
 		case action := <-sm.actionChan:
-			switch a := action.(type) {
+			slog.Info("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
+			switch action := action.(type) {
 			case elevator.MoveAction:
-				err := sm.elev.DoMotorAction(a)
-				slog.Info("[StateMachine] SetAction", "Behavior", a.Behavior.String(), "Direction", a.Direction.String())
+				err := sm.elev.DoMotorAction(action)
 				if err != nil {
-					slog.Error("[StateMachine] SetAction", "Behavior", a.Behavior.String(), "Direction", a.Direction.String())
+					slog.Error("failed to set action", "err", err)
 				}
-			case elevator.StopAction:
-				slog.Info("[StateMachine] StopAction received, stopping elevator")
-				sm.elev.DoMotorAction(elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop})
-				// select {
-				// case sm.trigger <- struct{}{}:
-				// default:
-				// }
 
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
@@ -113,11 +132,7 @@ func (sm *StateMachine) Run() {
 			case elevator.SetAllLightsAction:
 				hcs := sm.wv.GetAllHallCalls()
 				for floor, active := range localElvevator.CabCalls {
-					if active {
-						sm.elev.SetCallLight(elevio.Cab, floor, elevator.LSOn)
-					} else {
-						sm.elev.SetCallLight(elevio.Cab, floor, elevator.LSOff)
-					}
+					sm.elev.SetCallLight(elevio.Cab, floor, active)
 				}
 
 				for floor := range hcs {
@@ -128,10 +143,10 @@ func (sm *StateMachine) Run() {
 						}
 
 						if state.State != statesync.HSNone {
-							sm.elev.SetCallLight(btnType, floor, elevator.LSOn)
+							slog.Warn("Setting light for hall call", "floor", floor, "dir", dir, "state", state)
+							sm.elev.SetCallLight(btnType, floor, true)
 						} else {
-
-							sm.elev.SetCallLight(btnType, floor, elevator.LSOff)
+							sm.elev.SetCallLight(btnType, floor, false)
 						}
 					}
 				}
@@ -140,11 +155,6 @@ func (sm *StateMachine) Run() {
 					sm.elev.SetDoor(elevator.DSOpen)
 				} else {
 					sm.elev.SetDoor(elevator.DSClosed)
-				}
-				select {
-				case sm.trigger <- struct{}{}:
-					slog.Info("Triggered from DoorAction")
-				default:
 				}
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
@@ -186,7 +196,7 @@ func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
 	switch order.Button {
 	case elevio.Cab:
 		err = sm.wv.SetCabCall(order.Floor, true)
-		sm.elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
+		sm.elev.SetCallLight(order.Button, order.Floor, true)
 		select {
 		case sm.trigger <- struct{}{}:
 			slog.Info("Triggered from Cab call")

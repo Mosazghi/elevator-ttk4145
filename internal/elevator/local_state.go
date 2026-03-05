@@ -141,12 +141,8 @@ func (e *ElevatorState) SetStopLight(state LightState) {
 	}
 }
 
-func (e *ElevatorState) SetCallLight(buttonType elevio.ButtonType, floor int, state LightState) {
-	if state == LSOff {
-		e.io.SetButtonLamp(buttonType, floor, false)
-	} else {
-		e.io.SetButtonLamp(buttonType, floor, true)
-	}
+func (e *ElevatorState) SetCallLight(buttonType elevio.ButtonType, floor int, state bool) {
+	e.io.SetButtonLamp(buttonType, floor, state)
 }
 
 func (e *ElevatorState) SetCurrentFloorLight(floor int) {

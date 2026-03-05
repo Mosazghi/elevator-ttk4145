@@ -73,6 +73,7 @@ func (o *OrderHandler) Run() {
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
 				slog.Warn("[RunCost] Order picked up", "by", winner.id)
+				o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
 			}
 		}
 	}
