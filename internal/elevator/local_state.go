@@ -71,6 +71,7 @@ type ElevatorState struct {
 	Behavior Behavior
 }
 
+// Duplicate -> del
 type MoveAction struct {
 	Behavior  Behavior
 	Direction elevio.MotorDirection
