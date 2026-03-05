@@ -101,6 +101,55 @@ func (sm *StateMachine) Run() {
 				// default:
 				// }
 
+				localElvevator.Behavior = action.Behavior
+				localElvevator.Direction = action.Direction
+				sm.wv.SetLocalElevator(&localElvevator)
+				if err != nil {
+					slog.Error("SetLocalElevator", "err", err)
+				}
+
+			case elevator.SingleLightAction:
+				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+			case elevator.SetAllLightsAction:
+				hcs := sm.wv.GetAllHallCalls()
+				for floor, active := range localElvevator.CabCalls {
+					if active {
+						sm.elev.SetCallLight(elevio.Cab, floor, elevator.LSOn)
+					} else {
+						sm.elev.SetCallLight(elevio.Cab, floor, elevator.LSOff)
+					}
+				}
+
+				for floor := range hcs {
+					for dir, state := range hcs[floor] {
+						btnType := elevio.HallUp
+						if dir == int(statesync.HDDown) {
+							btnType = elevio.HallDown
+						}
+
+						if state.State != statesync.HSNone {
+							sm.elev.SetCallLight(btnType, floor, elevator.LSOn)
+						} else {
+
+							sm.elev.SetCallLight(btnType, floor, elevator.LSOff)
+						}
+					}
+				}
+			case elevator.DoorAction:
+				if action.Open {
+					sm.elev.SetDoor(elevator.DSOpen)
+				} else {
+					sm.elev.SetDoor(elevator.DSClosed)
+				}
+				select {
+				case sm.trigger <- struct{}{}:
+					slog.Info("Triggered from DoorAction")
+				default:
+				}
+			default:
+				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
+
+				// sm.elev.SetCallLight()
 			}
 
 		// FIXME: Implement logic for this
@@ -140,6 +189,7 @@ func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
 		sm.elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
 		select {
 		case sm.trigger <- struct{}{}:
+			slog.Info("Triggered from Cab call")
 		default:
 		}
 	case elevio.HallUp:

@@ -93,6 +93,7 @@ func Start_(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any,
 			// If already moving, don't re-issue movement commands — OnFloorArrival handles stopping.
 			// Re-issuing causes direction oscillation when multiple orders are pending.
 			if local.Behavior == elevator.BMoving {
+				slog.Warn("Already moving, skipping trigger")
 				continue
 			}
 
@@ -102,6 +103,7 @@ func Start_(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any,
 			// slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 
 			if nearestHallCall == -1 && nearestCabCall == -1 {
+				slog.Info("No pending orders")
 				continue
 			}
 
@@ -122,9 +124,10 @@ func Start_(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any,
 			// }
 
 			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
+				slog.Info("Already at floor with pending order, opening door")
 				// slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
 				// actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-				continue
+				// continue
 			}
 
 			dir := elevio.MDStop

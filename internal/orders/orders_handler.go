@@ -51,7 +51,11 @@ func (o *OrderHandler) Run() {
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-					o.trigger <- struct{}{}
+					select {
+					case o.trigger <- struct{}{}:
+						slog.Info("Triggered from OrderHandler")
+					default:
+					}
 				}
 
 				if !isConfirmedByAll || !isAvailable {

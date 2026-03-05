@@ -118,30 +118,36 @@ func ClearAtCurrentFloor(wv *statesync.Worldview, e statesync.RemoteElevatorStat
 
 	switch e.Direction {
 	case elevio.MDUp:
-		if !HasOrdersAbove(e, *calls) && noHallCallsAt(statesync.HDUp) {
-			slog.Info("Completing hall call at floor", "floor", floor, "dir", "up")
-			wv.CompleteHallCall(floor, statesync.HDDown)
-		}
-
 		if myHallCallsAt(statesync.HDUp) {
 			slog.Info("Completing my hall call at floor", "floor", floor, "dir", "up")
 			wv.CompleteHallCall(floor, statesync.HDUp)
 		}
-	case elevio.MDDown:
-		if !HasOrdersBelow(e, *calls) && noHallCallsAt(statesync.HDDown) {
+		// Clear the down call if it's also assigned to us (simultaneous stop),
+		// or if there are no orders above and no up call keeping us here.
+		if myHallCallsAt(statesync.HDDown) || (!HasOrdersAbove(e, *calls) && noHallCallsAt(statesync.HDUp)) {
 			slog.Info("Completing hall call at floor", "floor", floor, "dir", "down")
-			wv.CompleteHallCall(floor, statesync.HDUp)
+			wv.CompleteHallCall(floor, statesync.HDDown)
 		}
+	case elevio.MDDown:
 		if myHallCallsAt(statesync.HDDown) {
 			slog.Info("Completing my hall call at floor", "floor", floor, "dir", "down")
 			wv.CompleteHallCall(floor, statesync.HDDown)
 		}
+		// Clear the up call if it's also assigned to us (simultaneous stop),
+		// or if there are no orders below and no down call keeping us here.
+		if myHallCallsAt(statesync.HDUp) || (!HasOrdersBelow(e, *calls) && noHallCallsAt(statesync.HDDown)) {
+			slog.Info("Completing hall call at floor", "floor", floor, "dir", "up")
+			wv.CompleteHallCall(floor, statesync.HDUp)
+		}
 	case elevio.MDStop:
 		fallthrough
 	default:
+		if myHallCallsAt(statesync.HDUp) {
+			slog.Info("Completing my hall call at floor", "floor", floor, "dir", "up")
+			wv.CompleteHallCall(floor, statesync.HDUp)
+		}
 		if myHallCallsAt(statesync.HDDown) {
 			slog.Info("Completing my hall call at floor", "floor", floor, "dir", "down")
-			wv.CompleteHallCall(floor, statesync.HDUp)
 			wv.CompleteHallCall(floor, statesync.HDDown)
 		}
 	}
