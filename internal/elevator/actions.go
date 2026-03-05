@@ -12,7 +12,7 @@ type (
 	SingleLightAction struct {
 		ButtonType elevio.ButtonType
 		Floor      int
-		State      LightState
+		State      bool
 	}
 
 	SetAllLightsAction struct{}
