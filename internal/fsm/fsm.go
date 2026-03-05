@@ -159,6 +159,11 @@ func (sm *StateMachine) Run() {
 				} else {
 					sm.elev.SetDoor(elevator.DSClosed)
 				}
+				select {
+				case sm.trigger <- struct{}{}:
+					slog.Info("Triggered from DoorAction")
+				default:
+				}
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
 
@@ -202,6 +207,7 @@ func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
 		sm.elev.SetCallLight(order.Button, order.Floor, elevator.LSOn)
 		select {
 		case sm.trigger <- struct{}{}:
+			slog.Info("Triggered from Cab call")
 		default:
 		}
 	case elevio.HallUp:
