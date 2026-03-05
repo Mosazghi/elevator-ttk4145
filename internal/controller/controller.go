@@ -15,37 +15,76 @@ type Calls struct {
 	CabCalls  []bool
 }
 
-// NOTE: Currently used for testing purposes (refarctor by e.g. merging with Start)
-func OnFloorArrival(wv *statesync.Worldview, actionChan chan any) {
-	remote := wv.GetRemoteElevator()
-	calls := Calls{
-		HallCalls: wv.GetAllHallCalls(),
-		CabCalls:  remote.CabCalls,
-	}
-	if remote.Behavior == elevator.BMoving {
-		if ShouldStop(remote, calls) {
-			slog.Info("Should stop")
-			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-			actionChan <- elevator.DoorAction{Open: true}
-			ClearAtCurrentFloor(wv, remote, &calls)
-			actionChan <- elevator.SetAllLightsAction{}
-
-			// time.Sleep(2 * time.Second)
-			actionChan <- elevator.DoorAction{Open: false}
-			slog.Info("Finished stopping")
-		}
-	}
-}
-
 func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, newOrderChan chan statesync.Order) {
 	for {
 		select {
 		case order := <-newOrderChan:
-			lightState := elevator.LSOff
-			if !order.Completed {
-				lightState = elevator.LSOn
+			actionChan <- elevator.SingleLightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: order.Completed}
+		case <-trigger:
+			local := wv.GetRemoteElevator()
+
+			slog.Warn("trigger!!!")
+
+			nearestHallCall, hallCallDirection := CalculateNearestHallCall(wv)
+			nearestCabCall := CalculateNearestCabCall(wv)
+
+			if nearestHallCall == -1 && nearestCabCall == -1 {
+				slog.Info("[GetNextOrder]", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+				actionChan <- elevator.StopAction{}
+				continue
 			}
-			actionChan <- elevator.SingleLightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: lightState}
+
+			slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+
+			if nearestHallCall == local.CurrentFloor {
+				err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
+				if err != nil {
+					slog.Error("[GetNextOrder] Got worldview error", "error", err)
+				}
+				slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
+			}
+
+			if nearestCabCall == local.CurrentFloor {
+				err := wv.SetCabCall(nearestCabCall, false)
+				if err != nil {
+					slog.Error("[GetNextOrder] Got worldview error", "error", err)
+				}
+				slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
+			}
+
+			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
+				slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+				trigger <- struct{}{}
+				continue
+			}
+
+			dir := elevio.MDStop
+
+			if nearestCabCall != -1 && nearestHallCall == -1 {
+				if nearestCabCall < local.CurrentFloor {
+					dir = elevio.MDDown
+				} else {
+					dir = elevio.MDUp
+				}
+				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+			} else {
+				// slog.Info("[GetNextOrder] sending action for hallcall", "floor", nearestHallCall)
+				if nearestHallCall < local.CurrentFloor {
+					dir = elevio.MDDown
+				} else {
+					dir = elevio.MDUp
+				}
+				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+			}
+		}
+	}
+}
+
+func Start_(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, newOrderChan chan statesync.Order) {
+	for {
+		select {
+		case order := <-newOrderChan:
+			actionChan <- elevator.SingleLightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: order.Completed}
 
 		case <-trigger:
 			slog.Warn("trigger!!!")
@@ -69,17 +108,17 @@ func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, 
 			// if nearestHallCall == local.CurrentFloor {
 			// 	err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
 			// 	if err != nil {
-			// slog.Error("[GetNextOrder] Got worldview error", "error", err)
+			// 		slog.Error("[GetNextOrder] Got worldview error", "error", err)
 			// 	}
-			// slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
+			// 	slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
 			// }
 
 			// if nearestCabCall == local.CurrentFloor {
 			// 	err := wv.SetCabCall(nearestCabCall, false)
 			// 	if err != nil {
-			// slog.Error("[GetNextOrder] Got worldview error", "error", err)
+			// 		slog.Error("[GetNextOrder] Got worldview error", "error", err)
 			// 	}
-			// slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
+			// 	slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
 			// }
 
 			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
