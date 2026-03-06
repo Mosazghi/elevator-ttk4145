@@ -416,7 +416,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.RecoverLostCabCallsFromPeer(other)
 
 	//wv.mu.Lock()
-	wv.DeleteReappearedNode(wv.LocalID)
+	//TODO: wv.LocalID riktig or other.LocalID???
+	wv.DeleteReappearedNode(other.LocalID)
 	//wv.mu.Unlock()
 
 	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
