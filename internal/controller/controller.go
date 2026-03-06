@@ -15,95 +15,94 @@ type Calls struct {
 	CabCalls  []bool
 }
 
-func OnFloorArrival(wv *statesync.Worldview, actionChan chan any, trigger chan struct{}) {
+func OnFloorArrival(wv *statesync.Worldview, actionChan chan any) {
 	remote := wv.GetRemoteElevator()
-	calls := Calls{
-		HallCalls: wv.GetAllHallCalls(),
-		CabCalls:  remote.CabCalls,
-	}
-	if remote.Behavior == elevator.BMoving {
-		if ShouldStop(remote, calls) {
-			slog.Info("Should stop")
-			actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-			actionChan <- elevator.DoorAction{Open: true}
-			ClearAtCurrentFloor(wv, remote, &calls)
-			actionChan <- elevator.SetAllLightsAction{}
+	// calls := Calls{
+	// 	HallCalls: wv.GetAllHallCalls(),
+	// 	CabCalls:  remote.CabCalls,
+	// }
+	// if remote.Behavior == elevator.BMoving {
+	slog.Info("Should stop")
+	actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+	actionChan <- elevator.DoorAction{Open: true}
+	// ClearAtCurrentFloor(wv, remote, &calls)
+	actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
-			// time.Sleep(2 * time.Second)
-			actionChan <- elevator.DoorAction{Open: false}
-			slog.Info("Finished stopping")
-			trigger <- struct{}{}
-		}
-	}
+	// time.Sleep(2 * time.Second)
+	actionChan <- elevator.DoorAction{Open: false}
+	slog.Info("Finished stopping")
+	// }
 }
 
-func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, newOrderChan chan statesync.Order) {
+func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, newOrderChan chan statesync.Order, hcLightChan chan statesync.Order) {
 	for {
 		select {
+		case order := <-hcLightChan:
+			actionChan <- elevator.LightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
 		case order := <-newOrderChan:
-			actionChan <- elevator.SingleLightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: order.Completed}
-
+			actionChan <- elevator.LightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
 		case <-trigger:
 			slog.Warn("trigger!!!")
 			local := wv.GetRemoteElevator()
-
-			// If already moving, don't re-issue movement commands — OnFloorArrival handles stopping.
-			// Re-issuing causes direction oscillation when multiple orders are pending.
-			if local.Behavior == elevator.BMoving {
-				slog.Warn("Already moving, skipping trigger")
-				continue
-			}
-
-			nearestHallCall, _ := CalculateNearestHallCall(wv)
+			nearestHallCall, hallCallDirection := CalculateNearestHallCall(wv)
 			nearestCabCall := CalculateNearestCabCall(wv)
+			anyCallsAvailable := nearestHallCall != -1 || nearestCabCall != -1
+			slog.Info("[Controller] Triggered order calculation", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "any?", anyCallsAvailable)
 
-			// slog.Info("[GetNextOrder] ", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
-
-			if nearestHallCall == -1 && nearestCabCall == -1 {
-				slog.Info("No pending orders")
+			if !anyCallsAvailable {
+				slog.Info("[Controller] No calls available", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
+				actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 				continue
 			}
 
-			// if nearestHallCall == local.CurrentFloor {
-			// 	err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
-			// 	if err != nil {
-			// 		slog.Error("[GetNextOrder] Got worldview error", "error", err)
-			// 	}
-			// 	slog.Info("[GetNextOrder] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
-			// }
+			if nearestHallCall == local.CurrentFloor {
+				err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
+				if err != nil {
+					slog.Error("[Controller] Got worldview error", "error", err)
+				}
+				slog.Info("[Controller] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
+			}
 
-			// if nearestCabCall == local.CurrentFloor {
-			// 	err := wv.SetCabCall(nearestCabCall, false)
-			// 	if err != nil {
-			// 		slog.Error("[GetNextOrder] Got worldview error", "error", err)
-			// 	}
-			// 	slog.Info("[GetNextOrder] Completed CabCall", "floor", nearestCabCall)
-			// }
+			if nearestCabCall == local.CurrentFloor {
+				err := wv.SetCabCall(nearestCabCall, false)
+				if err != nil {
+					slog.Error("[Controller] Got worldview error", "error", err)
+				}
+				slog.Info("[Controller] Completed CabCall", "floor", nearestCabCall)
+			}
 
 			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
-				slog.Info("Already at floor with pending order, opening door")
-				// slog.Info("[GetNextOrder] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-				// actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-				// continue
+				slog.Info("[Controller] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
+				OnFloorArrival(wv, actionChan)
+				continue
 			}
 
 			dir := elevio.MDStop
+			isCabCAll := nearestCabCall != -1 && nearestHallCall == -1
 
-			if nearestCabCall != -1 && nearestHallCall == -1 {
+			if isCabCAll {
 				if nearestCabCall < local.CurrentFloor {
 					dir = elevio.MDDown
 				} else {
 					dir = elevio.MDUp
 				}
-				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+				slog.Info("[Controller] sending action for cabcall", "floor", nearestCabCall, "dir", dir, "currentDir", local.Direction)
+
+				if dir == local.Direction || local.Direction == elevio.MDStop {
+					actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+				}
+
 			} else {
-				// slog.Info("[GetNextOrder] sending action for hallcall", "floor", nearestHallCall)
 				if nearestHallCall < local.CurrentFloor {
 					dir = elevio.MDDown
 				} else {
 					dir = elevio.MDUp
 				}
-				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+
+				slog.Info("[Controller] sending action for hallcall", "floor", nearestHallCall, "dir", dir, "currentDir", local.Direction)
+				if dir == local.Direction || local.Direction == elevio.MDStop {
+					actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
+				}
 			}
 		}
 	}
@@ -147,21 +146,21 @@ func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallD
 
 	skipDownCalls := local.Direction != elevio.MDDown && local.Direction != elevio.MDStop
 	skipUpCalls := local.Direction != elevio.MDUp && local.Direction != elevio.MDStop
-	// slog.Info("[CalculateNearestHallCall]", "Skip down?", skipDownCalls, "skip up?", skipUpCalls)
+	slog.Info("[CalculateNearestHallCall]", "Skip down?", skipDownCalls, "skip up?", skipUpCalls)
 
 	for floor, hallCall := range hallCalls {
 		for dirIdx := range hallCalls[floor] {
 			dir := statesync.HallCallDir(dirIdx)
 			if hallCall[dir].State == statesync.HSNone ||
-				skipDownCalls && dir == statesync.HDDown ||
-				skipUpCalls && dir == statesync.HDUp ||
+				// skipDownCalls && dir == statesync.HDDown ||
+				// skipUpCalls && dir == statesync.HDUp ||
 				hallCall[dir].By != wv.LocalID {
 				continue
 			}
-			// slog.Info("[CalculateNearestHallCall] Found a valid hallcall", "By", hallCall[dir].By, "floor", floor)
+			slog.Info("[CalculateNearestHallCall] Found a valid hallcall", "By", hallCall[dir].By, "floor", floor)
 
 			distance := int(math.Abs(float64(local.CurrentFloor) - float64(floor)))
-			// slog.Info("[CalculateNearestHallCall]", "distance", distance, "nearestCall", nearestCall, "distance < nearestCall", distance < nearestCall)
+			slog.Info("[CalculateNearestHallCall]", "distance", distance, "nearestCall", nearestCall, "distance < nearestCall", distance < nearestCall)
 			if distance < nearestCall || nearestCall == -1 {
 				// slog.Info("[CalculateNearestHallCall]", "distance", distance, "id", wv.LocalID, "hallcallId", hallCall[dir].By)
 				if hallCall[dir].By == wv.LocalID {

@@ -8,14 +8,12 @@ type MoveAction struct {
 }
 
 type (
-	StopAction        struct{}
-	SingleLightAction struct {
+	StopAction  struct{}
+	LightAction struct {
 		ButtonType elevio.ButtonType
 		Floor      int
 		State      bool
 	}
-
-	SetAllLightsAction struct{}
 )
 
 type DoorAction struct {

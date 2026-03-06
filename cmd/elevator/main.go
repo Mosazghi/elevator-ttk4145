@@ -61,13 +61,14 @@ func main() {
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
 
-	triggerAction := make(chan struct{}, cfg.Floors) // Buffered channel to avoid blocking
+	triggerAction := make(chan struct{}, 3*cfg.Floors) // Buffered channel to avoid blocking
+	hallLightHandler := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
 	newOrderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, newOrderChan)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, hallLightHandler, newOrderChan)
 
-	go controller.Start(wv, triggerAction, actionChan, newOrderChan)
+	go controller.Start(wv, triggerAction, actionChan, newOrderChan, hallLightHandler)
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)

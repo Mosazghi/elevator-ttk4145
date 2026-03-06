@@ -30,12 +30,13 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
+	hcLightChan        chan Order
 	newOrderChan       chan Order
 	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan chan Order) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, hcLightChan chan Order, newOrderChan chan Order) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -43,6 +44,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan ch
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
+		hcLightChan:        hcLightChan,
 		newOrderChan:       newOrderChan,
 		mu:                 &sync.RWMutex{},
 	}
@@ -148,7 +150,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
-			// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
 			select {
 			case wv.wvChan <- *wv:
 			default:
@@ -278,11 +279,13 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 // CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
 func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
+	wv.hcLightChan <- Order{Floor: floor, Dir: dir, Completed: true}
 	return wv.setHallCall(floor, dir, HSNone)
 }
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
+	wv.hcLightChan <- Order{Floor: floor, Dir: dir, Completed: false}
 	return wv.setHallCall(floor, dir, HSAvailable)
 }
 
@@ -383,11 +386,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	//
-	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
-	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
-
-	// -- Validate Hall Calls --
 	// Merge hall calls
 	for floor := range other.HallCalls {
 		for dir := range other.HallCalls[floor] {

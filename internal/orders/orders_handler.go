@@ -51,11 +51,8 @@ func (o *OrderHandler) Run() {
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-					select {
-					case o.trigger <- struct{}{}:
-						slog.Info("Triggered from OrderHandler")
-					default:
-					}
+					slog.Info("[OrderHandler] triggering order completion", "floor", floor, "dir", dir)
+					o.trigger <- struct{}{}
 				}
 
 				if !isConfirmedByAll || !isAvailable {
@@ -73,7 +70,7 @@ func (o *OrderHandler) Run() {
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
 				slog.Warn("[RunCost] Order picked up", "by", winner.id)
-				o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
+				// o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
 			}
 		}
 	}
@@ -83,6 +80,7 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 	winner := ElevatorCost{-1, wv.NumFloors + 1, 100}
 	// slog.Info("[CalculateCost] Starting")
 
+	slog.Info("ECs ", wv.ElevatorStates)
 	for id, elev := range wv.ElevatorStates {
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
 		isObstructed := elev.Behavior == elevator.BObstructed
@@ -107,11 +105,9 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 
 		currentElevatorCost.cost += distance
 
-		currentElevatorCost.cost += id
+		slog.Info("[CalculateCost] Cost for elevator", "id", id, "cost", currentElevatorCost.cost, "distance", distance, "isObstructed", isObstructed, "currentDir", elev.Direction)
 
-		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
-
-		if currentElevatorCost.cost < winner.cost {
+		if currentElevatorCost.cost < winner.cost || (currentElevatorCost.cost == winner.cost && currentElevatorCost.id < winner.id) {
 			winner.id = currentElevatorCost.id
 			winner.cost = currentElevatorCost.cost
 			winner.floor = currentElevatorCost.floor

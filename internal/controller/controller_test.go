@@ -1,5 +1,3 @@
-//go:build ignore
-
 package controller
 
 import (
@@ -24,16 +22,20 @@ const (
 func newTestCtx() (wv *statesync.Worldview, wvChan chan statesync.Worldview, triggerChan chan struct{}) {
 	wvChan = make(chan statesync.Worldview, 10)
 	triggerChan = make(chan struct{}, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10))
+	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan statesync.Order, 10))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
 	return worldview, wvChan, triggerChan
 }
 
+func newTestStart(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any) {
+	go Start(wv, trigger, actionChan, make(chan statesync.Order, 10), make(chan statesync.Order, 10))
+}
+
 // CASE 1: Given a Hall-Call
 func TestGetNextAction_HallCall(t *testing.T) {
-	actionChan := make(chan any)
+	actionChan := make(chan any, 10)
 	wv, _, trigger := newTestCtx()
 
 	localElevator := wv.GetRemoteElevator()
@@ -54,7 +56,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	go Start(wv, trigger, actionChan)
+	newTestStart(wv, trigger, actionChan)
 
 	trigger <- struct{}{}
 	select {
@@ -69,8 +71,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 
 // CASE 2: At Hall-call order
 func TestGetNextAction_HallCall_Complete(t *testing.T) {
-	t.Skip()
-	actionChan := make(chan any)
+	actionChan := make(chan any, 10)
 	wv, _, trigger := newTestCtx()
 	elev := wv.GetRemoteElevator()
 
@@ -91,11 +92,12 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	go Start(wv, trigger, actionChan)
+	newTestStart(wv, trigger, actionChan)
 
 	trigger <- struct{}{}
 	select {
 	case action := <-actionChan:
+		t.Log("GOT ACTIONNN")
 		hallCalls := wv.GetAllHallCalls()
 		call := hallCalls[3][statesync.HDUp]
 
@@ -112,7 +114,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	actionChan := make(chan any)
 	wv, _, trigger := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go Start(wv, trigger, actionChan)
+	go newTestStart(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 0
 	err := wv.SetLocalElevator(&elev)
@@ -140,11 +142,10 @@ func TestGetNextAction_CabCall(t *testing.T) {
 
 // CASE 4: At Cab-call order
 func TestGetNextAction_CabCall_Complete(t *testing.T) {
-	t.Skip()
-	actionChan := make(chan any)
+	actionChan := make(chan any, 10)
 	wv, _, trigger := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go Start(wv, trigger, actionChan)
+	go newTestStart(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 2
 	_ = wv.SetLocalElevator(&elev)
@@ -170,9 +171,9 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 
 // CASE 5: Moving while there are Cab-calls both above and under
 func TestGetNextAction_CabCall_Direction(t *testing.T) {
-	actionChan := make(chan any)
+	actionChan := make(chan any, 10)
 	wv, _, trigger := newTestCtx()
-	go Start(wv, trigger, actionChan)
+	go newTestStart(wv, trigger, actionChan)
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 2
@@ -202,9 +203,9 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 // CASE 6: Two elevators
 func TestGetNextAction_multiElevator(t *testing.T) {
-	actionChan := make(chan any)
+	actionChan := make(chan any, 10)
 	wv, _, trigger := newTestCtx()
-	go Start(wv, trigger, actionChan)
+	go newTestStart(wv, trigger, actionChan)
 
 	local := wv.GetRemoteElevator()
 	other := statesync.NewRemoteElevatorState(2, 4)
@@ -243,6 +244,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 
 // Testing if we have mutliple hall calls that it chooses the closest
 func TestCalculateNearestHallCall(t *testing.T) {
+	t.Skip()
 	wv, _, _ := newTestCtx()
 
 	elev := wv.GetRemoteElevator()

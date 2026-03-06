@@ -120,17 +120,13 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 // Return an int along getNextAction func to indicate light on/off
 // Off happends when MDStop and BIdle while other is always on.
 
-func (e *ElevatorState) SetDoor(state DoorState) {
+func (e *ElevatorState) SetDoor(state bool) {
 	if e.Behavior != BIdle {
 		slog.Error("[Elevator] Cannot open door when not idle", "current behavior", e.Behavior)
 		return
 	}
 
-	if state == DSOpen {
-		e.io.SetDoorOpenLamp(true)
-	} else {
-		e.io.SetDoorOpenLamp(false)
-	}
+	e.io.SetDoorOpenLamp(state)
 }
 
 func (e *ElevatorState) SetStopLight(state LightState) {
