@@ -370,10 +370,11 @@ func (wv *Worldview) RecoverLostCabCallsFromPeer(other *Worldview) {
 	if !exists {
 		return
 	}
-
+	slog.Info("[Before Recovery]", "Cab Calls", recoveredState.CabCalls)
 	for f := 0; f < min(len(recoveredState.CabCalls), len(lostState.CabCalls)); f++ {
 		recoveredState.CabCalls[f] = recoveredState.CabCalls[f] || lostState.CabCalls[f]
 	}
+	slog.Info("[After Recovery]", "Cab Calls", recoveredState.CabCalls)
 
 }
 
