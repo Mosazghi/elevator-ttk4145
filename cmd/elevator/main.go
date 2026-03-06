@@ -20,7 +20,7 @@ import (
 func main() {
 	cfg := config.Parse()
 
-	SetupLogger()
+	SetupLogger(cfg.LogLevel)
 
 	// Check environment mode (ENV=production or ENV=prod enables production mode)
 	env := os.Getenv("ENV")
@@ -105,11 +105,11 @@ func main() {
 	fsm.Run()
 }
 
-func SetupLogger() {
+func SetupLogger(level slog.Leveler) {
 	w := os.Stderr
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
-			Level:      slog.LevelDebug,
+			Level:      level,
 			TimeFormat: time.DateTime,
 			AddSource:  true,
 		}),

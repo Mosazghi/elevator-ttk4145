@@ -112,6 +112,7 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 
 	e.io.SetMotorDirection(elevio.MDDown)
 	e.Behavior = BMoving
+	e.Dir = elevio.MDDown
 }
 
 // Return an int along getNextAction func to indicate light on/off

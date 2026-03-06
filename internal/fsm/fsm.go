@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
@@ -53,18 +52,19 @@ func (sm *StateMachine) Run() {
 			prevBehavior = sm.elev.Behavior
 		}
 
+		// if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
+		// 	slog.Error("Should clear immediately", "floor", order.Floor, "button", order.Button)
+		// } else {
+		// 	err := sm.makeNewOrder(order)
+		// 	if err != nil {
+		// 		slog.Error("Failed to make new order", "error", err)
+		// 	}
+		// }
 		select {
 		case order := <-sm.drvButtons:
 			switch localElvevator.Behavior {
 			case elevator.BDoorOpen:
-				if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
-					slog.Error("Should clear immediately", "floor", order.Floor, "button", order.Button)
-				} else {
-					err := sm.makeNewOrder(order)
-					if err != nil {
-						slog.Error("Failed to make new order", "error", err)
-					}
-				}
+				fallthrough
 			case elevator.BMoving:
 				fallthrough
 			case elevator.BIdle:
@@ -95,6 +95,9 @@ func (sm *StateMachine) Run() {
 
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
+				if action.Behavior != elevator.BMoving {
+					localElvevator.TargetFloor = -1
+				}
 				sm.wv.SetLocalElevator(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
@@ -103,12 +106,8 @@ func (sm *StateMachine) Run() {
 			case elevator.LightAction:
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.DoorAction:
-				// if !action.Open {
-				// 	slog.Debug("Trigger after door close")
-				// }
 				sm.elev.SetDoor(action.Open)
 				sm.trigger <- struct{}{}
-				// sm.elev.SetCallLight(elevio.Cab, localElvevator.CurrentFloor, false)
 
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
