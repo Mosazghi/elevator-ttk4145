@@ -37,14 +37,14 @@ type Worldview struct {
 // NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan chan Order) *Worldview {
 	wv := &Worldview{
-		LocalID:            localID,
-		ElevatorStates:     make(map[int]*RemoteElevatorState),
-		lostElevatorsState: make(map[int]*RemoteElevatorState),
-		HallCalls:          make([][2]HallCallPairState, numFloors),
-		NumFloors:          numFloors,
-		wvChan:             wvChan,
-		newOrderChan:       newOrderChan,
-		mu:                 &sync.RWMutex{},
+		LocalID:        localID,
+		ElevatorStates: make(map[int]*RemoteElevatorState),
+		//lostElevatorsState: make(map[int]*RemoteElevatorState),
+		HallCalls:    make([][2]HallCallPairState, numFloors),
+		NumFloors:    numFloors,
+		wvChan:       wvChan,
+		newOrderChan: newOrderChan,
+		mu:           &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -123,11 +123,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
-			//FIXME: Flyttet denne til Merge() etter RecoverLostCabCallsFromPeer(): Test->OK
-			// wv.mu.Lock()
-			// wv.DeleteReappearedNode(otherWv.LocalID)
-			// wv.mu.Unlock()
-
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
@@ -164,24 +159,48 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-// FIXME: Replaced by DeleteReappearedNode
-// checkHasNodeReappeared logs `lostElevatorsState` if a node with given id has reappeared
-// func (wv *Worldview) checkHasNodeReappeared(id int) {
+//TODO: Fix edge case: init som dead -> set self as alive where?
+// If we do not exists in the peers world or we are the only one existing then we are alive
+
+// _, myselffFound := wv.ElevatorStates[wv.LocalID]
+// _, otherFoundMe := other.ElevatorStates[other.LocalID]
+// stateSize := sizeof(wv.ElevatorStates)
+// if (myselfFound && stateSize == 1) || !otherFoundMe {}
+
+func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
+
+	peerPerspective := other.ElevatorStates[other.LocalID]
+
+	if peerPerspective.Alive == false {
+		wv.ElevatorStates[wv.LocalID] = peerPerspective
+		wv.ElevatorStates[wv.LocalID].Alive = true
+		slog.Info("Cab Calls recovered")
+	}
+
+}
+
+// TODO: Fjern remoteElevator til fordel for en bool i wv->elevatorstates til tracking av alive nodes
+// step 1:
+// if me != alive {
+// copy info
+// me == alive }
+// step 2(merge):
+// if (other.alive[otherID] = true && other.alive[otherID] != wv.alive[myID]) {
+// wv.alive[myID] == true }
+
+// On timeout:
+// wv.alive[otherID] == false
+
+// FIXME: Ikke lenger nødvendig -> alive/dead tracking istedet
+// TODO: Dedikert delete funksjon istedet, gjør kanskje checkHasNodeReappeared redundant
+// deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
+// func (wv *Worldview) DeleteReappearedNode(id int) {
 // 	_, exists := wv.lostElevatorsState[id]
 // 	if exists {
-// 		slog.Info("Reappeared peer", "id", id)
+// 		slog.Info("Peer reappeared, clearing lost state", "id", id)
+// 		delete(wv.lostElevatorsState, id)
 // 	}
 // }
-
-// FIXME: Dedikert delete funksjon istedet, gjør kanskje checkHasNodeReappeared redundant
-// deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
-func (wv *Worldview) DeleteReappearedNode(id int) {
-	_, exists := wv.lostElevatorsState[id]
-	if exists {
-		slog.Info("Peer reappeared, clearing lost state", "id", id)
-		delete(wv.lostElevatorsState, id)
-	}
-}
 
 // releaseAnyOrders releases orders that are assigned to lost
 // or obstructed nodes,
@@ -197,8 +216,9 @@ func (wv *Worldview) releaseAnyOrders() {
 
 		if time.Since(state.LastSeenAt) > NodeLostTimeout {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
-			wv.lostElevatorsState[id] = state
-			delete(wv.ElevatorStates, id)
+			wv.ElevatorStates[id].Alive = false
+			//wv.lostElevatorsState[id] = state
+			//delete(wv.ElevatorStates, id)
 		}
 	}
 
@@ -209,7 +229,11 @@ func (wv *Worldview) releaseAnyOrders() {
 			assignedNode, aNExists := wv.ElevatorStates[hc.By]
 			isObstructed := aNExists && assignedNode.IsObstructed
 
-			_, isNodeLost := wv.lostElevatorsState[hc.By]
+			//_, isNodeLost := wv.lostElevatorsState[hc.By]
+			isNodeLost := false
+			if hc.By != -1 {
+				isNodeLost = wv.ElevatorStates[hc.By].Alive
+			}
 
 			hasOrderTimedout := hc.State == HSProcessing && hc.Timestamp != 0 &&
 				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout && hc.By == wv.LocalID
@@ -360,23 +384,25 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 
 // FIXME: Validate the recovery function below
 // RecoverLostCabCalls copies cab calls from incoming worldview
-func (wv *Worldview) RecoverLostCabCallsFromPeer(other *Worldview) {
-	lostState, exists := other.lostElevatorsState[wv.LocalID]
-	if !exists {
-		return
-	}
+// func (wv *Worldview) RecoverLostCabCallsFromPeer(other *Worldview) {
+// 	lostState, exists := other.lostElevatorsState[wv.LocalID]
+// 	if !exists {
+// 		slog.Error("LostState does not exist")
+// 		return
+// 	}
 
-	recoveredState, exists := wv.ElevatorStates[wv.LocalID]
-	if !exists {
-		return
-	}
-	slog.Info("[Before Recovery]", "Cab Calls", recoveredState.CabCalls)
-	for f := 0; f < min(len(recoveredState.CabCalls), len(lostState.CabCalls)); f++ {
-		recoveredState.CabCalls[f] = recoveredState.CabCalls[f] || lostState.CabCalls[f]
-	}
-	slog.Info("[After Recovery]", "Cab Calls", recoveredState.CabCalls)
+// 	recoveredState, _ := wv.ElevatorStates[wv.LocalID]
+// 	// if !exists {
+// 	// 	return
+// 	// }
+// 	slog.Info("[Before Recovery]", "Other Cab Calls", lostState.CabCalls)
+// 	slog.Info("[Before Recovery]", "Self Cab Calls", recoveredState.CabCalls)
+// 	for f := 0; f < min(len(recoveredState.CabCalls), len(lostState.CabCalls)); f++ {
+// 		recoveredState.CabCalls[f] = recoveredState.CabCalls[f] || lostState.CabCalls[f]
+// 	}
+// 	slog.Info("[After Recovery]", "Cab Calls", recoveredState.CabCalls)
 
-}
+// }
 
 // Merge merges incoming Worldview into the current one
 func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
@@ -414,12 +440,12 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	wv.RecoverLostCabCallsFromPeer(other)
+	//wv.RecoverLostCabCallsFromPeer(other)
+	wv.FetchCabCallsOnReconnect(other)
 
-	//wv.mu.Lock()
 	//TODO: wv.LocalID riktig or other.LocalID???
-	wv.DeleteReappearedNode(other.LocalID)
-	//wv.mu.Unlock()
+
+	//wv.DeleteReappearedNode(other.LocalID)
 
 	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
 	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
@@ -446,9 +472,13 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
-					_, isLost := wv.lostElevatorsState[id]
-					_, isAlive := wv.ElevatorStates[id]
-					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive && !isLost {
+					//_, isLost := wv.lostElevatorsState[id]
+					//_, isAlive := wv.ElevatorStates[id]
+
+					// addition:
+					isAlive := wv.ElevatorStates[id].Alive
+					_, isExists := wv.ElevatorStates[id]
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive && !isExists {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}

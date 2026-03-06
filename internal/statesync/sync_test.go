@@ -783,7 +783,7 @@ func TestMerge_FaultTolerance_FloorCountMismatch(t *testing.T) {
 
 	// ACTION: Manually call the recovery function to bypass Merge's rigid floor length check
 	// We want to test the `min()` panic protection inside RecoverLostCabCallsFromPeer specifically.
-	rebootedWv.RecoverLostCabCallsFromPeer(alivePeerWv)
+	rebootedWv.FetchCabCallsOnReconnect(alivePeerWv)
 
 	// ASSERTIONS:
 	recoveredLocalState := rebootedWv.ElevatorStates[2]

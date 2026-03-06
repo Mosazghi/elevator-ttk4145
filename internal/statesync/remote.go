@@ -19,6 +19,7 @@ type RemoteElevatorState struct {
 	Behavior     elevator.Behavior     `json:"behavior"`
 	LastSeenAt   time.Time             `json:"last_seen_at"`
 	NumFloors    int                   `json:"num_floors"`
+	Alive		 bool					`json:"alive"`	
 }
 
 // NewRemoteElevatorState creates a new instance of  RemoteElevatorState
@@ -33,6 +34,7 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		Behavior:     elevator.BIdle,
 		LastSeenAt:   time.Now(),
 		NumFloors:    numFloors,
+		Alive:		  true,
 	}
 }
 
