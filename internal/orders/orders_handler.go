@@ -10,9 +10,9 @@ import (
 )
 
 type ElevatorCost struct {
-	id    int
-	floor int
-	cost  int
+	ID    int
+	Floor int
+	Cost  int
 }
 
 // HallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
@@ -35,6 +35,18 @@ func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan struct{}, act
 		trigger:   trigger,
 		actionCah: actionChan,
 	}
+}
+
+func (o *OrderHandler) GetWvChan() chan statesync.Worldview {
+	return o.wvChan
+}
+
+func (o *OrderHandler) GetTrigger() chan struct{} {
+	return o.trigger
+}
+
+func (o *OrderHandler) GetActionChan() chan any {
+	return o.actionCah
 }
 
 func (o *OrderHandler) Run() {
@@ -65,14 +77,14 @@ func (o *OrderHandler) Run() {
 
 				// slog.Info("[RunCost] Calculating cost")
 				winner := CalculateCost(&wv, floor, statesync.HallCallDir(dir))
-				if winner.id == wv.LocalID {
+				if winner.ID == wv.LocalID {
 					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 					if err != nil {
 						slog.Error("[RunCost] Got worldview error", "error", err)
 					}
-					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
+					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.ID)
 				}
-				slog.Warn("[RunCost] Order picked up", "by", winner.id)
+				slog.Warn("[RunCost] Order picked up", "by", winner.ID)
 				o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
 			}
 		}
@@ -86,35 +98,35 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 	for id, elev := range wv.ElevatorStates {
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
 		isObstructed := elev.Behavior == elevator.BObstructed
-		currentElevatorCost.id = id
+		currentElevatorCost.ID = id
 
 		if isObstructed {
 			// slog.Info("[CalculateCost] Elevator is obstructed")
-			currentElevatorCost.cost += PenaltyObstructed
+			currentElevatorCost.Cost += PenaltyObstructed
 		}
 
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.Cost += PenaltyWrongDirection
 		}
 
 		if elev.Direction == elevio.MDUp && dir == statesync.HDDown {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.Cost += PenaltyWrongDirection
 		}
 
 		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))
 
-		currentElevatorCost.cost += distance
+		currentElevatorCost.Cost += distance
 
-		currentElevatorCost.cost += id
+		currentElevatorCost.Cost += id
 
-		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
+		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.ID)
 
-		if currentElevatorCost.cost < winner.cost {
-			winner.id = currentElevatorCost.id
-			winner.cost = currentElevatorCost.cost
-			winner.floor = currentElevatorCost.floor
+		if currentElevatorCost.Cost < winner.Cost {
+			winner.ID = currentElevatorCost.ID
+			winner.Cost = currentElevatorCost.Cost
+			winner.Floor = currentElevatorCost.Floor
 		}
 	}
 	return winner

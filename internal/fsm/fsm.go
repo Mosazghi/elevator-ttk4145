@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -167,6 +168,124 @@ func (sm *StateMachine) Run() {
 		// Example: someone is infront of the door!
 		// Obstruct means we cannot close the door
 		// Obsructuion is only resolved/accur during open door not movement
+		case isObstructed := <-sm.drvObst:
+			if isObstructed {
+				localElvevator.Behavior = elevator.BObstructed
+			} else {
+				localElvevator.Behavior = elevator.BIdle
+			}
+
+			err := sm.wv.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+			}
+
+		case shouldStop := <-sm.drvStop:
+			if shouldStop {
+				sm.elev.StopAction()
+				sm.elev.SetStopLight(elevator.LSOn)
+			} else {
+				sm.elev.SetStopLight(elevator.LSOff)
+				sm.elev.ContinueAction()
+			}
+		}
+	}
+}
+
+func (sm *StateMachine) RunWithContext(ctx context.Context) {
+	prevBehavior := elevator.BIdle
+
+	for {
+		localElvevator := sm.wv.GetRemoteElevator()
+
+		if prevBehavior != sm.elev.Behavior {
+			prevBehavior = sm.elev.Behavior
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case order := <-sm.drvButtons:
+			switch localElvevator.Behavior {
+			case elevator.BDoorOpen:
+				if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
+					slog.Info("Should clear immediately", "floor", order.Floor, "button", order.Button)
+				} else {
+					err := sm.makeNewOrder(order)
+					if err != nil {
+						slog.Error("Failed to make new order", "error", err)
+					}
+				}
+			case elevator.BMoving:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+			case elevator.BIdle:
+				err := sm.makeNewOrder(order)
+				if err != nil {
+					slog.Error("Failed to make new order", "error", err)
+				}
+			}
+
+		case floor := <-sm.drvFloors:
+			localElvevator.CurrentFloor = floor
+			err := sm.wv.SetLocalElevator(&localElvevator)
+			if err != nil {
+				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+			}
+			sm.elev.SetCurrentFloorLight(floor)
+			controller.OnFloorArrival(sm.wv, sm.actionChan, sm.trigger)
+
+		case action := <-sm.actionChan:
+			slog.Info("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
+			switch action := action.(type) {
+			case elevator.MoveAction:
+				err := sm.elev.DoMotorAction(action)
+				if err != nil {
+					slog.Error("failed to set action", "err", err)
+				}
+
+				localElvevator.Behavior = action.Behavior
+				localElvevator.Direction = action.Direction
+				sm.wv.SetLocalElevator(&localElvevator)
+				if err != nil {
+					slog.Error("SetLocalElevator", "err", err)
+				}
+
+			case elevator.SingleLightAction:
+				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+			case elevator.SetAllLightsAction:
+				hcs := sm.wv.GetAllHallCalls()
+				for floor, active := range localElvevator.CabCalls {
+					sm.elev.SetCallLight(elevio.Cab, floor, active)
+				}
+
+				for floor := range hcs {
+					for dir, state := range hcs[floor] {
+						btnType := elevio.HallUp
+						if dir == int(statesync.HDDown) {
+							btnType = elevio.HallDown
+						}
+
+						if state.State != statesync.HSNone {
+							slog.Warn("Setting light for hall call", "floor", floor, "dir", dir, "state", state)
+							sm.elev.SetCallLight(btnType, floor, true)
+						} else {
+							sm.elev.SetCallLight(btnType, floor, false)
+						}
+					}
+				}
+			case elevator.DoorAction:
+				if action.Open {
+					sm.elev.SetDoor(elevator.DSOpen)
+				} else {
+					sm.elev.SetDoor(elevator.DSClosed)
+				}
+			default:
+				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
+			}
+
 		case isObstructed := <-sm.drvObst:
 			if isObstructed {
 				localElvevator.Behavior = elevator.BObstructed
