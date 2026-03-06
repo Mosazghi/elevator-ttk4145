@@ -17,7 +17,6 @@ type (
 const (
 	BIdle Behavior = iota
 	BMoving
-	BObstructed
 	BDoorOpen
 )
 
@@ -57,8 +56,6 @@ func (b Behavior) String() string {
 		return "IDLE"
 	case BMoving:
 		return "MOVING"
-	case BObstructed:
-		return "OBSTRUCTED"
 	case BDoorOpen:
 		return "DOOR_OPEN"
 	}
@@ -82,19 +79,19 @@ type ElevatorCallbacks interface {
 }
 
 func (e *ElevatorState) DoMotorAction(action MoveAction) error {
-	if action.Behavior != BIdle &&
-		action.Behavior != BMoving &&
-		action.Behavior != BObstructed {
-		return fmt.Errorf("[Elevator] Got an invalid behavior, Received: %v", action.Behavior)
-	}
+	// if action.Behavior != BIdle &&
+	// 	action.Behavior != BMoving &&
+	// 	action.Behavior != BObstructed {
+	// 	return fmt.Errorf("[Elevator] Got an invalid behavior, Received: %v", action.Behavior)
+	// }
 
-	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
-		return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
-	}
+	// if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
+	// 	return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
+	// }
 	//
 	e.Behavior = action.Behavior
 	e.Dir = action.Direction
-	e.io.SetMotorDirection(action.Direction)
+	e.io.SetMotorDirection(e.Dir)
 	return nil
 }
 
@@ -121,11 +118,6 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 // Off happends when MDStop and BIdle while other is always on.
 
 func (e *ElevatorState) SetDoor(state bool) {
-	if e.Behavior != BIdle {
-		slog.Error("[Elevator] Cannot open door when not idle", "current behavior", e.Behavior)
-		return
-	}
-
 	e.io.SetDoorOpenLamp(state)
 }
 

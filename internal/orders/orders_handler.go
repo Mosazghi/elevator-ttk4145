@@ -51,7 +51,7 @@ func (o *OrderHandler) Run() {
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-					slog.Info("[OrderHandler] triggering order completion", "floor", floor, "dir", dir)
+					slog.Debug("[OrderHandler] triggering order completion", "floor", floor, "dir", dir)
 					o.trigger <- struct{}{}
 				}
 
@@ -70,7 +70,6 @@ func (o *OrderHandler) Run() {
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 				}
 				slog.Warn("[RunCost] Order picked up", "by", winner.id)
-				// o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
 			}
 		}
 	}
@@ -80,10 +79,15 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 	winner := ElevatorCost{-1, wv.NumFloors + 1, 100}
 	// slog.Info("[CalculateCost] Starting")
 
-	slog.Info("ECs ", wv.ElevatorStates)
 	for id, elev := range wv.ElevatorStates {
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
-		isObstructed := elev.Behavior == elevator.BObstructed
+		isObstructed := elev.IsObstructed
+		isDoorOpen := elev.Behavior == elevator.BDoorOpen
+
+		if isDoorOpen {
+			// slog.Info("[CalculateCost] Elevator door is open")
+			currentElevatorCost.cost += PenaltyDoorOpen
+		}
 		currentElevatorCost.id = id
 
 		if isObstructed {

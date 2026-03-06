@@ -103,7 +103,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 
 		require.Equal(t, call.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BIdle, "Elevator 1 should open door when arrived at order floor")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
 	}
@@ -162,7 +162,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 
 		require.Equal(t, elev.CabCalls[2], false, "Cab-call should be set to false, arrived at floor")
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BIdle, "Elevator 1 should open door when arrived at order floor")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
 
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")

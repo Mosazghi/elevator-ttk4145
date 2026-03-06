@@ -58,7 +58,7 @@ func (sm *StateMachine) Run() {
 			switch localElvevator.Behavior {
 			case elevator.BDoorOpen:
 				if controller.ShouldClearImmediately(localElvevator, order.Floor, order.Button) {
-					slog.Info("Should clear immediately", "floor", order.Floor, "button", order.Button)
+					slog.Error("Should clear immediately", "floor", order.Floor, "button", order.Button)
 				} else {
 					err := sm.makeNewOrder(order)
 					if err != nil {
@@ -66,10 +66,7 @@ func (sm *StateMachine) Run() {
 					}
 				}
 			case elevator.BMoving:
-				err := sm.makeNewOrder(order)
-				if err != nil {
-					slog.Error("Failed to make new order", "error", err)
-				}
+				fallthrough
 			case elevator.BIdle:
 				err := sm.makeNewOrder(order)
 				if err != nil {
@@ -84,11 +81,11 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			sm.elev.SetCurrentFloorLight(floor)
-			slog.Info("[StateMachine] Trigger after floor arrival", "floor", floor)
+			slog.Debug("[StateMachine] Trigger after floor arrival", "floor", floor)
 			sm.trigger <- struct{}{}
 
 		case action := <-sm.actionChan:
-			slog.Info("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
+			slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
 			switch action := action.(type) {
 			case elevator.MoveAction:
 				err := sm.elev.DoMotorAction(action)
@@ -106,11 +103,11 @@ func (sm *StateMachine) Run() {
 			case elevator.LightAction:
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.DoorAction:
-				if !action.Open {
-					slog.Info("Trigger after door close")
-					sm.trigger <- struct{}{}
-				}
+				// if !action.Open {
+				// 	slog.Debug("Trigger after door close")
+				// }
 				sm.elev.SetDoor(action.Open)
+				sm.trigger <- struct{}{}
 				// sm.elev.SetCallLight(elevio.Cab, localElvevator.CurrentFloor, false)
 
 			default:
@@ -123,11 +120,7 @@ func (sm *StateMachine) Run() {
 		// Obstruct means we cannot close the door
 		// Obsructuion is only resolved/accur during open door not movement
 		case isObstructed := <-sm.drvObst:
-			if isObstructed {
-				localElvevator.Behavior = elevator.BObstructed
-			} else {
-				localElvevator.Behavior = elevator.BIdle
-			}
+			localElvevator.IsObstructed = isObstructed
 
 			err := sm.wv.SetLocalElevator(&localElvevator)
 			if err != nil {
