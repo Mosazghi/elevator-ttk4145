@@ -697,3 +697,101 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	assert.Contains(t, confirmations, 4, "should merge new confirmation")
 	assert.Len(t, confirmations, 4, "should have all unique confirmations")
 }
+
+// NEW
+
+// setupHelper creates a clean Worldview for testing without blocking channels
+func setupHelper(localID, numFloors int) *Worldview {
+	wvChan := make(chan Worldview, 10)
+	orderChan := make(chan Order, 10)
+	return NewWorldView(localID, numFloors, wvChan, orderChan)
+}
+
+func TestMerge_RecoverLostCabCallsFromPeer(t *testing.T) {
+	numFloors := 4
+
+	// 1. Setup the rebooted node (LocalID: 2)
+	// It wakes up with amnesia (no active cab calls)
+	rebootedWv := setupHelper(2, numFloors)
+	rebootedWv.ElevatorStates[2].CabCalls = []bool{false, false, false, false}
+
+	// 2. Setup the alive peer node (LocalID: 1)
+	alivePeerWv := setupHelper(1, numFloors)
+
+	// 3. The alive peer remembers that node 2 disconnected with active calls at floor 0 and 2
+	lostStateForNode2 := NewRemoteElevatorState(2, numFloors)
+	lostStateForNode2.CabCalls = []bool{true, false, true, false}
+	alivePeerWv.lostElevatorsState[2] = lostStateForNode2
+
+	// Calculate checksum so Merge accepts the payload
+	cs, err := checksum.CalculateChecksum(alivePeerWv)
+	require.NoError(t, err, "Checksum calculation should not fail")
+
+	// 4. ACTION: The rebooted node receives the broadcast from the alive peer
+	err = rebootedWv.Merge(alivePeerWv, cs)
+	require.NoError(t, err, "Merge should succeed without error")
+
+	// 5. ASSERTIONS: Did the rebooted node recover its own cab calls?
+	recoveredLocalState := rebootedWv.ElevatorStates[2]
+	require.NotNil(t, recoveredLocalState, "Local state should exist")
+
+	// Use assert so if one floor fails, the test continues checking the others
+	assert.True(t, recoveredLocalState.CabCalls[0], "Floor 0 cab call should be recovered")
+	assert.False(t, recoveredLocalState.CabCalls[1], "Floor 1 should remain false")
+	assert.True(t, recoveredLocalState.CabCalls[2], "Floor 2 cab call should be recovered")
+	assert.False(t, recoveredLocalState.CabCalls[3], "Floor 3 should remain false")
+}
+
+func TestMerge_DeleteReappearedNode(t *testing.T) {
+	numFloors := 4
+
+	// 1. Setup the alive node (LocalID: 1)
+	aliveWv := setupHelper(1, numFloors)
+
+	// The alive node remembers node 2 was lost
+	lostStateForNode2 := NewRemoteElevatorState(2, numFloors)
+	aliveWv.lostElevatorsState[2] = lostStateForNode2
+
+	// 2. Setup the rebooted node (LocalID: 2) sending its very first heartbeat
+	rebootedWv := setupHelper(2, numFloors)
+
+	// Calculate checksum for the incoming broadcast
+	cs, err := checksum.CalculateChecksum(rebootedWv)
+	require.NoError(t, err, "Checksum calculation should not fail")
+
+	// 3. ACTION: The alive node receives the broadcast from the rebooted node
+	err = aliveWv.Merge(rebootedWv, cs)
+	require.NoError(t, err, "Merge should succeed without error")
+
+	// 4. ASSERTION: Did the alive node delete the memory of Node 2 being lost?
+	_, stillExists := aliveWv.lostElevatorsState[2]
+	assert.False(t, stillExists, "Lost state for Node 2 should be deleted after it reappeared")
+}
+
+func TestMerge_FaultTolerance_FloorCountMismatch(t *testing.T) {
+	// 1. Rebooted node thinks there are 3 floors
+	rebootedWv := setupHelper(2, 3)
+	rebootedWv.ElevatorStates[2].CabCalls = []bool{false, false, false}
+
+	// 2. Alive peer somehow thinks there are 5 floors (misconfiguration / network artifact)
+	alivePeerWv := setupHelper(1, 5)
+	
+	lostStateForNode2 := NewRemoteElevatorState(2, 5)
+	// It remembers calls on floors 0, 2, and 4
+	lostStateForNode2.CabCalls = []bool{true, false, true, false, true}
+	alivePeerWv.lostElevatorsState[2] = lostStateForNode2
+
+	// ACTION: Manually call the recovery function to bypass Merge's rigid floor length check
+	// We want to test the `min()` panic protection inside RecoverLostCabCallsFromPeer specifically.
+	rebootedWv.RecoverLostCabCallsFromPeer(alivePeerWv)
+
+	// ASSERTIONS:
+	recoveredLocalState := rebootedWv.ElevatorStates[2]
+	require.NotNil(t, recoveredLocalState)
+	require.Len(t, recoveredLocalState.CabCalls, 3, "Cab calls length should remain strictly 3")
+
+	assert.True(t, recoveredLocalState.CabCalls[0], "Should recover floor 0")
+	assert.False(t, recoveredLocalState.CabCalls[1], "Should remain false")
+	assert.True(t, recoveredLocalState.CabCalls[2], "Should recover floor 2")
+	// Floor 4 is safely ignored due to the min() function, and NO PANIC occurred!
+}

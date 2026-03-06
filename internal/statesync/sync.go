@@ -123,9 +123,10 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
-			wv.mu.Lock()
-			wv.checkHasNodeReappeared(otherWv.LocalID)
-			wv.mu.Unlock()
+			//FIXME: Flyttet denne til Merge() etter RecoverLostCabCallsFromPeer(): Test->OK
+			// wv.mu.Lock()
+			// wv.DeleteReappearedNode(otherWv.LocalID)
+			// wv.mu.Unlock()
 
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
@@ -163,11 +164,21 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-// checkHasNodeReappeared deletes from `lostElevatorsState` if a node with given id has reappeared
-func (wv *Worldview) checkHasNodeReappeared(id int) {
+// FIXME: Replaced by DeleteReappearedNode
+// checkHasNodeReappeared logs `lostElevatorsState` if a node with given id has reappeared
+// func (wv *Worldview) checkHasNodeReappeared(id int) {
+// 	_, exists := wv.lostElevatorsState[id]
+// 	if exists {
+// 		slog.Info("Reappeared peer", "id", id)
+// 	}
+// }
+
+// FIXME: Dedikert delete funksjon istedet, gjør kanskje checkHasNodeReappeared redundant
+//deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
+func (wv *Worldview) DeleteReappearedNode(id int) {
 	_, exists := wv.lostElevatorsState[id]
 	if exists {
-		slog.Info("Reappeared peer", "id", id)
+		slog.Info("Peer reappeared, clearing lost state", "id", id)
 		delete(wv.lostElevatorsState, id)
 	}
 }
@@ -347,6 +358,25 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	return result
 }
 
+// FIXME: Validate the recovery function below
+// RecoverLostCabCalls copies cab calls from incoming worldview
+func (wv *Worldview) RecoverLostCabCallsFromPeer(other *Worldview) {
+	lostState, exists := other.lostElevatorsState[wv.LocalID]
+	if !exists {
+		return
+	}
+
+	recoveredState, exists := wv.ElevatorStates[wv.LocalID]
+	if !exists {
+		return
+	}
+
+	for f := 0; f < min(len(recoveredState.CabCalls), len(lostState.CabCalls)); f++ {
+		recoveredState.CabCalls[f] = recoveredState.CabCalls[f] || lostState.CabCalls[f]
+	}
+
+}
+
 // Merge merges incoming Worldview into the current one
 func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.mu.Lock()
@@ -383,7 +413,12 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	//
+	wv.RecoverLostCabCallsFromPeer(other)
+
+	//wv.mu.Lock()
+	wv.DeleteReappearedNode(other.LocalID)
+	//wv.mu.Unlock()
+
 	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
 	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
 
