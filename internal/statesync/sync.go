@@ -174,7 +174,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 // }
 
 // FIXME: Dedikert delete funksjon istedet, gjør kanskje checkHasNodeReappeared redundant
-//deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
+// deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
 func (wv *Worldview) DeleteReappearedNode(id int) {
 	_, exists := wv.lostElevatorsState[id]
 	if exists {
@@ -416,7 +416,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.RecoverLostCabCallsFromPeer(other)
 
 	//wv.mu.Lock()
-	wv.DeleteReappearedNode(other.LocalID)
+	wv.DeleteReappearedNode(wv.LocalID)
 	//wv.mu.Unlock()
 
 	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
