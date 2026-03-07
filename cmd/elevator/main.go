@@ -83,10 +83,7 @@ func main() {
 
 	}
 
-	localElvevator.CurrentFloor = 0
-
 	err = wv.SetLocalElevator(&localElvevator)
-
 	if err != nil {
 		slog.Error("SetLocalElevator", "error", err)
 	}

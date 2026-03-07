@@ -24,13 +24,14 @@ func OnFloorArrival(wv *statesync.Worldview, actionChan chan any) {
 	actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
 	time.AfterFunc(3*time.Second, func() {
-		actionChan <- elevator.DoorAction{Open: false}
 		actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+		actionChan <- elevator.DoorAction{Open: false}
 		slog.Debug("Finished stopping")
 	})
 }
 
 func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, newOrderChan chan statesync.Order, hcLightChan chan statesync.Order) {
+	prev := -1
 	for {
 		select {
 		case order := <-hcLightChan:
@@ -44,81 +45,66 @@ func Start(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any, 
 			nearestCabCall := CalculateNearestCabCall(wv)
 			anyCallsAvailable := nearestHallCall != -1 || nearestCabCall != -1
 
+			slog.Info("[Controller] Triggered order calculation", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall, "any?", anyCallsAvailable)
+
 			if !anyCallsAvailable {
 				slog.Debug("[Controller] No calls available", "nearestCabCall", nearestCabCall, "nearestHallCall", nearestHallCall)
 				actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 				continue
 			}
 
-			if nearestHallCall == local.CurrentFloor && local.Behavior != elevator.BMoving {
-				err := wv.CompleteHallCall(nearestHallCall, hallCallDirection)
-				if err != nil {
-					slog.Error("[Controller] Got worldview error", "error", err)
-				}
-				slog.Debug("[Controller] Completed HallCall", "floor", nearestHallCall, "direction", hallCallDirection)
-			}
-
-			if nearestCabCall == local.CurrentFloor && local.Behavior != elevator.BMoving {
-				err := wv.SetCabCall(nearestCabCall, false)
-				if err != nil {
-					slog.Error("[Controller] Got worldview error", "error", err)
-				}
-				slog.Debug("[Controller] Completed CabCall", "floor", nearestCabCall)
-			}
-
-			if local.Behavior == elevator.BDoorOpen {
-				slog.Debug("[Controller] Currently stopped at a floor with open door, waiting for next trigger", "currentPos", local.CurrentFloor)
-				continue
-			}
-
-			if nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor {
-				slog.Debug("[Controller] Arrived at order", "CabCall", nearestCabCall, "HallCall", nearestHallCall, "currentPos", local.CurrentFloor)
-				OnFloorArrival(wv, actionChan)
-				continue
-			}
-
-			dir := elevio.MDStop
+			allowedToProcess := prev != local.CurrentFloor || local.Behavior == elevator.BIdle
 			isCabCAll := nearestCabCall != -1 && nearestHallCall == -1
 
-			if isCabCAll {
-				if nearestCabCall < local.CurrentFloor {
-					dir = elevio.MDDown
-				} else {
-					dir = elevio.MDUp
+			slog.Warn("[Controller]", "previousFloor", prev, "currentFloor", local.CurrentFloor)
+			slog.Info("[Controller]", "allowedToProcess", allowedToProcess, "isCabCAll", isCabCAll)
+
+			if !allowedToProcess {
+				continue
+			}
+
+			arrivalOk := nearestCabCall == local.CurrentFloor || nearestHallCall == local.CurrentFloor
+
+			slog.Info("[Controller]", "arrvalOk", arrivalOk)
+
+			if arrivalOk {
+				if nearestCabCall == local.CurrentFloor {
+					wv.SetCabCall(nearestCabCall, false)
 				}
-				slog.Debug("[Controller] sending action for cabcall", "floor", nearestCabCall, "dir", dir, "currentDir", local.Direction)
 
-				if dir == local.Direction || local.Direction == elevio.MDStop {
-
-					actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
-
-					local.TargetFloor = nearestCabCall
-					err := wv.SetLocalElevator(&local)
-					if err != nil {
-						slog.Error("SetLocalElevator", "error", err)
-					}
+				if nearestHallCall == local.CurrentFloor {
+					wv.CompleteHallCall(nearestHallCall, hallCallDirection)
 				}
+
+				OnFloorArrival(wv, actionChan)
+				prev = local.CurrentFloor
 
 			} else {
-				if nearestHallCall < local.CurrentFloor {
-					dir = elevio.MDDown
-				} else {
-					dir = elevio.MDUp
+				// We only allow setting a new direction if we are idle. i.e after we have stopped
+				if local.Behavior != elevator.BIdle { // Refactor for clearity needed
+					continue
 				}
 
-				slog.Debug("[Controller] sending action for hallcall", "floor", nearestHallCall, "dir", dir, "currentDir", local.Direction)
-				if dir == local.Direction || local.Direction == elevio.MDStop {
-					actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: dir}
-
-					local.TargetFloor = nearestHallCall
-					err := wv.SetLocalElevator(&local)
-					if err != nil {
-						slog.Error("SetLocalElevator", "error", err)
-					}
+				if isCabCAll {
+					actionChan <- DetermineAction(nearestCabCall, local)
+				} else {
+					actionChan <- DetermineAction(nearestHallCall, local)
 				}
 			}
 		}
 	}
+}
+
+func DetermineAction(callFloor int, localElevator statesync.RemoteElevatorState) elevator.MoveAction {
+	var direction elevio.MotorDirection
+
+	if callFloor < localElevator.CurrentFloor {
+		direction = elevio.MDDown
+	} else {
+		direction = elevio.MDUp
+	}
+
+	return elevator.MoveAction{Behavior: elevator.BMoving, Direction: direction}
 }
 
 // CalculateNearestCabCall finds closest cab call based on current local elevator position
@@ -151,39 +137,37 @@ func CalculateNearestCabCall(wv *statesync.Worldview) int {
 }
 
 func CalculateNearestHallCall(wv *statesync.Worldview) (int, statesync.HallCallDir) {
-	// slog.Debug("[CalculateNearestHallCall] Starting")
-	local := wv.GetRemoteElevator()
+	localElevator := wv.GetRemoteElevator()
 	hallCalls := wv.GetAllHallCalls()
-	direction := statesync.HDDown
-	nearestCall := -1
-
-	// skipDownCalls := local.Direction != elevio.MDDown && local.Direction != elevio.MDStop
-	// skipUpCalls := local.Direction != elevio.MDUp && local.Direction != elevio.MDStop
-	// slog.Debug("[CalculateNearestHallCall]", "Skip down?", skipDownCalls, "skip up?", skipUpCalls)
+	closestFloorDirection := statesync.HDDown
+	bestCost := math.MaxInt
+	clostestFloor := -1
 
 	for floor, hallCall := range hallCalls {
-		for dirIdx := range hallCalls[floor] {
-			dir := statesync.HallCallDir(dirIdx)
-			if hallCall[dir].State == statesync.HSNone ||
-				// skipDownCalls && dir == statesync.HDDown ||
-				// skipUpCalls && dir == statesync.HDUp ||
-				hallCall[dir].By != wv.LocalID {
+		for direction := range hallCalls[floor] {
+			if hallCall[direction].By != localElevator.ID ||
+				hallCall[direction].State == statesync.HSNone {
 				continue
 			}
-			// slog.Debug("[CalculateNearestHallCall] Found a valid hallcall", "By", hallCall[dir].By, "floor", floor)
 
-			distance := int(math.Abs(float64(local.CurrentFloor) - float64(floor)))
-			// slog.Debug("[CalculateNearestHallCall]", "distance", distance, "nearestCall", nearestCall, "distance < nearestCall", distance < nearestCall)
-			if distance < nearestCall || nearestCall == -1 {
-				// slog.Debug("[CalculateNearestHallCall]", "distance", distance, "id", wv.LocalID, "hallcallId", hallCall[dir].By)
-				if hallCall[dir].By == wv.LocalID {
-					nearestCall = floor
-					direction = statesync.HallCallDir(dir)
-					// slog.Debug("[CalculateNearestHallCall] New nearest hallcall", "floor", floor)
-				}
+			cost := int(math.Abs(float64(floor - localElevator.CurrentFloor)))
+
+			wrongDirection := (localElevator.Direction == elevio.MDDown && floor > localElevator.CurrentFloor) ||
+				(localElevator.Direction == elevio.MDUp && floor < localElevator.CurrentFloor)
+
+			if wrongDirection {
+				cost += orders.PenaltyWrongDirection
+			}
+
+			if cost < bestCost {
+				bestCost = cost
+				clostestFloor = floor
+				closestFloorDirection = statesync.HallCallDir(direction)
 			}
 		}
 	}
 
-	return nearestCall, direction
+	slog.Warn("[CalculateNearestCabCall]", "clostestFloor", clostestFloor, "closestFloorDirection", closestFloorDirection)
+
+	return clostestFloor, closestFloorDirection
 }

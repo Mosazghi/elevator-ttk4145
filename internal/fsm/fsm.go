@@ -95,9 +95,6 @@ func (sm *StateMachine) Run() {
 
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
-				if action.Behavior != elevator.BMoving {
-					localElvevator.TargetFloor = -1
-				}
 				sm.wv.SetLocalElevator(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
@@ -106,8 +103,12 @@ func (sm *StateMachine) Run() {
 			case elevator.LightAction:
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.DoorAction:
+				if !action.Open {
+					slog.Debug("Trigger after door close")
+					sm.trigger <- struct{}{}
+				}
 				sm.elev.SetDoor(action.Open)
-				sm.trigger <- struct{}{}
+				// sm.elev.SetCallLight(elevio.Cab, localElvevator.CurrentFloor, false)
 
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
