@@ -133,6 +133,7 @@ func Start(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan
 func FetchClosestOrder(worldView *statesync.Worldview) Order {
 	closestCabCall := FindClosestCabCall(worldView)
 	closestHallCall := FindClosestHallCall(worldView)
+	localElevator := worldView.GetRemoteElevator()
 
 	slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
 	slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
@@ -145,7 +146,10 @@ func FetchClosestOrder(worldView *statesync.Worldview) Order {
 		return closestHallCall
 	}
 
-	if closestCabCall.Floor < closestHallCall.Floor {
+	cabCallDistance := int(math.Abs(float64(closestCabCall.Floor - localElevator.CurrentFloor)))
+	hallCallDistance := int(math.Abs(float64(closestHallCall.Floor - localElevator.CurrentFloor)))
+
+	if cabCallDistance < hallCallDistance {
 		return closestCabCall
 	} else {
 		return closestHallCall
