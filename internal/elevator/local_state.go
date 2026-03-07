@@ -79,16 +79,10 @@ type ElevatorCallbacks interface {
 }
 
 func (e *ElevatorState) DoMotorAction(action MoveAction) error {
-	// if action.Behavior != BIdle &&
-	// 	action.Behavior != BMoving &&
-	// 	action.Behavior != BObstructed {
-	// 	return fmt.Errorf("[Elevator] Got an invalid behavior, Received: %v", action.Behavior)
-	// }
+	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
+		return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
+	}
 
-	// if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
-	// 	return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
-	// }
-	//
 	e.Behavior = action.Behavior
 	e.Dir = action.Direction
 	e.io.SetMotorDirection(e.Dir)
