@@ -65,13 +65,13 @@ func main() {
 	hallLightHandler := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
-	newOrderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, hallLightHandler, newOrderChan)
+	newOrderChan := make(chan struct{}, 10)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, hallLightHandler)
 
 	go controller.Start(wv, triggerAction, actionChan, newOrderChan, hallLightHandler)
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
+	orderHandler := orders.NewOrderHandler(wvChan, newOrderChan, actionChan)
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()
@@ -95,6 +95,7 @@ func main() {
 		drvStop,
 		triggerAction,
 		actionChan,
+		newOrderChan,
 		&elev,
 		wv,
 	)

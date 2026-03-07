@@ -30,13 +30,12 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
-	hcLightChan        chan Order
-	newOrderChan       chan Order
+	hcLightUpdate      chan Order
 	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, hcLightChan chan Order, newOrderChan chan Order) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, hcLightUpdate chan Order) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -44,8 +43,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview, hcLightChan cha
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
-		hcLightChan:        hcLightChan,
-		newOrderChan:       newOrderChan,
+		hcLightUpdate:      hcLightUpdate,
 		mu:                 &sync.RWMutex{},
 	}
 
@@ -279,13 +277,13 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 // CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
 func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
-	wv.hcLightChan <- Order{Floor: floor, Dir: dir, Completed: true}
+	wv.hcLightUpdate <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 	return wv.setHallCall(floor, dir, HSNone)
 }
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
-	wv.hcLightChan <- Order{Floor: floor, Dir: dir, Completed: false}
+	wv.hcLightUpdate <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 	return wv.setHallCall(floor, dir, HSAvailable)
 }
 
@@ -403,7 +401,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						ConfirmedBy: []int{},
 						Timestamp:   0,
 					}
-					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
+					wv.hcLightUpdate <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
@@ -422,7 +420,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 
 					}
-					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+					wv.hcLightUpdate <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 				}
 
 				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {

@@ -10,14 +10,15 @@ import (
 )
 
 type StateMachine struct {
-	drvButtons chan elevio.ButtonEvent
-	drvFloors  chan int
-	drvObst    chan bool
-	drvStop    chan bool
-	trigger    chan struct{}
-	actionChan chan any
-	elev       *elevator.ElevatorState
-	wv         *statesync.Worldview
+	drvButtons    chan elevio.ButtonEvent
+	drvFloors     chan int
+	drvObst       chan bool
+	drvStop       chan bool
+	arriveAtFloor chan struct{}
+	actionChan    chan any
+	anyOrder      chan struct{}
+	elev          *elevator.ElevatorState
+	wv            *statesync.Worldview
 }
 
 func NewStateMachine(
@@ -25,20 +26,22 @@ func NewStateMachine(
 	drvFloors chan int,
 	drvObst chan bool,
 	drvStop chan bool,
-	trigger chan struct{},
+	arriveAtFloor chan struct{},
 	actionChan chan any,
+	anyOrder chan struct{},
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
 ) *StateMachine {
 	return &StateMachine{
-		drvButtons: drvButtons,
-		drvFloors:  drvFloors,
-		drvObst:    drvObst,
-		drvStop:    drvStop,
-		trigger:    trigger,
-		actionChan: actionChan,
-		elev:       elev,
-		wv:         wv,
+		drvButtons:    drvButtons,
+		drvFloors:     drvFloors,
+		drvObst:       drvObst,
+		drvStop:       drvStop,
+		arriveAtFloor: arriveAtFloor,
+		actionChan:    actionChan,
+		anyOrder:      anyOrder,
+		elev:          elev,
+		wv:            wv,
 	}
 }
 
@@ -62,16 +65,13 @@ func (sm *StateMachine) Run() {
 		// }
 		select {
 		case order := <-sm.drvButtons:
-			switch localElvevator.Behavior {
-			case elevator.BDoorOpen:
-				fallthrough
-			case elevator.BMoving:
-				fallthrough
-			case elevator.BIdle:
-				err := sm.makeNewOrder(order)
-				if err != nil {
-					slog.Error("Failed to make new order", "error", err)
-				}
+			err := sm.makeNewOrder(order)
+			if err != nil {
+				slog.Error("Failed to make new order", "error", err)
+			}
+
+			if order.Button == elevio.Cab {
+				sm.anyOrder <- struct{}{}
 			}
 
 		case floor := <-sm.drvFloors:
@@ -81,8 +81,8 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			sm.elev.SetCurrentFloorLight(floor)
-			slog.Debug("[StateMachine] Trigger after floor arrival", "floor", floor)
-			sm.trigger <- struct{}{}
+			slog.Debug("[arriveAtFloor] trigger")
+			sm.arriveAtFloor <- struct{}{}
 
 		case action := <-sm.actionChan:
 			slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
@@ -104,8 +104,8 @@ func (sm *StateMachine) Run() {
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.DoorAction:
 				if !action.Open {
-					slog.Debug("Trigger after door close")
-					sm.trigger <- struct{}{}
+					slog.Debug("[anyOrder] trigger (at door close)")
+					sm.anyOrder <- struct{}{}
 				}
 				sm.elev.SetDoor(action.Open)
 				// sm.elev.SetCallLight(elevio.Cab, localElvevator.CurrentFloor, false)
@@ -146,7 +146,6 @@ func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
 	case elevio.Cab:
 		err = sm.wv.SetCabCall(order.Floor, true)
 		sm.elev.SetCallLight(order.Button, order.Floor, true)
-		sm.trigger <- struct{}{}
 	case elevio.HallUp:
 		err = sm.wv.NewHallCall(order.Floor, statesync.HDUp)
 	case elevio.HallDown:

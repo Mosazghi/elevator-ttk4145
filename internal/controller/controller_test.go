@@ -19,24 +19,24 @@ const (
 )
 
 // Helper
-func newTestCtx() (wv *statesync.Worldview, wvChan chan statesync.Worldview, triggerChan chan struct{}) {
+func newTestCtx() (wv *statesync.Worldview, wvChan chan statesync.Worldview, arriveAtFloorChan chan struct{}) {
 	wvChan = make(chan statesync.Worldview, 10)
-	triggerChan = make(chan struct{}, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan statesync.Order, 10))
+	arriveAtFloorChan = make(chan struct{}, 10)
+	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
-	return worldview, wvChan, triggerChan
+	return worldview, wvChan, arriveAtFloorChan
 }
 
-func newTestStart(wv *statesync.Worldview, trigger chan struct{}, actionChan chan any) {
-	go Start(wv, trigger, actionChan, make(chan statesync.Order, 10), make(chan statesync.Order, 10))
+func newTestStart(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan any, newOrder chan struct{}, hcLight chan statesync.Order) {
+	go Start(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 }
 
 // CASE 1: Given a Hall-Call
 func TestGetNextAction_HallCall(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, trigger := newTestCtx()
+	wv, _, arriveAtFloor := newTestCtx()
 
 	localElevator := wv.GetRemoteElevator()
 	localElevator.CurrentFloor = 0
@@ -56,9 +56,11 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newTestStart(wv, trigger, actionChan)
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	trigger <- struct{}{}
+	newOrder <- struct{}{}
 	select {
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDUp, "Expected elevator 1 to move up from floor 0 to floor 3")
@@ -72,7 +74,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 // CASE 2: At Hall-call order
 func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, trigger := newTestCtx()
+	wv, _, arriveAtFloor := newTestCtx()
 	elev := wv.GetRemoteElevator()
 
 	err := wv.NewHallCall(3, statesync.HDUp)
@@ -92,9 +94,11 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newTestStart(wv, trigger, actionChan)
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	trigger <- struct{}{}
+	arriveAtFloor <- struct{}{}
 	select {
 	case action := <-actionChan:
 		t.Log("GOT ACTIONNN")
@@ -111,10 +115,9 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 
 // CASE 3: Given a Cab-call
 func TestGetNextAction_CabCall(t *testing.T) {
-	actionChan := make(chan any)
-	wv, _, trigger := newTestCtx()
+	actionChan := make(chan any, 10)
+	wv, _, arriveAtFloor := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go newTestStart(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 0
 	err := wv.SetLocalElevator(&elev)
@@ -126,7 +129,11 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	trigger <- struct{}{}
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+
+	newOrder <- struct{}{}
 	select {
 	case action := <-actionChan:
 		elev := wv.GetRemoteElevator()
@@ -143,9 +150,8 @@ func TestGetNextAction_CabCall(t *testing.T) {
 // CASE 4: At Cab-call order
 func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, trigger := newTestCtx()
+	wv, _, arriveAtFloor := newTestCtx()
 	elev := wv.GetRemoteElevator()
-	go newTestStart(wv, trigger, actionChan)
 
 	elev.CurrentFloor = 2
 	_ = wv.SetLocalElevator(&elev)
@@ -155,7 +161,11 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	trigger <- struct{}{}
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+
+	arriveAtFloor <- struct{}{}
 	select {
 	case action := <-actionChan:
 		elev := wv.GetRemoteElevator()
@@ -169,16 +179,14 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	}
 }
 
-// CASE 5: Moving while there are Cab-calls both above and under
+// CASE 5: Cab-calls both above and under
 func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, trigger := newTestCtx()
-	go newTestStart(wv, trigger, actionChan)
+	wv, _, arriveAtFloor := newTestCtx()
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 2
-	elev.Behavior = elevator.BMoving
-	elev.Direction = elevio.MDDown
+	elev.Behavior = elevator.BIdle
 	err := wv.SetLocalElevator(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
@@ -189,10 +197,14 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 	fmt.Println("Current floor:", elev.CurrentFloor)
 
-	trigger <- struct{}{}
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+
+	newOrder <- struct{}{}
 	select {
 	case action := <-actionChan:
-		// Elevator at floor 2 with Direction MDDown should prefer the lower call at floor 1
+		// Elevator at floor 2 should prefer the lower call at floor 1
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Elevator 1 should move down towards lower cab-call")
 		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should be moving")
 
@@ -204,8 +216,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 // CASE 6: Two elevators
 func TestGetNextAction_multiElevator(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, trigger := newTestCtx()
-	go newTestStart(wv, trigger, actionChan)
+	wv, _, arriveAtFloor := newTestCtx()
 
 	local := wv.GetRemoteElevator()
 	other := statesync.NewRemoteElevatorState(2, 4)
@@ -232,7 +243,11 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
-	trigger <- struct{}{}
+	newOrder := make(chan struct{}, 10)
+	hcLight := make(chan statesync.Order, 10)
+	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+
+	newOrder <- struct{}{}
 	select {
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Expected elevator 1 to move down towards floor 0")
@@ -274,10 +289,10 @@ func TestCalculateNearestHallCall(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab calls")
 
-	nearestCall, direction := CalculateNearestHallCall(wv)
+	order := FindClosestCabCall(wv)
 
-	assert.Equal(t, 2, nearestCall, "Expected nearestCall to be on floor 2")
-	assert.Equal(t, statesync.HDUp, direction, "Expected the nearestCall to be upwards")
+	assert.Equal(t, 2, order.Floor, "Expected nearestCall to be on floor 2")
+	assert.Equal(t, statesync.HDUp, order.HallCallDirection, "Expected the nearestCall to be upwards")
 }
 
 func TestCalculateNearestCabCall(t *testing.T) {
@@ -302,6 +317,6 @@ func TestCalculateNearestCabCall(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab calls")
 
-	nearestCall := CalculateNearestCabCall(wv)
-	assert.Equal(t, 2, nearestCall, "Expected nearestCall to be on floor 2")
+	order := FindClosestCabCall(wv)
+	assert.Equal(t, 2, order.Floor, "Expected nearestCall to be on floor 2")
 }

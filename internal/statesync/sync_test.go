@@ -16,7 +16,7 @@ import (
 
 // Easier to create test worldviews with this helper function
 func NewTestWorldView(localID, numFloors int) *Worldview {
-	return NewWorldView(localID, numFloors, make(chan Worldview, 10), make(chan Order, 10), make(chan Order, 20))
+	return NewWorldView(localID, numFloors, make(chan Worldview, 10), make(chan Order, 10))
 }
 
 // Merge with different number of floors should fail
@@ -507,9 +507,9 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	// Drain hcLightChan so NewHallCall never blocks
+	// Drain hcLightUpdate so NewHallCall never blocks
 	go func() {
-		for range wv.hcLightChan {
+		for range wv.hcLightUpdate {
 		}
 	}()
 
