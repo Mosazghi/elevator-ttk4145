@@ -167,6 +167,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 // stateSize := sizeof(wv.ElevatorStates)
 // if (myselfFound && stateSize == 1) || !otherFoundMe {}
 
+// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	//slog.Info("PeerPerspective BeforeFetch","string",other.ElevatorStates[wv.LocalID].CabCalls)
 
@@ -181,7 +182,7 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	// }
 
 	/* Søndagskoden */
-	peerViewOfMe, exists := other.ElevatorStates[wv.LocalID]
+	peerView, exists := other.ElevatorStates[wv.LocalID]
 	if !exists {
 		return
 	}
@@ -191,8 +192,11 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 		return
 	}
 
-	for f := 0; f < min(len(myView.CabCalls), len(peerViewOfMe.CabCalls)); f++ {
-		myView.CabCalls[f] = myView.CabCalls[f] || peerViewOfMe.CabCalls[f]
+	for floor, peerCabCallValue := range peerView.CabCalls {
+		if floor >= len(myView.CabCalls) {
+			break
+		}
+		myView.CabCalls[floor] = myView.CabCalls[floor] || peerCabCallValue
 	}
 
 	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
@@ -482,7 +486,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	// -- Validate Hall Calls --
-	// Merge hall calls
 	for floor := range other.HallCalls {
 		for dir := range other.HallCalls[floor] {
 			otherHCState := other.HallCalls[floor][dir]
