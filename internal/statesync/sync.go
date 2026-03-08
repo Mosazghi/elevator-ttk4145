@@ -170,14 +170,32 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	//slog.Info("PeerPerspective BeforeFetch","string",other.ElevatorStates[wv.LocalID].CabCalls)
 
-	peerPerspective := other.ElevatorStates[other.LocalID]
+	/* Fredagskoden */
+	// peerPerspective := other.ElevatorStates[other.LocalID]
 
-	if peerPerspective.Alive == false {
-		wv.ElevatorStates[wv.LocalID] = peerPerspective
-		wv.ElevatorStates[wv.LocalID].Alive = true
-		slog.Info("Cab Calls recovered")
-		slog.Info("MyPerspective AfterFetch", "string", other.ElevatorStates[wv.LocalID].CabCalls)
+	// if peerPerspective.Alive == false {
+	// 	wv.ElevatorStates[wv.LocalID] = peerPerspective
+	// 	wv.ElevatorStates[wv.LocalID].Alive = true
+	// 	slog.Info("Cab Calls recovered")
+	// 	slog.Info("MyPerspective AfterFetch", "string", other.ElevatorStates[wv.LocalID].CabCalls)
+	// }
+
+	/* Søndagskoden */
+	peerViewOfMe, exists := other.ElevatorStates[wv.LocalID]
+	if !exists {
+		return
 	}
+
+	myView, exists := wv.ElevatorStates[wv.LocalID]
+	if !exists {
+		return
+	}
+
+	for f := 0; f < min(len(myView.CabCalls), len(peerViewOfMe.CabCalls)); f++ {
+		myView.CabCalls[f] = myView.CabCalls[f] || peerViewOfMe.CabCalls[f]
+	}
+
+	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
 
 }
 
@@ -234,7 +252,7 @@ func (wv *Worldview) releaseAnyOrders() {
 			//_, isNodeLost := wv.lostElevatorsState[hc.By]
 			isNodeLost := false
 			if hc.By != -1 {
-				isNodeLost = wv.ElevatorStates[hc.By].Alive
+				isNodeLost = !wv.ElevatorStates[hc.By].Alive
 			}
 
 			hasOrderTimedout := hc.State == HSProcessing && hc.Timestamp != 0 &&
@@ -440,17 +458,28 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	if err = ValidateStateRemote(otherLocalState); err != nil {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
+
+	// Determine if Cab Calls should be fetched from peer
+	localPrevState := wv.ElevatorStates[wv.LocalID]
+	peerViewOfLocal := other.ElevatorStates[wv.LocalID]
+
+	// Update peer state
+	otherLocalState.Alive = true
+	otherLocalState.LastSeenAt = time.Now()
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	//wv.RecoverLostCabCallsFromPeer(other)
-	wv.FetchCabCallsOnReconnect(other)
+	// Fetch Cab Calls 
+	fetchCabCalls := true
+	for _, cabCallIsFound := range localPrevState.CabCalls {
+		if cabCallIsFound {
+			fetchCabCalls = false
+			break
+		}
+	}
 
-	//TODO: wv.LocalID riktig or other.LocalID???
-
-	//wv.DeleteReappearedNode(other.LocalID)
-
-	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
-	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
+	if fetchCabCalls && peerViewOfLocal != nil {
+		wv.FetchCabCallsOnReconnect(other)
+	}
 
 	// -- Validate Hall Calls --
 	// Merge hall calls
@@ -479,8 +508,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 					// addition:
 					isAlive := wv.ElevatorStates[id].Alive
-					_, isExists := wv.ElevatorStates[id]
-					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive && !isExists {
+					//_, isExisting := wv.ElevatorStates[id]
+					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
 				}

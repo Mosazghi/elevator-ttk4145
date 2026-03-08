@@ -439,12 +439,14 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
+	// Send initial message from wv2 to wv1
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify wv2 is present
 	wv1.mu.Lock()
 	assert.Contains(t, wv1.ElevatorStates, 2, "peer should be added")
+
 	// Set LastSeenAt to old time to simulate timeout
 	wv1.ElevatorStates[2].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
 	wv1.mu.Unlock()
@@ -452,49 +454,53 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	// Wait for next broadcast cycle to detect timeout
 	time.Sleep(BroadcastInterval + 200*time.Millisecond)
 
-	// Verify peer was moved to lost state
-	wv1.mu.Lock()
-	_, existsActive := wv1.ElevatorStates[2]
-	_, existsLost := wv1.lostElevatorsState[2]
-	wv1.mu.Unlock()
+	// Verify peer was marked as not alive
+	wv1.mu.RLock()
+	elev, exists := wv1.ElevatorStates[2]
+	wv1.mu.RUnlock()
 
-	assert.False(t, existsActive, "peer should be removed from active elevators")
-	assert.True(t, existsLost, "peer should be in lost elevators")
+	assert.True(t, exists, "peer should still exist in ElevatorStates")
+	assert.False(t, elev.Alive, "peer should be marked as not alive (timed out)")
 }
 
 // TestStartSyncing_ReappearedPeers verifies handling of returning peers
 func TestStartSyncing_ReappearedPeers(t *testing.T) {
-	wv2ID := 2
-
 	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(wv2ID, 4)
+	wv2 := NewTestWorldView(2, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
 	errChan := make(chan error, 10)
 
+	// Start syncing goroutine
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
-	// Manually mark peer as lost
+	// Add wv2 to wv1 and mark it as "lost"
 	wv1.mu.Lock()
-	wv1.lostElevatorsState[wv2ID] = wv2.ElevatorStates[wv2ID]
+	wv1.ElevatorStates[wv2.LocalID] = wv2.ElevatorStates[wv2.LocalID]
+	wv1.ElevatorStates[wv2.LocalID].Alive = false
 	wv1.mu.Unlock()
 
-	// Send message from "reappeared" peer
-	jsonData, err := BuildWvJSON(wv2)
-	require.NoError(t, err)
+	// Ensure peer is initially marked dead
+	wv1.mu.RLock()
+	assert.False(t, wv1.ElevatorStates[wv2.LocalID].Alive, "peer should start as dead")
+	wv1.mu.RUnlock()
 
-	rxChan <- network.UDPMessage{Data: jsonData}
+	// Simulate message from the "reappeared" peer
+	data, err := BuildWvJSON(wv2)
+	require.NoError(t, err)
+	rxChan <- network.UDPMessage{Data: data}
+
+	// Wait for StartSyncing to process the message
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify peer was restored
-	wv1.mu.Lock()
-	_, existsLost := wv1.lostElevatorsState[wv2ID]
-	_, existsActive := wv1.ElevatorStates[wv2ID]
-	wv1.mu.Unlock()
+	// Verify peer is now marked alive
+	wv1.mu.RLock()
+	peer, exists := wv1.ElevatorStates[wv2.LocalID]
+	wv1.mu.RUnlock()
 
-	assert.False(t, existsLost, "peer should be removed from lost state")
-	assert.True(t, existsActive, "peer should be restored to active state")
+	require.True(t, exists, "peer should exist in active elevators map")
+	assert.True(t, peer.Alive, "peer should be marked alive after reappearing")
 }
 
 // TestStartSyncing_ConcurrentAccess verifies thread safety during syncing
@@ -554,51 +560,67 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 // TestLostNode_ReleasesPendingOrders verifies that hall calls assigned to a timed-out node are reset
 func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	wv := NewTestWorldView(1, 4)
-	lostID := 2
 
-	// Add peer and assign a hall call to it
+	// --- Test: lost node ---
+	lostID := 2
 	wv.ElevatorStates[lostID] = NewRemoteElevatorState(lostID, 4)
+	// Simulate node timeout
 	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
-	wv.HallCalls[1][HDUp] = HallCallPairState{State: HSProcessing, By: lostID, ConfirmedBy: []int{lostID}, Timestamp: time.Now().UnixMilli()}
+	wv.HallCalls[1][HDUp] = HallCallPairState{
+		State:       HSProcessing,
+		By:          lostID,
+		ConfirmedBy: []int{lostID},
+		Timestamp:   time.Now().UnixMilli(),
+	}
 
 	wv.mu.Lock()
 	wv.releaseAnyOrders()
 	wv.mu.Unlock()
 
-	assert.Equal(t, HSAvailable, wv.HallCalls[1][HDUp].State, "order should be released when node is lost")
-	assert.Equal(t, -1, wv.HallCalls[1][HDUp].By, "By should be reset to -1")
-	assert.NotContains(t, wv.HallCalls[1][HDUp].ConfirmedBy, lostID, "ConfirmedBy should be cleared")
-	_, stillActive := wv.ElevatorStates[lostID]
-	assert.False(t, stillActive, "lost node should be removed from active elevators")
+	hc := wv.HallCalls[1][HDUp]
+	assert.Equal(t, HSAvailable, hc.State, "order should be released when node is lost")
+	assert.Equal(t, -1, hc.By, "By should be reset to -1")
+	assert.NotContains(t, hc.ConfirmedBy, lostID, "ConfirmedBy should not include lost node")
+	assert.False(t, wv.ElevatorStates[lostID].Alive, "lost node should be marked dead")
 
-	// test for an obstructed evlator that is processing an order
+	// --- Test: obstructed node ---
 	obstructedID := 3
 	wv.ElevatorStates[obstructedID] = NewRemoteElevatorState(obstructedID, 4)
-	wv.ElevatorStates[obstructedID].LastSeenAt = time.Now()
 	wv.ElevatorStates[obstructedID].IsObstructed = true
-	wv.HallCalls[2][HDDown] = HallCallPairState{State: HSProcessing, By: obstructedID, ConfirmedBy: []int{obstructedID}, Timestamp: time.Now().UnixMilli()}
+	wv.HallCalls[2][HDDown] = HallCallPairState{
+		State:       HSProcessing,
+		By:          obstructedID,
+		ConfirmedBy: []int{obstructedID},
+		Timestamp:   time.Now().UnixMilli(),
+	}
 
 	wv.mu.Lock()
 	wv.releaseAnyOrders()
 	wv.mu.Unlock()
 
-	assert.Equal(t, HSAvailable, wv.HallCalls[2][HDDown].State, "order should be released when node is lost")
-	assert.Equal(t, -1, wv.HallCalls[2][HDDown].By, "By should be reset to -1")
-	assert.NotContains(t, wv.HallCalls[2][HDDown].ConfirmedBy, obstructedID, "ConfirmedBy should be cleared")
+	hc = wv.HallCalls[2][HDDown]
+	assert.Equal(t, HSAvailable, hc.State, "order should be released when node is obstructed")
+	assert.Equal(t, -1, hc.By, "By should be reset to -1")
+	assert.NotContains(t, hc.ConfirmedBy, obstructedID, "ConfirmedBy should not include obstructed node")
 
-	// test for an elevator taking too long to process an order (finish)
-	processingID := 1
+	// --- Test: processing timeout ---
+	processingID := wv.LocalID
 	wv.ElevatorStates[processingID] = NewRemoteElevatorState(processingID, 4)
-	wv.ElevatorStates[processingID].LastSeenAt = time.Now()
-	wv.HallCalls[3][HDUp] = HallCallPairState{State: HSProcessing, By: processingID, ConfirmedBy: []int{processingID}, Timestamp: time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli()}
+	wv.HallCalls[3][HDUp] = HallCallPairState{
+		State:       HSProcessing,
+		By:          processingID,
+		ConfirmedBy: []int{processingID},
+		Timestamp:   time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli(),
+	}
 
 	wv.mu.Lock()
 	wv.releaseAnyOrders()
 	wv.mu.Unlock()
 
-	assert.Equal(t, HSAvailable, wv.HallCalls[3][HDUp].State, "order should be released when processing timeout is exceeded")
-	assert.Equal(t, -1, wv.HallCalls[3][HDUp].By, "By should be reset to -1")
-	assert.Contains(t, wv.HallCalls[3][HDUp].ConfirmedBy, processingID, "ConfirmedBy should be cleared")
+	hc = wv.HallCalls[3][HDUp]
+	assert.Equal(t, HSAvailable, hc.State, "order should be released when processing timeout is exceeded")
+	assert.Equal(t, -1, hc.By, "By should be reset to -1")
+	assert.Contains(t, hc.ConfirmedBy, processingID, "ConfirmedBy should still include local node")
 }
 
 func TestStartSyncing_NetworkErrors(t *testing.T) {
@@ -698,100 +720,80 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	assert.Len(t, confirmations, 4, "should have all unique confirmations")
 }
 
-// NEW
 
-// setupHelper creates a clean Worldview for testing without blocking channels
-func setupHelper(localID, numFloors int) *Worldview {
-	wvChan := make(chan Worldview, 10)
-	orderChan := make(chan Order, 10)
-	return NewWorldView(localID, numFloors, wvChan, orderChan)
+func TestCabCallRecoveredOnReconnect(t *testing.T) {
+
+	// Elevator A before crash
+	A := NewTestWorldView(1, 4)
+	A.ElevatorStates[A.LocalID].CabCalls[1] = true
+
+	// Elevator B sees A and stores that state
+	B := NewTestWorldView(2, 4)
+
+	stateOfA := A.ElevatorStates[A.LocalID]
+	B.ElevatorStates[A.LocalID] = stateOfA
+
+	require.True(t,
+		B.ElevatorStates[A.LocalID].CabCalls[1],
+		"B must remember A's cab call before crash",
+	)
+
+	// --- A crashes and reboots ---
+	ARebooted := NewTestWorldView(1, 4)
+
+	assert.False(t,
+		ARebooted.ElevatorStates[A.LocalID].CabCalls[1],
+		"rebooted elevator should start with empty cab calls",
+	)
+
+	// --- simulate worldview exchange ---
+	// simulate A being considered dead
+	// A previously knew about B but thought it was dead
+	ARebooted.ElevatorStates[B.LocalID] = NewRemoteElevatorState(B.LocalID, 4)
+	ARebooted.ElevatorStates[B.LocalID].Alive = false
+	cs, err := checksum.CalculateChecksum(B)
+	require.NoError(t, err)
+	require.True(t, B.ElevatorStates[1].CabCalls[1])
+	ARebooted.Merge(B, cs)
+
+	// After merge, A should recover its cab call from B
+	assert.True(t,
+		ARebooted.ElevatorStates[A.LocalID].CabCalls[1],
+		"cab call should be recovered from peer worldview",
+	)
 }
 
-func TestMerge_RecoverLostCabCallsFromPeer(t *testing.T) {
-	numFloors := 4
+func TestElevatorReconnectRecoversCabCalls(t *testing.T) {
+	// --- Step 1: Elevator A has a cab call ---
+	A := NewTestWorldView(1, 4)
+	A.ElevatorStates[A.LocalID].CabCalls[1] = true
 
-	// 1. Setup the rebooted node (LocalID: 2)
-	// It wakes up with amnesia (no active cab calls)
-	rebootedWv := setupHelper(2, numFloors)
-	rebootedWv.ElevatorStates[2].CabCalls = []bool{false, false, false, false}
+	// --- Step 2: Elevator B sees A's state ---
+	B := NewTestWorldView(2, 4)
+	B.ElevatorStates[A.LocalID] = A.ElevatorStates[A.LocalID]
 
-	// 2. Setup the alive peer node (LocalID: 1)
-	alivePeerWv := setupHelper(1, numFloors)
+	require.True(t, B.ElevatorStates[A.LocalID].CabCalls[1], "B should remember A's cab call")
 
-	// 3. The alive peer remembers that node 2 disconnected with active calls at floor 0 and 2
-	lostStateForNode2 := NewRemoteElevatorState(2, numFloors)
-	lostStateForNode2.CabCalls = []bool{true, false, true, false}
-	alivePeerWv.lostElevatorsState[2] = lostStateForNode2
+	// --- Step 3: Elevator A crashes and reboots ---
+	ARebooted := NewTestWorldView(1, 4)
+	assert.False(t, ARebooted.ElevatorStates[A.LocalID].CabCalls[1],
+		"rebooted elevator should start with empty cab calls",
+	)
 
-	// Calculate checksum so Merge accepts the payload
-	cs, err := checksum.CalculateChecksum(alivePeerWv)
-	require.NoError(t, err, "Checksum calculation should not fail")
+	// --- Step 4: Simulate B marking A as timed out ---
+	B.ElevatorStates[A.LocalID].Alive = false
+	B.ElevatorStates[A.LocalID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
 
-	// 4. ACTION: The rebooted node receives the broadcast from the alive peer
-	err = rebootedWv.Merge(alivePeerWv, cs)
-	require.NoError(t, err, "Merge should succeed without error")
+	// Calculate checksum for worldview exchange
+	cs, err := checksum.CalculateChecksum(B)
+	require.NoError(t, err)
 
-	// 5. ASSERTIONS: Did the rebooted node recover its own cab calls?
-	recoveredLocalState := rebootedWv.ElevatorStates[2]
-	require.NotNil(t, recoveredLocalState, "Local state should exist")
+	// --- Step 5: Elevator A merges worldview from B (reconnect) ---
+	err = ARebooted.Merge(B, cs)
+	require.NoError(t, err)
 
-	// Use assert so if one floor fails, the test continues checking the others
-	assert.True(t, recoveredLocalState.CabCalls[0], "Floor 0 cab call should be recovered")
-	assert.False(t, recoveredLocalState.CabCalls[1], "Floor 1 should remain false")
-	assert.True(t, recoveredLocalState.CabCalls[2], "Floor 2 cab call should be recovered")
-	assert.False(t, recoveredLocalState.CabCalls[3], "Floor 3 should remain false")
-}
-
-func TestMerge_DeleteReappearedNode(t *testing.T) {
-	numFloors := 4
-
-	// 1. Setup the alive node (LocalID: 1)
-	aliveWv := setupHelper(1, numFloors)
-
-	// The alive node remembers node 2 was lost
-	lostStateForNode2 := NewRemoteElevatorState(2, numFloors)
-	aliveWv.lostElevatorsState[2] = lostStateForNode2
-
-	// 2. Setup the rebooted node (LocalID: 2) sending its very first heartbeat
-	rebootedWv := setupHelper(2, numFloors)
-
-	// Calculate checksum for the incoming broadcast
-	cs, err := checksum.CalculateChecksum(rebootedWv)
-	require.NoError(t, err, "Checksum calculation should not fail")
-
-	// 3. ACTION: The alive node receives the broadcast from the rebooted node
-	err = aliveWv.Merge(rebootedWv, cs)
-	require.NoError(t, err, "Merge should succeed without error")
-
-	// 4. ASSERTION: Did the alive node delete the memory of Node 2 being lost?
-	_, stillExists := aliveWv.lostElevatorsState[2]
-	assert.False(t, stillExists, "Lost state for Node 2 should be deleted after it reappeared")
-}
-
-func TestMerge_FaultTolerance_FloorCountMismatch(t *testing.T) {
-	// 1. Rebooted node thinks there are 3 floors
-	rebootedWv := setupHelper(2, 3)
-	rebootedWv.ElevatorStates[2].CabCalls = []bool{false, false, false}
-
-	// 2. Alive peer somehow thinks there are 5 floors (misconfiguration / network artifact)
-	alivePeerWv := setupHelper(1, 5)
-	
-	lostStateForNode2 := NewRemoteElevatorState(2, 5)
-	// It remembers calls on floors 0, 2, and 4
-	lostStateForNode2.CabCalls = []bool{true, false, true, false, true}
-	alivePeerWv.lostElevatorsState[2] = lostStateForNode2
-
-	// ACTION: Manually call the recovery function to bypass Merge's rigid floor length check
-	// We want to test the `min()` panic protection inside RecoverLostCabCallsFromPeer specifically.
-	rebootedWv.FetchCabCallsOnReconnect(alivePeerWv)
-
-	// ASSERTIONS:
-	recoveredLocalState := rebootedWv.ElevatorStates[2]
-	require.NotNil(t, recoveredLocalState)
-	require.Len(t, recoveredLocalState.CabCalls, 3, "Cab calls length should remain strictly 3")
-
-	assert.True(t, recoveredLocalState.CabCalls[0], "Should recover floor 0")
-	assert.False(t, recoveredLocalState.CabCalls[1], "Should remain false")
-	assert.True(t, recoveredLocalState.CabCalls[2], "Should recover floor 2")
-	// Floor 4 is safely ignored due to the min() function, and NO PANIC occurred!
+	// --- Assertions: A should recover cab calls and ARebooted should see A as alive ---
+	aState := ARebooted.ElevatorStates[A.LocalID]
+	assert.True(t, aState.CabCalls[1], "cab call should be recovered from peer")
+	assert.True(t, aState.Alive, "reconnected elevator should be marked alive")
 }
