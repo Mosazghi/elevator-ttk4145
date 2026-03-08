@@ -168,6 +168,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 // if (myselfFound && stateSize == 1) || !otherFoundMe {}
 
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
+	//slog.Info("PeerPerspective BeforeFetch","string",other.ElevatorStates[wv.LocalID].CabCalls)
 
 	peerPerspective := other.ElevatorStates[other.LocalID]
 
@@ -175,6 +176,7 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 		wv.ElevatorStates[wv.LocalID] = peerPerspective
 		wv.ElevatorStates[wv.LocalID].Alive = true
 		slog.Info("Cab Calls recovered")
+		slog.Info("MyPerspective AfterFetch", "string", other.ElevatorStates[wv.LocalID].CabCalls)
 	}
 
 }
