@@ -20,20 +20,20 @@ const (
 )
 
 type Controller struct {
-	wv          *statesync.Worldview
-	actionChan  chan any
-	triggerChan chan ControllerTriggerSrc
-	hcLightChan chan statesync.Order
-	doorTimer   *time.Timer
+	wv            *statesync.Worldview
+	actionChan    chan any
+	triggerChan   chan ControllerTriggerSrc
+	hcLightChan   chan statesync.Order
+	doorTimerChan <-chan time.Time
 }
 
 func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
 	return &Controller{
-		wv:          wv,
-		actionChan:  actionChan,
-		triggerChan: ctrlTrigger,
-		hcLightChan: hcLightChan,
-		doorTimer:   time.NewTimer(0),
+		wv:            wv,
+		actionChan:    actionChan,
+		triggerChan:   ctrlTrigger,
+		hcLightChan:   hcLightChan,
+		doorTimerChan: nil,
 	}
 }
 
@@ -44,11 +44,7 @@ func (ctrl *Controller) OnFloorArrival() {
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 	ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
-	time.AfterFunc(3*time.Second, func() {
-		ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-		ctrl.actionChan <- elevator.DoorAction{Open: false}
-		slog.Debug("Finished stopping")
-	})
+	ctrl.doorTimerChan = time.After(3 * time.Second)
 }
 
 func (ctrl *Controller) Start() {
@@ -56,6 +52,10 @@ func (ctrl *Controller) Start() {
 		select {
 		case order := <-ctrl.hcLightChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
+		case <-ctrl.doorTimerChan:
+			ctrl.doorTimerChan = nil
+			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			ctrl.actionChan <- elevator.DoorAction{Open: false}
 		case triggerSrc := <-ctrl.triggerChan:
 			switch triggerSrc {
 			case CTSOrderUpdate:
@@ -68,6 +68,16 @@ func (ctrl *Controller) Start() {
 				if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
 					ctrl.OnFloorArrival()
 					closestOrder.Complete(ctrl.wv)
+					currFloor := localElevator.CurrentFloor
+					ctrl.wv.SetCabCall(currFloor, false)
+					hcs := ctrl.wv.GetAllHallCalls()
+					for dir := range hcs[currFloor] {
+						isOur := hcs[currFloor][dir].By == localElevator.ID && hcs[currFloor][dir].State == statesync.HSProcessing
+						slog.Info("[Completing hallcall]", "floor", currFloor, "direction", dir, "isOur", isOur)
+						if isOur {
+							ctrl.wv.CompleteHallCall(currFloor, statesync.HallCallDir(dir))
+						}
+					}
 					continue
 				}
 
@@ -77,18 +87,17 @@ func (ctrl *Controller) Start() {
 			case CTSFArrivalFloor:
 				localElevator := ctrl.wv.GetRemoteElevator()
 				closestOrder := FetchClosestOrder(ctrl.wv)
-				slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
+				// slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
 
 				if closestOrder.Empty() {
-					slog.Debug("[Controller] No calls available, stopping")
+					// slog.Debug("[Controller] No calls available, stopping")
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 					continue
 				}
 
 				if closestOrder.AtFloor(localElevator.CurrentFloor) {
-					slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
+					// slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
 					ctrl.OnFloorArrival()
-					time.Sleep(500 * time.Millisecond)
 					closestOrder.Complete(ctrl.wv)
 				}
 			}
@@ -101,8 +110,8 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	closestHallCall := FindClosestHallCall(worldView)
 	localElevator := worldView.GetRemoteElevator()
 
-	slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
-	slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
+	// slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
+	// slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
 
 	if !closestCabCall.Empty() && closestHallCall.Empty() {
 		return closestCabCall

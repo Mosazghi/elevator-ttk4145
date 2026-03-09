@@ -24,14 +24,15 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID            int                          `json:"local_id"`
-	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls          [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors          int                          `json:"num_floors"`
-	wvChan             chan Worldview
-	orderUpdateChan    chan Order
-	hasFetchedCabCalls bool
-	mu                 *sync.RWMutex
+	LocalID             int                          `json:"local_id"`
+	ElevatorStates      map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls           [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors           int                          `json:"num_floors"`
+	wvChan              chan Worldview
+	orderUpdateChan     chan Order
+	cabCallRecoveryChan chan int
+	hasFetchedCabCalls  bool
+	mu                  *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
@@ -184,7 +185,7 @@ func (wv *Worldview) releaseAnyOrders() {
 			continue
 		}
 
-		if time.Since(state.LastSeenAt) > NodeLostTimeout && !wv.ElevatorStates[id].Alive {
+		if time.Since(state.LastSeenAt) > NodeLostTimeout && wv.ElevatorStates[id].Alive {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
 			wv.ElevatorStates[id].Alive = false
 		}

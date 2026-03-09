@@ -716,7 +716,6 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	assert.Len(t, confirmations, 4, "should have all unique confirmations")
 }
 
-
 func TestCabCallRecoveredOnReconnect(t *testing.T) {
 
 	// Elevator A before crash
