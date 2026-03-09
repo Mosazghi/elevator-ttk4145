@@ -4,8 +4,10 @@ import (
 	"log/slog"
 	"math"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
 type ElevatorCost struct {
@@ -14,21 +16,13 @@ type ElevatorCost struct {
 	cost  int
 }
 
-// HallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
-func HallDirToButtonType(dir statesync.HallCallDir) elevio.ButtonType {
-	if dir == statesync.HDDown {
-		return elevio.HallDown
-	}
-	return elevio.HallUp
-}
-
 type OrderHandler struct {
 	wvChan    chan statesync.Worldview
-	trigger   chan struct{}
+	trigger   chan controller.ControllerTriggerSrc
 	actionCah chan any
 }
 
-func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan chan any) *OrderHandler {
+func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
 	return &OrderHandler{
 		wvChan:    wvChan,
 		trigger:   trigger,
@@ -67,7 +61,7 @@ func (o *OrderHandler) Run() {
 					}
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 
-					o.trigger <- struct{}{}
+					o.trigger <- controller.CTSOrderUpdate
 				}
 				slog.Warn("[RunCost] Order picked up", "by", winner.id)
 			}
@@ -92,17 +86,17 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 
 		if isObstructed {
 			// slog.Info("[CalculateCost] Elevator is obstructed")
-			currentElevatorCost.cost += PenaltyObstructed
+			currentElevatorCost.cost += shared.PenaltyObstructed
 		}
 
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
 		if elev.Direction == elevio.MDUp && dir == statesync.HDDown {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
 		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))

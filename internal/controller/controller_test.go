@@ -30,14 +30,16 @@ func newTestCtx() (wv *statesync.Worldview, wvChan chan statesync.Worldview, arr
 	return worldview, wvChan, arriveAtFloorChan
 }
 
-func newTestStart(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan any, newOrder chan struct{}, hcLight chan statesync.Order) {
-	go Start(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+func newTestStart(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan any, newOrder chan struct{}, hcLight chan statesync.Order) *Controller {
+	controller := NewController(wv, actionChan, make(chan ControllerTriggerSrc, 10), hcLight)
+	go controller.Start()
+	return controller
 }
 
 // CASE 1: Given a Hall-Call
 func TestGetNextAction_HallCall(t *testing.T) {
 	actionChan := make(chan any, 10)
-	wv, _, arriveAtFloor := newTestCtx()
+	wv, _, _ := newTestCtx()
 
 	localElevator := wv.GetRemoteElevator()
 	localElevator.CurrentFloor = 0
@@ -58,8 +60,8 @@ func TestGetNextAction_HallCall(t *testing.T) {
 
 	// Start the goroutine AFTER state setup is complete
 	newOrder := make(chan struct{}, 10)
-	hcLight := make(chan statesync.Order, 10)
-	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+	// hcLight := make(chan statesync.Order, 10)
+	// _ := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
 	newOrder <- struct{}{}
 	select {
@@ -70,7 +72,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 			t.Fatal("closestOrder was empty")
 		}
 		if localElevator.AllowedToServe() {
-			assert.Equal(t, closestOrder.TravelDirection, elevio.MDUp, "Expected direction to be up")
+			assert.Equal(t, closestOrder.MotorDirection, elevio.MDUp, "Expected direction to be up")
 		}
 		require.Equal(t, closestOrder.Floor, 3, "Expected closest order to be floor 3")
 
@@ -108,7 +110,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	// Start the goroutine AFTER state setup is complete
 	newOrder := make(chan struct{}, 10)
 	hcLight := make(chan statesync.Order, 10)
-	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
 	arriveAtFloor <- struct{}{}
 	select {
@@ -119,7 +121,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 			t.Fatal("No calls available")
 		}
 		if closestOrder.AtFloor(localElevator.CurrentFloor) {
-			ArrivalSequence(wv, actionChan)
+			controller.OnFloorArrival()
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
@@ -153,7 +155,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 
 	newOrder := make(chan struct{}, 10)
 	hcLight := make(chan statesync.Order, 10)
-	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
 	newOrder <- struct{}{}
 	select {
@@ -166,13 +168,13 @@ func TestGetNextAction_CabCall(t *testing.T) {
 		}
 
 		if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
-			ArrivalSequence(wv, actionChan)
+			controller.OnFloorArrival()
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
 
 		if localElevator.AllowedToServe() {
-			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.TravelDirection}
+			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
 		}
 		require.Equal(t, localElevator.CabCalls[2], true, "Cab-call should be set to true")
 
@@ -204,7 +206,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 
 	newOrder := make(chan struct{}, 10)
 	hcLight := make(chan statesync.Order, 10)
-	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
+	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
 	arriveAtFloor <- struct{}{}
 	select {
@@ -218,8 +220,8 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 		}
 
 		if closestOrder.AtFloor(localElevator.CurrentFloor) {
-			slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.TravelDirection)
-			ArrivalSequence(wv, actionChan)
+			slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
+			controller.OnFloorArrival()
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
@@ -263,7 +265,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 		}
 		if localElevator.AllowedToServe() {
 			// Elevator at floor 2 should prefer the lower call at floor 1
-			assert.Equal(t, closestOrder.TravelDirection, elevio.MDDown, "Should move down towards lower cab-call")
+			assert.Equal(t, closestOrder.MotorDirection, elevio.MDDown, "Should move down towards lower cab-call")
 		}
 		require.Equal(t, closestOrder.Floor, 1, "Expected closest order to be floor 1")
 
@@ -320,7 +322,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 			t.Fatal("closestOrder was empty")
 		}
 		if localElevator.AllowedToServe() {
-			assert.Equal(t, closestOrder.TravelDirection, elevio.MDDown, "Should move down towards floor 0")
+			assert.Equal(t, closestOrder.MotorDirection, elevio.MDDown, "Should move down towards floor 0")
 		}
 		require.Equal(t, closestOrder.Floor, 0, "Expected closest order to be floor 0")
 

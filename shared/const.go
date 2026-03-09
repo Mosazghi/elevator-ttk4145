@@ -1,4 +1,4 @@
-package orders
+package shared
 
 const (
 	PenaltyDoorOpen       = 30

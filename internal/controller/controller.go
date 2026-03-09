@@ -7,118 +7,96 @@ import (
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
-type Order struct {
-	Floor             int
-	Type              elevio.ButtonType
-	TravelDirection   elevio.MotorDirection
-	HallCallDirection statesync.HallCallDir
+type ControllerTriggerSrc int
+
+const (
+	CTSFArrivalFloor ControllerTriggerSrc = iota
+	CTSOrderUpdate
+	CTSHCLights
+)
+
+type Controller struct {
+	wv          *statesync.Worldview
+	actionChan  chan any
+	triggerChan chan ControllerTriggerSrc
+	hcLightChan chan statesync.Order
+	doorTimer   *time.Timer
 }
 
-func (order *Order) Complete(worldView *statesync.Worldview) {
-	if order.Type == elevio.Cab {
-		worldView.SetCabCall(order.Floor, false)
-	} else {
-		err := worldView.CompleteHallCall(order.Floor, order.HallCallDirection)
-		if err != nil {
-			slog.Error("[CompleteHallCall] in order.Complete", "error", err)
-		}
-		slog.Warn("[Completing hallcall]", "floor", order.Floor, "direction", order.HallCallDirection)
+func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
+	return &Controller{
+		wv:          wv,
+		actionChan:  actionChan,
+		triggerChan: ctrlTrigger,
+		hcLightChan: hcLightChan,
+		doorTimer:   time.NewTimer(0),
 	}
 }
 
-func (order *Order) Empty() bool {
-	return order.Floor == -1
-}
-
-func (order *Order) AtFloor(floor int) bool {
-	if floor == -1 {
-		return false
-	}
-	return order.Floor == floor
-}
-
-func (order *Order) Update(floor int, orderType elevio.ButtonType, Motordirection elevio.MotorDirection, hallCallDirection statesync.HallCallDir) {
-	order.Floor = floor
-	order.Type = orderType
-	order.TravelDirection = Motordirection
-	order.HallCallDirection = hallCallDirection
-}
-
-func NewOrder() Order {
-	return Order{
-		Floor:             -1,
-		Type:              elevio.Cab,
-		TravelDirection:   elevio.MDStop,
-		HallCallDirection: statesync.HDDown,
-	}
-}
-
-func ArrivalSequence(wv *statesync.Worldview, actionChan chan any) {
-	remote := wv.GetRemoteElevator()
+func (ctrl *Controller) OnFloorArrival() {
+	remote := ctrl.wv.GetRemoteElevator()
 	slog.Debug("Should stop")
-	actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
-	actionChan <- elevator.DoorAction{Open: true}
-	actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
+	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
+	ctrl.actionChan <- elevator.DoorAction{Open: true}
+	ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
 	time.AfterFunc(3*time.Second, func() {
-		actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-		actionChan <- elevator.DoorAction{Open: false}
+		ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+		ctrl.actionChan <- elevator.DoorAction{Open: false}
 		slog.Debug("Finished stopping")
 	})
 }
 
-func Start(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan any, newOrder chan struct{}, hcLightChan chan statesync.Order) {
+func (ctrl *Controller) Start() {
 	for {
 		select {
-		case order := <-hcLightChan:
-			actionChan <- elevator.LightAction{ButtonType: orders.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
-		case <-newOrder:
-			localElevator := wv.GetRemoteElevator()
-			closestOrder := FetchClosestOrder(wv)
+		case order := <-ctrl.hcLightChan:
+			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
+		case triggerSrc := <-ctrl.triggerChan:
+			switch triggerSrc {
+			case CTSOrderUpdate:
+				localElevator := ctrl.wv.GetRemoteElevator()
+				closestOrder := FetchClosestOrder(ctrl.wv)
+				if closestOrder.Empty() {
+					continue
+				}
 
-			if closestOrder.Empty() {
-				continue
-			}
+				if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
+					ctrl.OnFloorArrival()
+					closestOrder.Complete(ctrl.wv)
+					continue
+				}
 
-			if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
-				ArrivalSequence(wv, actionChan)
-				time.Sleep(500 * time.Millisecond)
-				// time.AfterFunc(500*time.Millisecond, func() {
-				closestOrder.Complete(wv)
-				// })
-				continue
-			}
+				if localElevator.AllowedToServe() {
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+				}
+			case CTSFArrivalFloor:
+				localElevator := ctrl.wv.GetRemoteElevator()
+				closestOrder := FetchClosestOrder(ctrl.wv)
+				slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
 
-			if localElevator.AllowedToServe() {
-				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.TravelDirection}
-			}
+				if closestOrder.Empty() {
+					slog.Debug("[Controller] No calls available, stopping")
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+					continue
+				}
 
-		case <-arriveAtFloor:
-			localElevator := wv.GetRemoteElevator()
-			closestOrder := FetchClosestOrder(wv)
-			slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
-
-			if closestOrder.Empty() {
-				slog.Debug("[Controller] No calls available, stopping")
-				actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-				continue
-			}
-
-			if closestOrder.AtFloor(localElevator.CurrentFloor) {
-				slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.TravelDirection)
-				ArrivalSequence(wv, actionChan)
-				time.Sleep(500 * time.Millisecond)
-				closestOrder.Complete(wv)
+				if closestOrder.AtFloor(localElevator.CurrentFloor) {
+					slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
+					ctrl.OnFloorArrival()
+					time.Sleep(500 * time.Millisecond)
+					closestOrder.Complete(ctrl.wv)
+				}
 			}
 		}
 	}
 }
 
-func FetchClosestOrder(worldView *statesync.Worldview) Order {
+func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	closestCabCall := FindClosestCabCall(worldView)
 	closestHallCall := FindClosestHallCall(worldView)
 	localElevator := worldView.GetRemoteElevator()
@@ -144,7 +122,7 @@ func FetchClosestOrder(worldView *statesync.Worldview) Order {
 	}
 }
 
-func FindClosestCabCall(wv *statesync.Worldview) Order {
+func FindClosestCabCall(wv *statesync.Worldview) CurrentOrder {
 	var motorDirection elevio.MotorDirection
 	localElevator := wv.GetRemoteElevator()
 	closestOrder := NewOrder()
@@ -157,7 +135,7 @@ func FindClosestCabCall(wv *statesync.Worldview) Order {
 		}
 
 		if localElevator.WrongDirection(floor) {
-			cost += orders.PenaltyWrongDirection
+			cost += shared.PenaltyWrongDirection
 		}
 
 		if localElevator.CurrentFloor < floor {
@@ -176,7 +154,7 @@ func FindClosestCabCall(wv *statesync.Worldview) Order {
 	return closestOrder
 }
 
-func FindClosestHallCall(wv *statesync.Worldview) Order {
+func FindClosestHallCall(wv *statesync.Worldview) CurrentOrder {
 	var motorDirection elevio.MotorDirection
 	var orderType elevio.ButtonType
 	var hallCallDirection statesync.HallCallDir
@@ -193,7 +171,7 @@ func FindClosestHallCall(wv *statesync.Worldview) Order {
 			}
 
 			if localElevator.WrongDirection(floor) {
-				cost += orders.PenaltyWrongDirection
+				cost += shared.PenaltyWrongDirection
 			}
 
 			if localElevator.CurrentFloor < floor {
@@ -203,7 +181,7 @@ func FindClosestHallCall(wv *statesync.Worldview) Order {
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
-			orderType = orders.HallDirToButtonType(hallCallDirection)
+			orderType = shared.HallDirToButtonType(hallCallDirection)
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 

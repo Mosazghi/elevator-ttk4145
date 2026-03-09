@@ -61,17 +61,17 @@ func main() {
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
 
-	triggerAction := make(chan struct{}, 3*cfg.Floors) // Buffered channel to avoid blocking
-	hallLightHandler := make(chan statesync.Order, 10)
+	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors) // Buffered channel to avoid blocking
+	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
-	newOrderChan := make(chan struct{}, 10)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, hallLightHandler)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan)
 
-	go controller.Start(wv, triggerAction, actionChan, newOrderChan, hallLightHandler)
+	controller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
+	go controller.Start()
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	orderHandler := orders.NewOrderHandler(wvChan, newOrderChan, actionChan)
+	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()
@@ -83,7 +83,10 @@ func main() {
 
 	}
 
+	localElvevator.CurrentFloor = 0
+
 	err = wv.SetLocalElevator(&localElvevator)
+
 	if err != nil {
 		slog.Error("SetLocalElevator", "error", err)
 	}
@@ -95,7 +98,6 @@ func main() {
 		drvStop,
 		triggerAction,
 		actionChan,
-		newOrderChan,
 		&elev,
 		wv,
 	)
