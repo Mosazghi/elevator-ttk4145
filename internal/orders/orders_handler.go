@@ -4,9 +4,10 @@ import (
 	"log/slog"
 	"math"
 
-	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
+	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
 type ElevatorCost struct {
@@ -15,21 +16,13 @@ type ElevatorCost struct {
 	cost  int
 }
 
-// HallDirToButtonType maps statesync HallCallDir to the correct elevio ButtonType.
-func HallDirToButtonType(dir statesync.HallCallDir) elevio.ButtonType {
-	if dir == statesync.HDDown {
-		return elevio.HallDown
-	}
-	return elevio.HallUp
-}
-
 type OrderHandler struct {
 	wvChan    chan statesync.Worldview
-	trigger   chan struct{}
+	trigger   chan controller.ControllerTriggerSrc
 	actionCah chan any
 }
 
-func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan struct{}, actionChan chan any) *OrderHandler {
+func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
 	return &OrderHandler{
 		wvChan:    wvChan,
 		trigger:   trigger,
@@ -50,16 +43,12 @@ func (o *OrderHandler) Run() {
 				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= len(wv.ElevatorStates)
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
-				if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-					select {
-					case o.trigger <- struct{}{}:
-						slog.Info("Triggered from OrderHandler")
-					default:
-					}
-				}
+				// if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
+				// 	slog.Debug("[OrderHandler] triggering order completion", "floor", floor, "dir", dir)
+				// }
 
 				if !isConfirmedByAll || !isAvailable {
-					// slog.Info("[RunCost]", "confirmed by all", isConfirmedByAll, "available", isAvailable)
+					// slog.Error("[RunCost]", "confirmed by all", isConfirmedByAll, "available", isAvailable)
 					continue
 				}
 
@@ -71,9 +60,10 @@ func (o *OrderHandler) Run() {
 						slog.Error("[RunCost] Got worldview error", "error", err)
 					}
 					slog.Info("[RunCost] Set to processing", "floor", floor, "Direction", dir, "id", winner.id)
+
+					o.trigger <- controller.CTSOrderUpdate
 				}
 				slog.Warn("[RunCost] Order picked up", "by", winner.id)
-				o.actionCah <- elevator.SingleLightAction{ButtonType: HallDirToButtonType(statesync.HallCallDir(dir)), Floor: floor, State: true}
 			}
 		}
 	}
@@ -85,33 +75,37 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 
 	for id, elev := range wv.ElevatorStates {
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
-		isObstructed := elev.Behavior == elevator.BObstructed
+		isObstructed := elev.IsObstructed
+		// isDoorOpen := elev.Behavior == elevator.BDoorOpen
+
+		// if isDoorOpen {
+		// 	// slog.Info("[CalculateCost] Elevator door is open")
+		// 	currentElevatorCost.cost += PenaltyDoorOpen
+		// }
 		currentElevatorCost.id = id
 
 		if isObstructed {
 			// slog.Info("[CalculateCost] Elevator is obstructed")
-			currentElevatorCost.cost += PenaltyObstructed
+			currentElevatorCost.cost += shared.PenaltyObstructed
 		}
 
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
 		if elev.Direction == elevio.MDUp && dir == statesync.HDDown {
 			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
-			currentElevatorCost.cost += PenaltyWrongDirection
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
 		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))
 
 		currentElevatorCost.cost += distance
 
-		currentElevatorCost.cost += id
+		slog.Error("[CalculateCost] Cost for elevator", "id", id, "cost", currentElevatorCost.cost, "distance", distance, "isObstructed", isObstructed, "currentDir", elev.Direction)
 
-		// slog.Info("[CalculateCost] found valid elevator", "cost", cost, "floor", floor, "id", currentElevatorCost.id)
-
-		if currentElevatorCost.cost < winner.cost {
+		if currentElevatorCost.cost < winner.cost || (currentElevatorCost.cost == winner.cost && currentElevatorCost.id < winner.id) {
 			winner.id = currentElevatorCost.id
 			winner.cost = currentElevatorCost.cost
 			winner.floor = currentElevatorCost.floor

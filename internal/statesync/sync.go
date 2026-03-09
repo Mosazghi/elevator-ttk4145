@@ -30,12 +30,12 @@ type Worldview struct {
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
-	newOrderChan       chan Order
+	orderUpdateChan    chan Order
 	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan chan Order) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order) *Worldview {
 	wv := &Worldview{
 		LocalID:            localID,
 		ElevatorStates:     make(map[int]*RemoteElevatorState),
@@ -43,7 +43,7 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan ch
 		HallCalls:          make([][2]HallCallPairState, numFloors),
 		NumFloors:          numFloors,
 		wvChan:             wvChan,
-		newOrderChan:       newOrderChan,
+		orderUpdateChan:    orderUpdateChan,
 		mu:                 &sync.RWMutex{},
 	}
 
@@ -148,7 +148,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
-			// Non-blocking send to wvChan, if no-one is listening, we skip sending the update
 			select {
 			case wv.wvChan <- *wv:
 			default:
@@ -195,23 +194,18 @@ func (wv *Worldview) releaseAnyOrders() {
 		for dir := range wv.HallCalls[floor] {
 			hc := wv.HallCalls[floor][dir]
 
-			assignedNode, aNExists := wv.ElevatorStates[hc.By]
-			isObstructed := aNExists && assignedNode.IsObstructed
-
 			_, isNodeLost := wv.lostElevatorsState[hc.By]
 
 			hasOrderTimedout := hc.State == HSProcessing && hc.Timestamp != 0 &&
 				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout && hc.By == wv.LocalID
 
-			if isNodeLost || hasOrderTimedout || isObstructed {
+			if isNodeLost || hasOrderTimedout {
 				reason := "unknown"
 				switch {
 				case isNodeLost:
 					reason = "node lost"
 				case hasOrderTimedout:
 					reason = "order timed out"
-				case isObstructed:
-					reason = "node obstructed"
 				}
 
 				slog.Warn("releasing order", "by", hc.By, "floor", floor, "dir", dir, "reason", reason)
@@ -278,11 +272,13 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 // CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
 func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
+	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 	return wv.setHallCall(floor, dir, HSNone)
 }
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
+	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 	return wv.setHallCall(floor, dir, HSAvailable)
 }
 
@@ -383,11 +379,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	//
-	// slog.Debug("hc[0]", "hc", wv.HallCalls[0])
-	// slog.Debug("hc[3]", "hc", wv.HallCalls[3])
-
-	// -- Validate Hall Calls --
 	// Merge hall calls
 	for floor := range other.HallCalls {
 		for dir := range other.HallCalls[floor] {
@@ -405,7 +396,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						ConfirmedBy: []int{},
 						Timestamp:   0,
 					}
-					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
+					wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
@@ -424,7 +415,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, wv.LocalID)
 
 					}
-					wv.newOrderChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+					wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 				}
 
 				if ourHCState.State == HSProcessing && ourHCState.By == other.LocalID {
