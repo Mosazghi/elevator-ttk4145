@@ -392,11 +392,11 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 	// check
 	// loop over all our cab calls
-	if !wv.hasFetchedCabCalls {
+	if !wv.hasFetchedCabCalls && weExist {
 		fetchCabCalls = !slices.Equal(wv.ElevatorStates[wv.LocalID].CabCalls, other.ElevatorStates[wv.LocalID].CabCalls)
 	}
 
-	if fetchCabCalls && weExist {
+	if fetchCabCalls {
 		wv.hasFetchedCabCalls = true
 		wv.FetchCabCallsOnReconnect(other)
 		// TODO: Send trigger til controller -> turn on cab call lights for local panel
