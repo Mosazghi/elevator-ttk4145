@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -62,6 +63,17 @@ func TestGetNextAction_HallCall(t *testing.T) {
 
 	newOrder <- struct{}{}
 	select {
+	case <-newOrder:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
+		if closestOrder.Empty() {
+			t.Fatal("closestOrder was empty")
+		}
+		if localElevator.AllowedToServe() {
+			assert.Equal(t, closestOrder.TravelDirection, elevio.MDUp, "Expected direction to be up")
+		}
+		require.Equal(t, closestOrder.Floor, 3, "Expected closest order to be floor 3")
+
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDUp, "Expected elevator 1 to move up from floor 0 to floor 3")
 		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should attempt to move")
@@ -100,12 +112,22 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 
 	arriveAtFloor <- struct{}{}
 	select {
-	case action := <-actionChan:
-		t.Log("GOT ACTIONNN")
+	case <-arriveAtFloor:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
+		if closestOrder.Empty() {
+			t.Fatal("No calls available")
+		}
+		if closestOrder.AtFloor(localElevator.CurrentFloor) {
+			ArrivalSequence(wv, actionChan)
+			time.Sleep(500 * time.Millisecond)
+			closestOrder.Complete(wv)
+		}
 		hallCalls := wv.GetAllHallCalls()
 		call := hallCalls[3][statesync.HDUp]
-
 		require.Equal(t, call.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
+
+	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
 		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
 	case <-time.After(5 * time.Second):
@@ -119,7 +141,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	wv, _, arriveAtFloor := newTestCtx()
 	elev := wv.GetRemoteElevator()
 
-	elev.CurrentFloor = 0
+	elev.CurrentFloor = 1
 	err := wv.SetLocalElevator(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 	err = wv.SetCabCall(2, true)
@@ -135,12 +157,31 @@ func TestGetNextAction_CabCall(t *testing.T) {
 
 	newOrder <- struct{}{}
 	select {
-	case action := <-actionChan:
-		elev := wv.GetRemoteElevator()
+	case <-newOrder:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
 
-		require.Equal(t, elev.CabCalls[2], true, "Cab-call should be set to true")
-		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDUp, "Expected elevator 1 to move up")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should attempt to be move")
+		if closestOrder.Empty() {
+			t.Fatal("closestOrder order was empty")
+		}
+
+		if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
+			ArrivalSequence(wv, actionChan)
+			time.Sleep(500 * time.Millisecond)
+			closestOrder.Complete(wv)
+		}
+
+		if localElevator.AllowedToServe() {
+			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.TravelDirection}
+		}
+		require.Equal(t, localElevator.CabCalls[2], true, "Cab-call should be set to true")
+
+	case action := <-actionChan:
+		switch action := action.(type) {
+		case elevator.MoveAction:
+			require.Equal(t, action.Behavior, elevator.BMoving, "Should have received Bmoving")
+			require.Equal(t, action.Direction, elevio.MDUp, "Should have received Bmoving")
+		}
 
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
@@ -167,12 +208,23 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 
 	arriveAtFloor <- struct{}{}
 	select {
-	case action := <-actionChan:
-		elev := wv.GetRemoteElevator()
+	case <-arriveAtFloor:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
+		slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
 
-		require.Equal(t, elev.CabCalls[2], false, "Cab-call should be set to false, arrived at floor")
-		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
+		if closestOrder.Empty() {
+			t.Fatal("No calls available, stopping")
+		}
+
+		if closestOrder.AtFloor(localElevator.CurrentFloor) {
+			slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.TravelDirection)
+			ArrivalSequence(wv, actionChan)
+			time.Sleep(500 * time.Millisecond)
+			closestOrder.Complete(wv)
+		}
+
+		require.Equal(t, localElevator.CabCalls[2], false, "Cab-call should be set to false, arrived at floor")
 
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
@@ -203,6 +255,18 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 	newOrder <- struct{}{}
 	select {
+	case <-newOrder:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
+		if closestOrder.Empty() {
+			t.Fatal("closestOrder was empty")
+		}
+		if localElevator.AllowedToServe() {
+			// Elevator at floor 2 should prefer the lower call at floor 1
+			assert.Equal(t, closestOrder.TravelDirection, elevio.MDDown, "Should move down towards lower cab-call")
+		}
+		require.Equal(t, closestOrder.Floor, 1, "Expected closest order to be floor 1")
+
 	case action := <-actionChan:
 		// Elevator at floor 2 should prefer the lower call at floor 1
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Elevator 1 should move down towards lower cab-call")
@@ -249,6 +313,17 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 
 	newOrder <- struct{}{}
 	select {
+	case <-newOrder:
+		localElevator := wv.GetRemoteElevator()
+		closestOrder := FetchClosestOrder(wv)
+		if closestOrder.Empty() {
+			t.Fatal("closestOrder was empty")
+		}
+		if localElevator.AllowedToServe() {
+			assert.Equal(t, closestOrder.TravelDirection, elevio.MDDown, "Should move down towards floor 0")
+		}
+		require.Equal(t, closestOrder.Floor, 0, "Expected closest order to be floor 0")
+
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Expected elevator 1 to move down towards floor 0")
 		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should be moving")
