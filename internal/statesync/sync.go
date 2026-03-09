@@ -159,72 +159,20 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-//TODO: Fix edge case: init som dead -> set self as alive where?
-// If we do not exists in the peers world or we are the only one existing then we are alive
 
-// _, myselffFound := wv.ElevatorStates[wv.LocalID]
-// _, otherFoundMe := other.ElevatorStates[other.LocalID]
-// stateSize := sizeof(wv.ElevatorStates)
-// if (myselfFound && stateSize == 1) || !otherFoundMe {}
-
-// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
+// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer.
+// Must be called with lock held.
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
-	//slog.Info("PeerPerspective BeforeFetch","string",other.ElevatorStates[wv.LocalID].CabCalls)
 
-	/* Fredagskoden */
-	// peerPerspective := other.ElevatorStates[other.LocalID]
-
-	// if peerPerspective.Alive == false {
-	// 	wv.ElevatorStates[wv.LocalID] = peerPerspective
-	// 	wv.ElevatorStates[wv.LocalID].Alive = true
-	// 	slog.Info("Cab Calls recovered")
-	// 	slog.Info("MyPerspective AfterFetch", "string", other.ElevatorStates[wv.LocalID].CabCalls)
-	// }
-
-	/* Søndagskoden */
-	peerView, exists := other.ElevatorStates[wv.LocalID]
-	if !exists {
-		return
-	}
-
-	myView, exists := wv.ElevatorStates[wv.LocalID]
-	if !exists {
-		return
-	}
+	peerView := other.ElevatorStates[wv.LocalID]
+	myView := wv.ElevatorStates[wv.LocalID]
 
 	for floor, peerCabCallValue := range peerView.CabCalls {
-		if floor >= len(myView.CabCalls) {
-			break
-		}
 		myView.CabCalls[floor] = myView.CabCalls[floor] || peerCabCallValue
 	}
 
 	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
-
 }
-
-// TODO: Fjern remoteElevator til fordel for en bool i wv->elevatorstates til tracking av alive nodes
-// step 1:
-// if me != alive {
-// copy info
-// me == alive }
-// step 2(merge):
-// if (other.alive[otherID] = true && other.alive[otherID] != wv.alive[myID]) {
-// wv.alive[myID] == true }
-
-// On timeout:
-// wv.alive[otherID] == false
-
-// FIXME: Ikke lenger nødvendig -> alive/dead tracking istedet
-// TODO: Dedikert delete funksjon istedet, gjør kanskje checkHasNodeReappeared redundant
-// deleteReappearedNode deletes the lostElevatorsState for a given node on reappearence
-// func (wv *Worldview) DeleteReappearedNode(id int) {
-// 	_, exists := wv.lostElevatorsState[id]
-// 	if exists {
-// 		slog.Info("Peer reappeared, clearing lost state", "id", id)
-// 		delete(wv.lostElevatorsState, id)
-// 	}
-// }
 
 // releaseAnyOrders releases orders that are assigned to lost
 // or obstructed nodes,
@@ -406,28 +354,6 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	return result
 }
 
-// FIXME: Validate the recovery function below
-// RecoverLostCabCalls copies cab calls from incoming worldview
-// func (wv *Worldview) RecoverLostCabCallsFromPeer(other *Worldview) {
-// 	lostState, exists := other.lostElevatorsState[wv.LocalID]
-// 	if !exists {
-// 		slog.Error("LostState does not exist")
-// 		return
-// 	}
-
-// 	recoveredState, _ := wv.ElevatorStates[wv.LocalID]
-// 	// if !exists {
-// 	// 	return
-// 	// }
-// 	slog.Info("[Before Recovery]", "Other Cab Calls", lostState.CabCalls)
-// 	slog.Info("[Before Recovery]", "Self Cab Calls", recoveredState.CabCalls)
-// 	for f := 0; f < min(len(recoveredState.CabCalls), len(lostState.CabCalls)); f++ {
-// 		recoveredState.CabCalls[f] = recoveredState.CabCalls[f] || lostState.CabCalls[f]
-// 	}
-// 	slog.Info("[After Recovery]", "Cab Calls", recoveredState.CabCalls)
-
-// }
-
 // Merge merges incoming Worldview into the current one
 func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.mu.Lock()
@@ -483,6 +409,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 
 	if fetchCabCalls && peerViewOfLocal != nil {
 		wv.FetchCabCallsOnReconnect(other)
+		// TODO: Send trigger til controller -> turn on cab call lights for local panel
+
 	}
 
 	// -- Validate Hall Calls --
@@ -506,12 +434,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 			case HSAvailable:
 				for _, id := range otherHCState.ConfirmedBy {
-					//_, isLost := wv.lostElevatorsState[id]
-					//_, isAlive := wv.ElevatorStates[id]
-
-					// addition:
 					isAlive := wv.ElevatorStates[id].Alive
-					//_, isExisting := wv.ElevatorStates[id]
+
 					if !slices.Contains(wv.HallCalls[floor][dir].ConfirmedBy, id) && isAlive {
 						wv.HallCalls[floor][dir].ConfirmedBy = append(wv.HallCalls[floor][dir].ConfirmedBy, id)
 					}
