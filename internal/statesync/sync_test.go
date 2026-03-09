@@ -433,34 +433,40 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	rxChan := make(chan network.UDPMessage, 10)
 	errChan := make(chan error, 10)
 
-	// First, add wv2 to wv1
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
-	// Send initial message from wv2 to wv1
+	// Send initial message from wv2
 	rxChan <- network.UDPMessage{Data: jsonData}
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify wv2 is present
+	// Verify peer exists
 	wv1.mu.Lock()
-	assert.Contains(t, wv1.ElevatorStates, 2, "peer should be added")
-
-	// Set LastSeenAt to old time to simulate timeout
-	wv1.ElevatorStates[2].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+	peer, exists := wv1.ElevatorStates[2]
+	if exists {
+		peer.LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+	}
 	wv1.mu.Unlock()
 
-	// Wait for next broadcast cycle to detect timeout
+	assert.True(t, exists, "peer should be added")
+
+	// Wait for timeout detection
 	time.Sleep(BroadcastInterval + 200*time.Millisecond)
 
-	// Verify peer was marked as not alive
+	// Copy state safely
 	wv1.mu.RLock()
 	elev, exists := wv1.ElevatorStates[2]
+
+	var elevCopy RemoteElevatorState
+	if exists {
+		elevCopy = *elev
+	}
 	wv1.mu.RUnlock()
 
 	assert.True(t, exists, "peer should still exist in ElevatorStates")
-	assert.False(t, elev.Alive, "peer should be marked as not alive (timed out)")
+	assert.False(t, elevCopy.Alive, "peer should be marked as not alive (timed out)")
 }
 
 // TestStartSyncing_ReappearedPeers verifies handling of returning peers
@@ -497,10 +503,14 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	// Verify peer is now marked alive
 	wv1.mu.RLock()
 	peer, exists := wv1.ElevatorStates[wv2.LocalID]
+	var peerCopy RemoteElevatorState
+	if exists {
+		peerCopy = *peer
+	}
 	wv1.mu.RUnlock()
 
 	require.True(t, exists, "peer should exist in active elevators map")
-	assert.True(t, peer.Alive, "peer should be marked alive after reappearing")
+	assert.True(t, peerCopy.Alive, "peer should be marked alive after reappearing")
 }
 
 // TestStartSyncing_ConcurrentAccess verifies thread safety during syncing
