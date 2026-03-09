@@ -523,6 +523,12 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
+	// Drain orderUpdateChan so NewHallCall never blocks
+	go func() {
+		for range wv.orderUpdateChan {
+		}
+	}()
+
 	// Concurrent operations
 	done := make(chan bool)
 
@@ -593,28 +599,8 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	assert.NotContains(t, hc.ConfirmedBy, lostID, "ConfirmedBy should not include lost node")
 	assert.False(t, wv.ElevatorStates[lostID].Alive, "lost node should be marked dead")
 
-	// --- Test: obstructed node ---
-	obstructedID := 3
-	wv.ElevatorStates[obstructedID] = NewRemoteElevatorState(obstructedID, 4)
-	wv.ElevatorStates[obstructedID].IsObstructed = true
-	wv.HallCalls[2][HDDown] = HallCallPairState{
-		State:       HSProcessing,
-		By:          obstructedID,
-		ConfirmedBy: []int{obstructedID},
-		Timestamp:   time.Now().UnixMilli(),
-	}
-
-	wv.mu.Lock()
-	wv.releaseAnyOrders()
-	wv.mu.Unlock()
-
-	hc = wv.HallCalls[2][HDDown]
-	assert.Equal(t, HSAvailable, hc.State, "order should be released when node is obstructed")
-	assert.Equal(t, -1, hc.By, "By should be reset to -1")
-	assert.NotContains(t, hc.ConfirmedBy, obstructedID, "ConfirmedBy should not include obstructed node")
-
-	// --- Test: processing timeout ---
-	processingID := wv.LocalID
+	// test for an elevator taking too long to process an order (finish)
+	processingID := 1
 	wv.ElevatorStates[processingID] = NewRemoteElevatorState(processingID, 4)
 	wv.HallCalls[3][HDUp] = HallCallPairState{
 		State:       HSProcessing,

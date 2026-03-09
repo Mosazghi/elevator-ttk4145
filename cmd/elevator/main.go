@@ -20,7 +20,7 @@ import (
 func main() {
 	cfg := config.Parse()
 
-	SetupLogger()
+	SetupLogger(cfg.LogLevel)
 
 	// Check environment mode (ENV=production or ENV=prod enables production mode)
 	env := os.Getenv("ENV")
@@ -61,13 +61,14 @@ func main() {
 	txChan := network.TxChan()
 	rxChan := network.RxChan()
 
-	triggerAction := make(chan struct{}, cfg.Floors) // Buffered channel to avoid blocking
+	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors) // Buffered channel to avoid blocking
+	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
-	newOrderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, newOrderChan)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan)
 
-	go controller.Start(wv, triggerAction, actionChan, newOrderChan)
+	controller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
+	go controller.Start()
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
@@ -104,11 +105,11 @@ func main() {
 	fsm.Run()
 }
 
-func SetupLogger() {
+func SetupLogger(level slog.Leveler) {
 	w := os.Stderr
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
-			Level:      slog.LevelDebug,
+			Level:      level,
 			TimeFormat: time.DateTime,
 			AddSource:  true,
 		}),
