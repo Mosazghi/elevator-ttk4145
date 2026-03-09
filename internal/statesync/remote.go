@@ -40,3 +40,11 @@ func (res RemoteElevatorState) String() string {
 	return fmt.Sprintf("RemoteElevatorState{ID: %d, TargetFloor: %d, CurrentFloor: %d, Direction: %v, DoorState: %v, CabCalls: %v, Behavior: %v, LastSeenAt: %v}",
 		res.ID, res.TargetFloor, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
 }
+
+func (res RemoteElevatorState) AllowedToServe() bool {
+	return res.Behavior == elevator.BIdle || res.Behavior == elevator.BDoorOpen
+}
+
+func (res RemoteElevatorState) WrongDirection(floor int) bool {
+	return (res.Direction == elevio.MDDown && floor > res.CurrentFloor) || (res.Direction == elevio.MDUp && floor < res.CurrentFloor)
+}

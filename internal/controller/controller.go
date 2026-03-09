@@ -18,14 +18,6 @@ type Order struct {
 	HallCallDirection statesync.HallCallDir
 }
 
-func convertDirectionToHallCallType(direction elevio.MotorDirection) statesync.HallCallDir {
-	if direction == elevio.MDDown {
-		return statesync.HDDown
-	} else {
-		return statesync.HDUp
-	}
-}
-
 func (order *Order) Complete(worldView *statesync.Worldview) {
 	if order.Type == elevio.Cab {
 		worldView.SetCabCall(order.Floor, false)
@@ -92,10 +84,7 @@ func Start(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan
 				continue
 			}
 
-			canServeImmediately := localElevator.Behavior == elevator.BIdle ||
-				localElevator.Behavior == elevator.BDoorOpen
-
-			if canServeImmediately && closestOrder.AtFloor(localElevator.CurrentFloor) {
+			if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
 				ArrivalSequence(wv, actionChan)
 				time.Sleep(500 * time.Millisecond)
 				// time.AfterFunc(500*time.Millisecond, func() {
@@ -104,11 +93,9 @@ func Start(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan
 				continue
 			}
 
-			if localElevator.Behavior != elevator.BIdle {
-				continue
+			if localElevator.AllowedToServe() {
+				actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.TravelDirection}
 			}
-
-			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.TravelDirection}
 
 		case <-arriveAtFloor:
 			localElevator := wv.GetRemoteElevator()
@@ -123,8 +110,9 @@ func Start(wv *statesync.Worldview, arriveAtFloor chan struct{}, actionChan chan
 
 			if closestOrder.AtFloor(localElevator.CurrentFloor) {
 				slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.TravelDirection)
-				closestOrder.Complete(wv)
 				ArrivalSequence(wv, actionChan)
+				time.Sleep(500 * time.Millisecond)
+				closestOrder.Complete(wv)
 			}
 		}
 	}
@@ -163,16 +151,13 @@ func FindClosestCabCall(wv *statesync.Worldview) Order {
 	bestCost := math.MaxInt
 
 	for floor, found := range localElevator.CabCalls {
+		cost := 0
 		if !found {
 			continue
 		}
 
-		cost := int(math.Abs(float64(floor - localElevator.CurrentFloor)))
-		wrongDirection := (localElevator.Direction == elevio.MDDown && floor > localElevator.CurrentFloor) ||
-			(localElevator.Direction == elevio.MDUp && floor < localElevator.CurrentFloor)
-
-		if wrongDirection {
-			cost += 10
+		if localElevator.WrongDirection(floor) {
+			cost += orders.PenaltyWrongDirection
 		}
 
 		if localElevator.CurrentFloor < floor {
@@ -180,6 +165,8 @@ func FindClosestCabCall(wv *statesync.Worldview) Order {
 		} else {
 			motorDirection = elevio.MDDown
 		}
+
+		cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
 		if cost < bestCost {
 			bestCost = cost
@@ -199,18 +186,13 @@ func FindClosestHallCall(wv *statesync.Worldview) Order {
 
 	for floor, hallCall := range wv.GetAllHallCalls() {
 		for direction := range hallCall {
+			cost := 0
 
-			if hallCall[direction].By != localElevator.ID ||
-				hallCall[direction].State == statesync.HSNone {
+			if hallCall[direction].By != localElevator.ID {
 				continue
 			}
 
-			cost := int(math.Abs(float64(floor - localElevator.CurrentFloor)))
-
-			wrongDirection := (localElevator.Direction == elevio.MDDown && floor > localElevator.CurrentFloor) ||
-				(localElevator.Direction == elevio.MDUp && floor < localElevator.CurrentFloor)
-
-			if wrongDirection {
+			if localElevator.WrongDirection(floor) {
 				cost += orders.PenaltyWrongDirection
 			}
 
@@ -221,11 +203,9 @@ func FindClosestHallCall(wv *statesync.Worldview) Order {
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
-			if hallCallDirection == statesync.HDUp {
-				orderType = elevio.HallUp
-			} else {
-				orderType = elevio.HallDown
-			}
+			orderType = orders.HallDirToButtonType(hallCallDirection)
+
+			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
 			if cost < bestCost {
 				bestCost = cost
