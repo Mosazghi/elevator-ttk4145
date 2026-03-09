@@ -468,11 +468,11 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	peerViewOfLocal := other.ElevatorStates[wv.LocalID]
 
 	// Update peer state
+	wv.ElevatorStates[other.LocalID] = otherLocalState
 	otherLocalState.Alive = true
 	otherLocalState.LastSeenAt = time.Now()
-	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	// Fetch Cab Calls 
+	// Fetch Cab Calls
 	fetchCabCalls := true
 	for _, cabCallIsFound := range localPrevState.CabCalls {
 		if cabCallIsFound {
