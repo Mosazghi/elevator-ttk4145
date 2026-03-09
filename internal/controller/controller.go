@@ -60,12 +60,16 @@ func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
+	// FIXME: Find a better solution than blocking for 500ms!
 	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	hcs := ctrl.wv.GetAllHallCalls()
 	for dir := range hcs[floor] {
 		isOurs := hcs[floor][dir].By == localElevator.ID && hcs[floor][dir].State == statesync.HSProcessing
 		if isOurs {
-			ctrl.wv.CompleteHallCall(floor, statesync.HallCallDir(dir))
+			err := ctrl.wv.CompleteHallCall(floor, statesync.HallCallDir(dir))
+			if err != nil {
+				slog.Error("Failed to complete hall call", "error", err)
+			}
 		}
 	}
 }
