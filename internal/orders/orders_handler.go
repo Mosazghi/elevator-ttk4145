@@ -43,16 +43,10 @@ func (o *OrderHandler) Run() {
 				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= len(wv.ElevatorStates)
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
-				// if hallCall[dir].State == statesync.HSProcessing && hallCall[dir].By == wv.LocalID {
-				// 	slog.Debug("[OrderHandler] triggering order completion", "floor", floor, "dir", dir)
-				// }
-
 				if !isConfirmedByAll || !isAvailable {
-					// slog.Error("[RunCost]", "confirmed by all", isConfirmedByAll, "available", isAvailable)
 					continue
 				}
 
-				// slog.Info("[RunCost] Calculating cost")
 				winner := CalculateCost(&wv, floor, statesync.HallCallDir(dir))
 				if winner.id == wv.LocalID {
 					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
@@ -71,31 +65,22 @@ func (o *OrderHandler) Run() {
 
 func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir) ElevatorCost {
 	winner := ElevatorCost{-1, wv.NumFloors + 1, 100}
-	// slog.Info("[CalculateCost] Starting")
 
 	for id, elev := range wv.ElevatorStates {
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
 		isObstructed := elev.IsObstructed
-		// isDoorOpen := elev.Behavior == elevator.BDoorOpen
 
-		// if isDoorOpen {
-		// 	// slog.Info("[CalculateCost] Elevator door is open")
-		// 	currentElevatorCost.cost += PenaltyDoorOpen
-		// }
 		currentElevatorCost.id = id
 
 		if isObstructed {
-			// slog.Info("[CalculateCost] Elevator is obstructed")
 			currentElevatorCost.cost += shared.PenaltyObstructed
 		}
 
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
-			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
 			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
 		if elev.Direction == elevio.MDUp && dir == statesync.HDDown {
-			// slog.Info("[CalculateCost] Elevator moves oposite direction", "dir", dir)
 			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 

@@ -42,9 +42,29 @@ func (ctrl *Controller) OnFloorArrival() {
 	slog.Debug("Should stop")
 	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
-	ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
+	ctrl.clearAllOrdersAtFloor(remote.CurrentFloor)
 	ctrl.doorTimerChan = time.After(3 * time.Second)
+}
+
+// clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
+func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
+
+	localElevator := ctrl.wv.GetRemoteElevator()
+
+	if localElevator.CabCalls[floor] {
+		ctrl.wv.SetCabCall(floor, false)
+		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
+	}
+
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	hcs := ctrl.wv.GetAllHallCalls()
+	for dir := range hcs[floor] {
+		isOurs := hcs[floor][dir].By == localElevator.ID && hcs[floor][dir].State == statesync.HSProcessing
+		if isOurs {
+			ctrl.wv.CompleteHallCall(floor, statesync.HallCallDir(dir))
+		}
+	}
 }
 
 func (ctrl *Controller) Start() {
@@ -57,6 +77,9 @@ func (ctrl *Controller) Start() {
 			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 			ctrl.actionChan <- elevator.DoorAction{Open: false}
 		case triggerSrc := <-ctrl.triggerChan:
+			if ctrl.doorTimerChan != nil {
+				continue // door is open, ignore triggers
+			}
 			switch triggerSrc {
 			case CTSOrderUpdate:
 				localElevator := ctrl.wv.GetRemoteElevator()
@@ -66,22 +89,13 @@ func (ctrl *Controller) Start() {
 				}
 
 				if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
+					slog.Error("At Floor")
 					ctrl.OnFloorArrival()
-					closestOrder.Complete(ctrl.wv)
-					currFloor := localElevator.CurrentFloor
-					ctrl.wv.SetCabCall(currFloor, false)
-					hcs := ctrl.wv.GetAllHallCalls()
-					for dir := range hcs[currFloor] {
-						isOur := hcs[currFloor][dir].By == localElevator.ID && hcs[currFloor][dir].State == statesync.HSProcessing
-						slog.Info("[Completing hallcall]", "floor", currFloor, "direction", dir, "isOur", isOur)
-						if isOur {
-							ctrl.wv.CompleteHallCall(currFloor, statesync.HallCallDir(dir))
-						}
-					}
 					continue
 				}
 
 				if localElevator.AllowedToServe() {
+					slog.Error("Allowed to serve")
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
 				}
 			case CTSFArrivalFloor:
@@ -96,9 +110,7 @@ func (ctrl *Controller) Start() {
 				}
 
 				if closestOrder.AtFloor(localElevator.CurrentFloor) {
-					// slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
 					ctrl.OnFloorArrival()
-					closestOrder.Complete(ctrl.wv)
 				}
 			}
 		}
