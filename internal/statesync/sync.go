@@ -184,7 +184,7 @@ func (wv *Worldview) releaseAnyOrders() {
 			continue
 		}
 
-		if time.Since(state.LastSeenAt) > NodeLostTimeout {
+		if time.Since(state.LastSeenAt) > NodeLostTimeout && !wv.ElevatorStates[id].Alive {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
 			wv.ElevatorStates[id].Alive = false
 		}
