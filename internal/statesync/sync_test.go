@@ -15,14 +15,14 @@ import (
 )
 
 // Easier to create test worldviews with this helper function
-func NewTestWorldView(localID, numFloors int) *Worldview {
+func NewTestWorldView(t *testing.T, localID, numFloors int) *Worldview {
 	return NewWorldView(localID, numFloors, make(chan Worldview, 10), make(chan Order, 10))
 }
 
 // Merge with different number of floors should fail
 func TestMerge_DifferentNumFloors_ShouldError(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 3)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 3)
 
 	cs, _ := checksum.CalculateChecksum(wv2)
 	err := wv1.Merge(wv2, cs)
@@ -33,8 +33,8 @@ func TestMerge_DifferentNumFloors_ShouldError(t *testing.T) {
 
 // Merge with checksum mismatch should fail
 func TestMerge_ChecksumMismatch_ShouldError(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 	checksum, _ := checksum.CalculateChecksum(wv2)
 	// Corrupt the checksum
 	wv2.LocalID = 999
@@ -47,8 +47,8 @@ func TestMerge_ChecksumMismatch_ShouldError(t *testing.T) {
 
 // Valid merge with same numFloors and valid checksum
 func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	// Add elevator state to wv2
 	wv2.HallCalls[1][HDUp] = HallCallPairState{
@@ -69,8 +69,8 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 // Merge with empty worldview
 func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
 
@@ -81,8 +81,8 @@ func TestMerge_EmptyWorldview_ShouldSucceed(t *testing.T) {
 
 // Merge with elevator at different floors
 func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	// Test all valid floor positions
 	for floor := range 4 {
@@ -112,7 +112,7 @@ func TestMerge_ElevatorPositions_ShouldSucceed(t *testing.T) {
 
 // Test merge nil worldview
 func TestMerge_NilWorldview_ShouldError(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
 
 	err := wv1.Merge(nil, 0)
 
@@ -122,11 +122,11 @@ func TestMerge_NilWorldview_ShouldError(t *testing.T) {
 
 // Test merge preserves local state
 func TestMerge_PreservesLocalState(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
 	originalLocalID := wv1.LocalID
 	originalLocalState := wv1.ElevatorStates[originalLocalID]
 
-	wv2 := NewTestWorldView(10, 4)
+	wv2 := NewTestWorldView(t, 10, 4)
 	wv2.ElevatorStates[10] = NewRemoteElevatorState(10, 4)
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
@@ -140,9 +140,9 @@ func TestMerge_PreservesLocalState(t *testing.T) {
 // Test 15: Merge with edge case: PrevFloor and TargetFloor
 func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	wv2ID := 10
-	wv1 := NewTestWorldView(1, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
 
-	wv2 := NewTestWorldView(wv2ID, 4)
+	wv2 := NewTestWorldView(t, 10, 4)
 
 	wv2.ElevatorStates[wv2ID] = &RemoteElevatorState{
 		ID:           wv2ID,
@@ -190,8 +190,8 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wv1 := NewTestWorldView(1, 4)
-			wv2 := NewTestWorldView(2, 4)
+			wv1 := NewTestWorldView(t, 1, 4)
+			wv2 := NewTestWorldView(t, 2, 4)
 
 			wv1.HallCalls[1][HDUp] = HallCallPairState{State: tt.ourState, By: 2}
 
@@ -211,7 +211,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 }
 
 func TestSetHallCall(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	// Test invalid floors
 	err := wv.NewHallCall(-1, HDUp)
@@ -261,7 +261,7 @@ func TestSetHallCall(t *testing.T) {
 }
 
 func TestSetCabCall(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	err := wv.SetCabCall(2, true)
 
@@ -279,7 +279,7 @@ func TestSetCabCall(t *testing.T) {
 }
 
 func TestSetLocalElevator(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	validState := NewRemoteElevatorState(1, 4)
 
@@ -305,7 +305,7 @@ func TestSetLocalElevator(t *testing.T) {
 
 // TestStartSyncing_BroadcastsOwnState verifies that the worldview broadcasts its state periodically
 func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
 	errChan := make(chan error, 10)
@@ -332,8 +332,8 @@ func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 
 // TestStartSyncing_ReceivesAndMergesPeerData verifies that incoming peer data is merged
 func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -362,7 +362,7 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 
 // TestStartSyncing_IgnoresOwnBroadcast verifies that we don't merge our own broadcasts
 func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -375,7 +375,7 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 	wv.NewHallCall(originalFloor, HDUp)
 
 	// Create a message with the same LocalID but different state
-	fakeOwnMessage := NewTestWorldView(1, 4) // Same ID as wv
+	fakeOwnMessage := NewTestWorldView(t, 1, 4) // Same ID as wv
 	fakeOwnMessage.NewHallCall(3, HDDown)
 
 	jsonData, err := BuildWvJSON(fakeOwnMessage)
@@ -396,7 +396,7 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 
 // TestStartSyncing_HandlesInvalidJSON verifies graceful handling of malformed messages
 func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -411,7 +411,7 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Send valid message to confirm system is still responsive
-	wv2 := NewTestWorldView(2, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
@@ -426,8 +426,8 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 
 // TestStartSyncing_DetectsLostPeers verifies timeout detection for lost peers
 func TestStartSyncing_DetectsLostPeers(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -471,8 +471,8 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 
 // TestStartSyncing_ReappearedPeers verifies handling of returning peers
 func TestStartSyncing_ReappearedPeers(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -515,7 +515,7 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 
 // TestStartSyncing_ConcurrentAccess verifies thread safety during syncing
 func TestStartSyncing_ConcurrentAccess(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -544,7 +544,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	// Sender goroutine (simulating incoming messages)
 	go func() {
 		for i := 2; i < 10; i++ {
-			peer := NewTestWorldView(i, 4)
+			peer := NewTestWorldView(t, i, 4)
 			jsonData, err := BuildWvJSON(peer)
 			require.NoError(t, err)
 			rxChan <- network.UDPMessage{Data: jsonData}
@@ -575,7 +575,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 // TestStartSyncing_NetworkErrors verifies error channel handling
 // TestLostNode_ReleasesPendingOrders verifies that hall calls assigned to a timed-out node are reset
 func TestLostNode_ReleasesPendingOrders(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	// --- Test: lost node ---
 	lostID := 2
@@ -620,7 +620,7 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 }
 
 func TestStartSyncing_NetworkErrors(t *testing.T) {
-	wv := NewTestWorldView(1, 4)
+	wv := NewTestWorldView(t, 1, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -635,7 +635,7 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Send valid message to verify system is still functional
-	wv2 := NewTestWorldView(2, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
@@ -652,9 +652,9 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
 func TestStartSyncing_ConfirmationMerging(t *testing.T) {
-	wv1 := NewTestWorldView(1, 4)
-	wv2 := NewTestWorldView(2, 4)
-	wv3 := NewTestWorldView(3, 4)
+	wv1 := NewTestWorldView(t, 1, 4)
+	wv2 := NewTestWorldView(t, 2, 4)
+	wv3 := NewTestWorldView(t, 3, 4)
 
 	txChan := make(chan network.UDPMessage, 10)
 	rxChan := make(chan network.UDPMessage, 10)
@@ -719,11 +719,11 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 func TestCabCallRecoveredOnReconnect(t *testing.T) {
 
 	// Elevator A before crash
-	A := NewTestWorldView(1, 4)
+	A := NewTestWorldView(t, 1, 4)
 	A.ElevatorStates[A.LocalID].CabCalls[1] = true
 
 	// Elevator B sees A and stores that state
-	B := NewTestWorldView(2, 4)
+	B := NewTestWorldView(t, 2, 4)
 
 	stateOfA := A.ElevatorStates[A.LocalID]
 	B.ElevatorStates[A.LocalID] = stateOfA
@@ -734,7 +734,7 @@ func TestCabCallRecoveredOnReconnect(t *testing.T) {
 	)
 
 	// --- A crashes and reboots ---
-	ARebooted := NewTestWorldView(1, 4)
+	ARebooted := NewTestWorldView(t, 1, 4)
 
 	assert.False(t,
 		ARebooted.ElevatorStates[A.LocalID].CabCalls[1],
@@ -760,17 +760,17 @@ func TestCabCallRecoveredOnReconnect(t *testing.T) {
 
 func TestElevatorReconnectRecoversCabCalls(t *testing.T) {
 	// --- Step 1: Elevator A has a cab call ---
-	A := NewTestWorldView(1, 4)
+	A := NewTestWorldView(t, 1, 4)
 	A.ElevatorStates[A.LocalID].CabCalls[1] = true
 
 	// --- Step 2: Elevator B sees A's state ---
-	B := NewTestWorldView(2, 4)
+	B := NewTestWorldView(t, 2, 4)
 	B.ElevatorStates[A.LocalID] = A.ElevatorStates[A.LocalID]
 
 	require.True(t, B.ElevatorStates[A.LocalID].CabCalls[1], "B should remember A's cab call")
 
 	// --- Step 3: Elevator A crashes and reboots ---
-	ARebooted := NewTestWorldView(1, 4)
+	ARebooted := NewTestWorldView(t, 1, 4)
 	assert.False(t, ARebooted.ElevatorStates[A.LocalID].CabCalls[1],
 		"rebooted elevator should start with empty cab calls",
 	)

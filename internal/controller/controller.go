@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
@@ -25,6 +26,7 @@ type Controller struct {
 	triggerChan   chan ControllerTriggerSrc
 	hcLightChan   chan statesync.Order
 	doorTimerChan <-chan time.Time
+	doorDuration  time.Duration
 }
 
 func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
@@ -34,6 +36,7 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 		triggerChan:   ctrlTrigger,
 		hcLightChan:   hcLightChan,
 		doorTimerChan: nil,
+		doorDuration:  config.DoorOpenTime,
 	}
 }
 
@@ -44,7 +47,7 @@ func (ctrl *Controller) OnFloorArrival() {
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
 	ctrl.clearAllOrdersAtFloor(remote.CurrentFloor)
-	ctrl.doorTimerChan = time.After(3 * time.Second)
+	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 }
 
 // clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor

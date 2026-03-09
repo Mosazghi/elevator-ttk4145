@@ -3,11 +3,13 @@ package config
 import (
 	"flag"
 	"log/slog"
+	"time"
 )
 
 const (
 	DefaultPort   = 30000
 	DefaultFloors = 4
+	DoorOpenTime  = 3 * time.Second
 )
 
 type Config struct {

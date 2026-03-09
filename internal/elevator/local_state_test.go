@@ -7,13 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestElevator() ElevatorState {
+func setupTestElevator(t *testing.T) ElevatorState {
+	t.Helper()
 	elevIoDriver := elevio.NewElevIoFakeDriver(4)
 	return NewElevator(BIdle, elevio.MDUp, elevIoDriver)
 }
 
 func TestSetAction(t *testing.T) {
-	e := setupTestElevator()
+	e := setupTestElevator(t)
 
 	// CASE 1: Set action
 	action1 := MoveAction{BMoving, elevio.MDUp}
