@@ -24,15 +24,14 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID             int                          `json:"local_id"`
-	ElevatorStates      map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls           [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors           int                          `json:"num_floors"`
-	wvChan              chan Worldview
-	orderUpdateChan     chan Order
-	cabCallRecoveryChan chan int
-	hasFetchedCabCalls  bool
-	mu                  *sync.RWMutex
+	LocalID            int                          `json:"local_id"`
+	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls          [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors          int                          `json:"num_floors"`
+	wvChan             chan Worldview
+	orderUpdateChan    chan Order
+	hasFetchedCabCalls bool
+	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
@@ -380,19 +379,12 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 
-	// Determine if Cab Calls should be fetched from peer
 	_, weExist := other.ElevatorStates[wv.LocalID]
 
-	// Update peer state
-	otherLocalState.Alive = true
-	otherLocalState.LastSeenAt = time.Now()
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	// Fetch Cab Calls
 	fetchCabCalls := false
 
-	// check
-	// loop over all our cab calls
 	if !wv.hasFetchedCabCalls && weExist {
 		fetchCabCalls = !slices.Equal(wv.ElevatorStates[wv.LocalID].CabCalls, other.ElevatorStates[wv.LocalID].CabCalls)
 	}
@@ -401,7 +393,6 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		wv.hasFetchedCabCalls = true
 		wv.FetchCabCallsOnReconnect(other)
 		// TODO: Send trigger til controller -> turn on cab call lights for local panel
-
 	}
 
 	// -- Validate Hall Calls --

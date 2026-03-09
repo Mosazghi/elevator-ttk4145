@@ -92,13 +92,11 @@ func (ctrl *Controller) Start() {
 				}
 
 				if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
-					slog.Error("At Floor")
 					ctrl.OnFloorArrival()
 					continue
 				}
 
 				if localElevator.AllowedToServe() {
-					slog.Error("Allowed to serve")
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
 				}
 			case CTSFArrivalFloor:
