@@ -24,25 +24,25 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID            int                          `json:"local_id"`
-	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
-	NumFloors          int                    `json:"num_floors"`
-	wvChan             chan Worldview
-	orderUpdateChan    chan Order
-	mu                 *sync.RWMutex
+	LocalID         int                          `json:"local_id"`
+	ElevatorStates  map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls       [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors       int                          `json:"num_floors"`
+	wvChan          chan Worldview
+	orderUpdateChan chan Order
+	mu              *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order) *Worldview {
 	wv := &Worldview{
-		LocalID:            localID,
-		ElevatorStates:     make(map[int]*RemoteElevatorState),
-		HallCalls:          make([][2]HallCallPairState, numFloors),
-		NumFloors:          numFloors,
-		wvChan:             wvChan,
-		orderUpdateChan:    orderUpdateChan,
-		mu:                 &sync.RWMutex{},
+		LocalID:         localID,
+		ElevatorStates:  make(map[int]*RemoteElevatorState),
+		HallCalls:       make([][2]HallCallPairState, numFloors),
+		NumFloors:       numFloors,
+		wvChan:          wvChan,
+		orderUpdateChan: orderUpdateChan,
+		mu:              &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -156,7 +156,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 	}
 }
 
-
 // FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer.
 // Must be called with lock held.
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
@@ -193,11 +192,11 @@ func (wv *Worldview) releaseAnyOrders() {
 		for dir := range wv.HallCalls[floor] {
 			hc := wv.HallCalls[floor][dir]
 
-			assignedNode, exist := wv.lostElevatorsState[hc.By]
-      isNodeLost := exist && !assignedNode.Alive
+			assignedNode, exist := wv.ElevatorStates[hc.By]
+			isNodeLost := exist && !assignedNode.Alive
 
 			hasOrderTimedout := hc.State == HSProcessing && hc.Timestamp != 0 &&
-				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout && hc.By == wv.LocalID
+				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout
 
 			if isNodeLost || hasOrderTimedout {
 				reason := "unknown"
