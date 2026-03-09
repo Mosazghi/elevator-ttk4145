@@ -24,25 +24,27 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID         int                          `json:"local_id"`
-	ElevatorStates  map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls       [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors       int                          `json:"num_floors"`
-	wvChan          chan Worldview
-	orderUpdateChan chan Order
-	mu              *sync.RWMutex
+	LocalID            int                          `json:"local_id"`
+	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls          [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors          int                          `json:"num_floors"`
+	wvChan             chan Worldview
+	orderUpdateChan    chan Order
+	hasFetchedCabCalls bool
+	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order) *Worldview {
 	wv := &Worldview{
-		LocalID:         localID,
-		ElevatorStates:  make(map[int]*RemoteElevatorState),
-		HallCalls:       make([][2]HallCallPairState, numFloors),
-		NumFloors:       numFloors,
-		wvChan:          wvChan,
-		orderUpdateChan: orderUpdateChan,
-		mu:              &sync.RWMutex{},
+		LocalID:            localID,
+		ElevatorStates:     make(map[int]*RemoteElevatorState),
+		HallCalls:          make([][2]HallCallPairState, numFloors),
+		NumFloors:          numFloors,
+		wvChan:             wvChan,
+		orderUpdateChan:    orderUpdateChan,
+		hasFetchedCabCalls: false,
+		mu:                 &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -378,8 +380,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	// Determine if Cab Calls should be fetched from peer
-	localPrevState := wv.ElevatorStates[wv.LocalID]
-	peerViewOfLocal := other.ElevatorStates[wv.LocalID]
+	_, weExist := other.ElevatorStates[wv.LocalID]
 
 	// Update peer state
 	otherLocalState.Alive = true
@@ -387,15 +388,16 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
 	// Fetch Cab Calls
-	fetchCabCalls := true
-	for _, cabCallIsFound := range localPrevState.CabCalls {
-		if cabCallIsFound {
-			fetchCabCalls = false
-			break
-		}
+	fetchCabCalls := false
+
+	// check
+	// loop over all our cab calls
+	if !wv.hasFetchedCabCalls {
+		fetchCabCalls = !slices.Equal(wv.ElevatorStates[wv.LocalID].CabCalls, other.ElevatorStates[wv.LocalID].CabCalls)
 	}
 
-	if fetchCabCalls && peerViewOfLocal != nil {
+	if fetchCabCalls && weExist {
+		wv.hasFetchedCabCalls = true
 		wv.FetchCabCallsOnReconnect(other)
 		// TODO: Send trigger til controller -> turn on cab call lights for local panel
 
