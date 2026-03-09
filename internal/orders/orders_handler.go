@@ -40,7 +40,16 @@ func (o *OrderHandler) Run() {
 					continue
 				}
 
-				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= len(wv.ElevatorStates)
+				// count how many that are not alive
+
+				aliveCount := 0
+				for _, elev := range wv.ElevatorStates {
+					if elev.Alive {
+						aliveCount++
+					}
+				}
+
+				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= aliveCount
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
 				if !isConfirmedByAll || !isAvailable {
@@ -76,6 +85,7 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 			currentElevatorCost.cost += shared.PenaltyObstructed
 		}
 
+		// If the elevator is moving in the wrong direction, add a penalty to the cost
 		if elev.Direction == elevio.MDDown && dir == statesync.HDUp {
 			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
@@ -84,11 +94,20 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 			currentElevatorCost.cost += shared.PenaltyWrongDirection
 		}
 
+		// If the elevator is moving away from the call, add a penalty to the cost
+		if elev.Direction == elevio.MDUp && elev.CurrentFloor >= floor {
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
+		}
+
+		if elev.Direction == elevio.MDDown && elev.CurrentFloor <= floor {
+			currentElevatorCost.cost += shared.PenaltyWrongDirection
+		}
+
 		distance := int(math.Abs(float64(elev.CurrentFloor - floor)))
 
 		currentElevatorCost.cost += distance
 
-		slog.Error("[CalculateCost] Cost for elevator", "id", id, "cost", currentElevatorCost.cost, "distance", distance, "isObstructed", isObstructed, "currentDir", elev.Direction)
+		slog.Debug("[CalculateCost] Cost for elevator", "id", id, "cost", currentElevatorCost.cost, "distance", distance, "isObstructed", isObstructed, "currentDir", elev.Direction)
 
 		if currentElevatorCost.cost < winner.cost || (currentElevatorCost.cost == winner.cost && currentElevatorCost.id < winner.id) {
 			winner.id = currentElevatorCost.id

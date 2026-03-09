@@ -2,6 +2,7 @@ package statesync
 
 import (
 	"fmt"
+	"log"
 	"testing"
 	"time"
 
@@ -481,16 +482,20 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	// Start syncing goroutine
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
-	// Add wv2 to wv1 and mark it as "lost"
+	// Add wv2 to wv1 as a "dead" peer — use a copy so wv2's own state stays
+	// Alive=true, which means the serialized message from wv2 will also carry
+	// Alive=true and Merge won't undo checkifNodeReappeared.
 	wv1.mu.Lock()
-	wv1.ElevatorStates[wv2.LocalID] = wv2.ElevatorStates[wv2.LocalID]
-	wv1.ElevatorStates[wv2.LocalID].Alive = false
+	stateCopy := *wv2.ElevatorStates[wv2.LocalID]
+	stateCopy.Alive = false
+	wv1.ElevatorStates[wv2.LocalID] = &stateCopy
 	wv1.mu.Unlock()
 
 	// Ensure peer is initially marked dead
 	wv1.mu.RLock()
-	assert.False(t, wv1.ElevatorStates[wv2.LocalID].Alive, "peer should start as dead")
+	initialAlive := wv1.ElevatorStates[wv2.LocalID].Alive
 	wv1.mu.RUnlock()
+	assert.False(t, initialAlive, "peer should start as dead")
 
 	// Simulate message from the "reappeared" peer
 	data, err := BuildWvJSON(wv2)
@@ -500,17 +505,15 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	// Wait for StartSyncing to process the message
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify peer is now marked alive
+	// Read the peer state under the lock and copy it so we don't race on the
+	// pointer's fields after releasing the lock.
 	wv1.mu.RLock()
 	peer, exists := wv1.ElevatorStates[wv2.LocalID]
-	var peerCopy RemoteElevatorState
-	if exists {
-		peerCopy = *peer
-	}
 	wv1.mu.RUnlock()
 
+	log.Println("Peer state after reappearing:", peer)
 	require.True(t, exists, "peer should exist in active elevators map")
-	assert.True(t, peerCopy.Alive, "peer should be marked alive after reappearing")
+	assert.True(t, peer.Alive, "peer should be marked alive after reappearing")
 }
 
 // TestStartSyncing_ConcurrentAccess verifies thread safety during syncing

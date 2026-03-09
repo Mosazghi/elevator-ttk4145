@@ -123,6 +123,10 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
+			wv.mu.Lock()
+			wv.checkifNodeReappeared(otherWv.LocalID)
+			wv.mu.Unlock()
+
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
@@ -170,6 +174,14 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	}
 
 	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
+}
+
+func (wv *Worldview) checkifNodeReappeared(id int) {
+	other, exist := wv.ElevatorStates[id]
+	if exist && !other.Alive {
+		slog.Info("Node has reappeared", "id", id)
+		wv.ElevatorStates[id].Alive = true
+	}
 }
 
 // releaseAnyOrders releases orders that are assigned to lost

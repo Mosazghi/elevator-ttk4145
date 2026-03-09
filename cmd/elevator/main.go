@@ -91,6 +91,19 @@ func main() {
 		slog.Error("SetLocalElevator", "error", err)
 	}
 
+	// Sync all button lights with the current worldview state before entering the
+	// main event loop, so the elevator server matches any persisted/recovered calls.
+	{
+		localElev := wv.GetRemoteElevator()
+		hallCallStates := wv.GetAllHallCalls()
+		hallCallBools := make([][2]bool, cfg.Floors)
+		for floor, pair := range hallCallStates {
+			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HSNone
+			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HSNone
+		}
+		elev.SetAllLights(cfg.Floors, localElev.CabCalls, hallCallBools)
+	}
+
 	fsm := fsm.NewStateMachine(
 		drvButtons,
 		drvFloors,
