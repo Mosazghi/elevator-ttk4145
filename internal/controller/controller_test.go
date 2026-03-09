@@ -397,3 +397,155 @@ func TestCalculateNearestCabCall(t *testing.T) {
 	order := FindClosestCabCall(wv)
 	assert.Equal(t, 2, order.Floor, "Expected nearestCall to be on floor 2")
 }
+
+// --- Door timer tests ---
+
+// newDoorTimerTestCtx creates a controller wired up for door timer testing.
+// The returned triggerChan can be used to inject triggers directly.
+func newDoorTimerTestCtx(t *testing.T, floor int) (*Controller, chan any, chan ControllerTriggerSrc) {
+	t.Helper()
+	wvChan := make(chan statesync.Worldview, 10)
+	orderChan := make(chan statesync.Order, 10)
+	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan)
+	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
+	elev.CurrentFloor = floor
+	require.NoError(t, wv.SetLocalElevator(elev))
+
+	actionChan := make(chan any, 20)
+	triggerChan := make(chan ControllerTriggerSrc, 10)
+	hcLightChan := make(chan statesync.Order, 10)
+
+	ctrl := &Controller{
+		wv:            wv,
+		actionChan:    actionChan,
+		triggerChan:   triggerChan,
+		hcLightChan:   hcLightChan,
+		doorTimerChan: nil,
+	}
+	go ctrl.Start()
+
+	return ctrl, actionChan, triggerChan
+}
+
+// drainActions collects all actions currently buffered in actionChan.
+func drainActions(actionChan chan any) []any {
+	var actions []any
+	for {
+		select {
+		case a := <-actionChan:
+			actions = append(actions, a)
+		default:
+			return actions
+		}
+	}
+}
+
+// TestDoorTimer_OpensOnFloorArrival verifies that OnFloorArrival sends the
+// correct open-door actions and arms the timer.
+func TestDoorTimer_OpensOnFloorArrival(t *testing.T) {
+	ctrl, actionChan, _ := newDoorTimerTestCtx(t, 2)
+
+	ctrl.OnFloorArrival()
+	time.Sleep(50 * time.Millisecond)
+
+	actions := drainActions(actionChan)
+	require.GreaterOrEqual(t, len(actions), 2, "expected at least MoveAction and DoorAction")
+
+	var gotMove, gotDoor bool
+	for _, a := range actions {
+		switch act := a.(type) {
+		case elevator.MoveAction:
+			assert.Equal(t, elevator.BDoorOpen, act.Behavior)
+			assert.Equal(t, elevio.MDStop, act.Direction)
+			gotMove = true
+		case elevator.DoorAction:
+			assert.True(t, act.Open, "door should be opened")
+			gotDoor = true
+		}
+	}
+	assert.True(t, gotMove, "MoveAction with BDoorOpen expected")
+	assert.True(t, gotDoor, "DoorAction{Open: true} expected")
+	assert.NotNil(t, ctrl.doorTimerChan, "doorTimerChan should be armed after floor arrival")
+}
+
+// TestDoorTimer_ClosesAfterTimeout verifies that when the timer fires the
+// controller sends close-door actions and resets the channel to nil.
+func TestDoorTimer_ClosesAfterTimeout(t *testing.T) {
+	ctrl, actionChan, _ := newDoorTimerTestCtx(t, 2)
+
+	// Inject a timer that fires immediately instead of waiting 3 s.
+	timerChan := make(chan time.Time, 1)
+	timerChan <- time.Now()
+	ctrl.doorTimerChan = timerChan
+
+	time.Sleep(100 * time.Millisecond)
+
+	actions := drainActions(actionChan)
+
+	var gotMove, gotDoor bool
+	for _, a := range actions {
+		switch act := a.(type) {
+		case elevator.MoveAction:
+			assert.Equal(t, elevator.BIdle, act.Behavior)
+			assert.Equal(t, elevio.MDStop, act.Direction)
+			gotMove = true
+		case elevator.DoorAction:
+			assert.False(t, act.Open, "door should be closed")
+			gotDoor = true
+		}
+	}
+	assert.True(t, gotMove, "MoveAction with BIdle expected after timeout")
+	assert.True(t, gotDoor, "DoorAction{Open: false} expected after timeout")
+	assert.Nil(t, ctrl.doorTimerChan, "doorTimerChan should be nil after door closes")
+}
+
+// TestDoorTimer_RearmOnSecondArrival verifies that a second OnFloorArrival
+// while the door is still open replaces the timer with a fresh one.
+func TestDoorTimer_RearmOnSecondArrival(t *testing.T) {
+	ctrl, _, _ := newDoorTimerTestCtx(t, 2)
+
+	ctrl.OnFloorArrival()
+	firstChan := ctrl.doorTimerChan
+	require.NotNil(t, firstChan)
+
+	ctrl.OnFloorArrival()
+	secondChan := ctrl.doorTimerChan
+	require.NotNil(t, secondChan)
+
+	assert.NotEqual(t, firstChan, secondChan, "doorTimerChan should be a fresh channel after re-arm")
+}
+
+// TestDoorTimer_ClearsAllOrdersAtFloor verifies that both the cab call and
+// any hall call we own at the arrival floor are cleared simultaneously.
+func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
+	wvChan := make(chan statesync.Worldview, 10)
+	orderChan := make(chan statesync.Order, 10)
+	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan)
+	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
+	elev.CurrentFloor = 2
+	require.NoError(t, wv.SetLocalElevator(elev))
+
+	require.NoError(t, wv.SetCabCall(2, true))
+	require.NoError(t, wv.NewHallCall(2, statesync.HDUp))
+	require.NoError(t, wv.NewHallCall(2, statesync.HDDown))
+	require.NoError(t, wv.ProcessHallCall(2, statesync.HDUp))
+	require.NoError(t, wv.ProcessHallCall(2, statesync.HDDown))
+
+	ctrl := &Controller{
+		wv:            wv,
+		actionChan:    make(chan any, 20),
+		triggerChan:   make(chan ControllerTriggerSrc, 10),
+		hcLightChan:   make(chan statesync.Order, 10),
+		doorTimerChan: nil,
+	}
+
+	ctrl.clearAllOrdersAtFloor(2)
+	time.Sleep(600 * time.Millisecond) // wait past the 500 ms sleep inside clearAllOrdersAtFloor
+
+	remoteElev := wv.GetRemoteElevator()
+	assert.False(t, remoteElev.CabCalls[2], "cab call at floor 2 should be cleared")
+
+	hcs := wv.GetAllHallCalls()
+	assert.Equal(t, statesync.HSNone, hcs[2][statesync.HDUp].State, "hall call at floor 2 should be cleared")
+	assert.Equal(t, statesync.HSNone, hcs[2][statesync.HDDown].State, "hall call at floor 2 should be cleared")
+}
