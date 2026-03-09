@@ -26,7 +26,6 @@ type Message struct {
 type Worldview struct {
 	LocalID            int                          `json:"local_id"`
 	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
-	lostElevatorsState map[int]*RemoteElevatorState
 	HallCalls          [][2]HallCallPairState `json:"hall_calls"`
 	NumFloors          int                    `json:"num_floors"`
 	wvChan             chan Worldview
@@ -39,7 +38,6 @@ func NewWorldView(localID, numFloors int, wvChan chan Worldview, newOrderChan ch
 	wv := &Worldview{
 		LocalID:        localID,
 		ElevatorStates: make(map[int]*RemoteElevatorState),
-		//lostElevatorsState: make(map[int]*RemoteElevatorState),
 		HallCalls:    make([][2]HallCallPairState, numFloors),
 		NumFloors:    numFloors,
 		wvChan:       wvChan,
@@ -189,8 +187,6 @@ func (wv *Worldview) releaseAnyOrders() {
 		if time.Since(state.LastSeenAt) > NodeLostTimeout {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
 			wv.ElevatorStates[id].Alive = false
-			//wv.lostElevatorsState[id] = state
-			//delete(wv.ElevatorStates, id)
 		}
 	}
 
@@ -201,7 +197,6 @@ func (wv *Worldview) releaseAnyOrders() {
 			assignedNode, aNExists := wv.ElevatorStates[hc.By]
 			isObstructed := aNExists && assignedNode.IsObstructed
 
-			//_, isNodeLost := wv.lostElevatorsState[hc.By]
 			isNodeLost := false
 			if hc.By != -1 {
 				isNodeLost = !wv.ElevatorStates[hc.By].Alive
