@@ -10,6 +10,7 @@ import (
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,7 @@ func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Wo
 	t.Helper()
 	wvChan = make(chan statesync.Worldview, 10)
 	arriveAtFloorChan = make(chan struct{}, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10))
+	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
@@ -408,7 +409,7 @@ func newDoorTimerTestCtx(t *testing.T, floor int) (*Controller, chan any, chan C
 	t.Helper()
 	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan)
+	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -432,7 +433,7 @@ func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration) (*Con
 	t.Helper()
 	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan)
+	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -550,7 +551,7 @@ func TestDoorTimer_RearmOnSecondArrival(t *testing.T) {
 func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan)
+	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = 2
 	require.NoError(t, wv.SetLocalElevator(elev))

@@ -14,6 +14,7 @@ import (
 	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/lmittmann/tint"
 )
 
@@ -64,8 +65,9 @@ func main() {
 	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
+	recoveredCabCallChan := make(chan shared.Emtpy, 5)
 	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan, actionChan)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan, recoveredCabCallChan)
 
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
 	go ctrller.Start()
@@ -80,7 +82,6 @@ func main() {
 		elev.OnInitBetweenFloors()
 		localElvevator.Behavior = elevator.BMoving
 		localElvevator.Direction = elevio.MDDown
-
 	}
 
 	localElvevator.CurrentFloor = 0
@@ -94,14 +95,15 @@ func main() {
 	// Sync all button lights with the current worldview state before entering the
 	// main event loop, so the elevator server matches any persisted/recovered calls.
 	{
-		localElev := wv.GetRemoteElevator()
+		elev.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
-		hallCallBools := make([][2]bool, cfg.Floors)
+		hallCallBools := make([][2]bool, wv.NumFloors)
 		for floor, pair := range hallCallStates {
 			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HSNone
 			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HSNone
 		}
-		elev.SetAllLights(cfg.Floors, localElev.CabCalls, hallCallBools)
+		elev.SetHallCallLights(wv.NumFloors, hallCallBools)
+
 	}
 
 	fsm := fsm.NewStateMachine(
@@ -111,6 +113,7 @@ func main() {
 		drvStop,
 		triggerAction,
 		actionChan,
+		recoveredCabCallChan,
 		&elev,
 		wv,
 	)
