@@ -65,7 +65,7 @@ func main() {
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan, actionChan)
 
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
 	go ctrller.Start()
