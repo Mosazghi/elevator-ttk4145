@@ -141,9 +141,10 @@ func (e *ElevatorState) SetAllLights(numFloors int, cabCalls []bool, hallCalls [
 	e.SetCabCallLights(numFloors, cabCalls)
 	e.SetHallCallLights(numFloors, hallCalls)
 }
+
 // SetCabCallLights sets lights for all active cab calls
 func (e *ElevatorState) SetCabCallLights(numFloors int, cabCalls []bool) {
-	for floor := 0; floor < numFloors; floor ++{
+	for floor := 0; floor < numFloors; floor++ {
 		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
 	}
 }

@@ -87,6 +87,7 @@ func main() {
 	// Sync all button lights with the current worldview state before entering the
 	// main event loop, so the elevator server matches any persisted/recovered calls.
 	{
+		time.Sleep(2 * time.Second) // Wait for worldview to sync with other nodes
 		elev.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCallBools := make([][2]bool, wv.NumFloors)
