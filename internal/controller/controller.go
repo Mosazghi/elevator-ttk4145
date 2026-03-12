@@ -58,9 +58,8 @@ func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	// A little delay to ensure other nodes have had time to properly process
-	time.Sleep(150 * time.Millisecond)
-
+	// FIXME: Find a better solution than blocking for 500ms!
+	time.Sleep(150 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	hcs := ctrl.wv.GetAllHallCalls()
 	for dir := range hcs[floor] {
 		isOurs := hcs[floor][dir].By == elev.ID && hcs[floor][dir].State == statesync.HSProcessing
@@ -77,16 +76,24 @@ func (ctrl *Controller) Start() {
 	for {
 		select {
 		case order := <-ctrl.hcLightChan:
-			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
+			ctrl.actionChan <- elevator.LightAction{ButtonType: HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
-			ctrl.doorTimerChan = nil
-			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-			ctrl.actionChan <- elevator.DoorAction{Open: false}
+			elev := ctrl.wv.GetRemoteElevator()
+
+			if elev.IsObstructed {
+				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+			} else {
+				ctrl.doorTimerChan = nil
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+				ctrl.actionChan <- elevator.DoorAction{Open: false}
+			}
 		case triggerSrc := <-ctrl.triggerChan:
 			elev := ctrl.wv.GetRemoteElevator()
 			closestOrder := FetchClosestOrder(ctrl.wv)
 
+			slog.Info("behavior", "behavior", elev.Behavior)
 			switch elev.Behavior {
+
 			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
@@ -96,12 +103,19 @@ func (ctrl *Controller) Start() {
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 					continue
 				}
+				slog.Info("Closest order", "direction", closestOrder.MotorDirection, "Floor", closestOrder.Floor)
+				if elev.Direction != closestOrder.MotorDirection && !closestOrder.AtFloor(elev.CurrentFloor) {
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+					continue
+				}
 
 				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == CTSFArrivalFloor {
 					ctrl.OnFloorArrival()
 				}
 			case elevator.BIdle:
+				slog.Info("Closest order", "direction", closestOrder.MotorDirection, "Floor", closestOrder.Floor)
 				if closestOrder.Empty() {
+
 					continue
 				}
 
@@ -198,7 +212,7 @@ func FindClosestHallCall(wv *statesync.Worldview) CurrentOrder {
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
-			orderType = shared.HallDirToButtonType(hallCallDirection)
+			orderType = HallDirToButtonType(hallCallDirection)
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
