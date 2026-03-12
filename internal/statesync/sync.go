@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync"
 	"time"
-
-	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -24,27 +24,29 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID            int                          `json:"local_id"`
-	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls          [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors          int                          `json:"num_floors"`
-	wvChan             chan Worldview
-	orderUpdateChan    chan Order
-	hasFetchedCabCalls bool
-	mu                 *sync.RWMutex
+	LocalID              int                          `json:"local_id"`
+	ElevatorStates       map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls            [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors            int                          `json:"num_floors"`
+	wvChan               chan Worldview
+	orderUpdateChan      chan Order
+	recoveredCabCallChan chan Emtpy
+	hasFetchedCabCalls   bool
+	mu                   *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order) *Worldview {
+func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
 	wv := &Worldview{
-		LocalID:            localID,
-		ElevatorStates:     make(map[int]*RemoteElevatorState),
-		HallCalls:          make([][2]HallCallPairState, numFloors),
-		NumFloors:          numFloors,
-		wvChan:             wvChan,
-		orderUpdateChan:    orderUpdateChan,
-		hasFetchedCabCalls: false,
-		mu:                 &sync.RWMutex{},
+		LocalID:             localID,
+		ElevatorStates:      make(map[int]*RemoteElevatorState),
+		HallCalls:           make([][2]HallCallPairState, numFloors),
+		NumFloors:           numFloors,
+		wvChan:              wvChan,
+		orderUpdateChan:     orderUpdateChan,
+		hasFetchedCabCalls:  false,
+		recoveredCabCallChan: recoveredCabCallChan,
+		mu:                  &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -158,7 +160,9 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 	}
 }
 
-// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer.
+// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
+// and signals cab lights to be turned back on when applicable.
+//
 // Must be called with lock held.
 func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 
@@ -166,10 +170,20 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	myView := wv.ElevatorStates[wv.LocalID]
 
 	for floor, peerCabCallValue := range peerView.CabCalls {
+		//prevView := myView.CabCalls[floor]
 		myView.CabCalls[floor] = myView.CabCalls[floor] || peerCabCallValue
-	}
 
-	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
+		// if !prevView && myView.CabCalls[floor] {
+		// 	wv.actionChan <- elevator.LightAction{
+		// 		ButtonType: elevio.Cab,
+		// 		Floor:      floor,
+		// 		State:      true,
+		// 	}
+		// }
+
+	}
+	wv.recoveredCabCallChan <- Emtpy{}
+	slog.Info("[Merge] Cab calls recovered from peer", "cabCalls", myView.CabCalls)
 }
 
 func (wv *Worldview) checkifNodeReappeared(id int) {
@@ -398,8 +412,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	if fetchCabCalls {
-		wv.hasFetchedCabCalls = true
 		wv.FetchCabCallsOnReconnect(other)
+		wv.hasFetchedCabCalls = true
 		// TODO: Send trigger til controller -> turn on cab call lights for local panel
 	}
 

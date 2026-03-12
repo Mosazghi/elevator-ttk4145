@@ -138,10 +138,21 @@ func (e *ElevatorState) SetCurrentFloorLight(floor int) {
 // hallCalls[floor][1] = HallUp light (matches statesync.HDUp=1).
 // The caller is responsible for converting statesync types to [][2]bool before calling this.
 func (e *ElevatorState) SetAllLights(numFloors int, cabCalls []bool, hallCalls [][2]bool) {
+	e.SetCabCallLights(numFloors, cabCalls)
+	e.SetHallCallLights(numFloors, hallCalls)
+}
+// SetCabCallLights sets lights for all active cab calls
+func (e *ElevatorState) SetCabCallLights(numFloors int, cabCalls []bool) {
+	for floor := 0; floor < numFloors; floor ++{
+		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
+	}
+}
+
+// SetHallCallLights sets lights for all active hall calls
+func (e *ElevatorState) SetHallCallLights(numFloors int, hallCalls [][2]bool) {
 	for floor := 0; floor < numFloors; floor++ {
 		e.io.SetButtonLamp(elevio.HallDown, floor, hallCalls[floor][0])
 		e.io.SetButtonLamp(elevio.HallUp, floor, hallCalls[floor][1])
-		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
 	}
 }
 
