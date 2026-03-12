@@ -51,18 +51,19 @@ func (ctrl *Controller) OnFloorArrival() {
 
 // clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
 func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
-	localElevator := ctrl.wv.GetRemoteElevator()
+	elev := ctrl.wv.GetRemoteElevator()
 
-	if localElevator.CabCalls[floor] {
+	if elev.CabCalls[floor] {
 		ctrl.wv.SetCabCall(floor, false)
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	// FIXME: Find a better solution than blocking for 500ms!
-	// time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	// A little delay to ensure other nodes have had time to properly process
+	time.Sleep(150 * time.Millisecond)
+
 	hcs := ctrl.wv.GetAllHallCalls()
 	for dir := range hcs[floor] {
-		isOurs := hcs[floor][dir].By == localElevator.ID && hcs[floor][dir].State == statesync.HSProcessing
+		isOurs := hcs[floor][dir].By == elev.ID && hcs[floor][dir].State == statesync.HSProcessing
 		if isOurs {
 			err := ctrl.wv.CompleteHallCall(floor, statesync.HallCallDir(dir))
 			if err != nil {
@@ -89,7 +90,7 @@ func (ctrl *Controller) Start() {
 			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
-       }
+				}
 			case elevator.BMoving:
 				if closestOrder.Empty() {
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
@@ -119,9 +120,6 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	closestCabCall := FindClosestCabCall(worldView)
 	closestHallCall := FindClosestHallCall(worldView)
 	localElevator := worldView.GetRemoteElevator()
-
-	// slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
-	// slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
 
 	if !closestCabCall.Empty() && closestHallCall.Empty() {
 		return closestCabCall

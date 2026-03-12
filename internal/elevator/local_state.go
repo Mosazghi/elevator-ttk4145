@@ -113,6 +113,9 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 // Off happends when MDStop and BIdle while other is always on.
 
 func (e *ElevatorState) SetDoor(state bool) {
+	if state {
+		// PLAY SOUND
+	}
 	e.io.SetDoorOpenLamp(state)
 }
 
