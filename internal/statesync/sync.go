@@ -6,7 +6,8 @@ import (
 	"slices"
 	"sync"
 	"time"
-	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+
+	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
 	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/vmihailenco/msgpack/v5"
@@ -38,15 +39,15 @@ type Worldview struct {
 // NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
 	wv := &Worldview{
-		LocalID:             localID,
-		ElevatorStates:      make(map[int]*RemoteElevatorState),
-		HallCalls:           make([][2]HallCallPairState, numFloors),
-		NumFloors:           numFloors,
-		wvChan:              wvChan,
-		orderUpdateChan:     orderUpdateChan,
-		hasFetchedCabCalls:  false,
+		LocalID:              localID,
+		ElevatorStates:       make(map[int]*RemoteElevatorState),
+		HallCalls:            make([][2]HallCallPairState, numFloors),
+		NumFloors:            numFloors,
+		wvChan:               wvChan,
+		orderUpdateChan:      orderUpdateChan,
+		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
-		mu:                  &sync.RWMutex{},
+		mu:                   &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {

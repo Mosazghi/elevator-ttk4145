@@ -117,7 +117,7 @@ func (sm *StateMachine) Run() {
 			}
 
 			if isObstructed && sm.elev.Behavior == elevator.BDoorOpen {
-				sm.elev.StopAction()
+				sm.elev.Stop()
 			} else {
 				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 			}

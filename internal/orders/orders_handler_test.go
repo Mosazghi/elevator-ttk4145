@@ -5,6 +5,7 @@ import (
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,7 +14,7 @@ const numFloors = 4
 // buildWV creates a minimal Worldview with the given elevator states for cost tests.
 func buildWV(t *testing.T, localID int, elevators map[int]*statesync.RemoteElevatorState) statesync.Worldview {
 	t.Helper()
-	wv := statesync.NewWorldView(localID, numFloors, make(chan statesync.Worldview, 1), make(chan statesync.Order, 1))
+	wv := statesync.NewWorldView(localID, numFloors, make(chan statesync.Worldview, 1), make(chan statesync.Order, 1), make(chan Emtpy, 1))
 	wv.ElevatorStates = elevators
 	return *wv
 }
