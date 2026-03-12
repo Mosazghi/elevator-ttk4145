@@ -10,7 +10,6 @@ import (
 
 type RemoteElevatorState struct {
 	ID           int                   `json:"id"`
-	TargetFloor  int                   `json:"target_floor"`
 	CurrentFloor int                   `json:"current_floor"`
 	IsObstructed bool                  `json:"is_obstructed"`
 	Direction    elevio.MotorDirection `json:"direction"`
@@ -19,14 +18,13 @@ type RemoteElevatorState struct {
 	Behavior     elevator.Behavior     `json:"behavior"`
 	LastSeenAt   time.Time             `json:"last_seen_at"`
 	NumFloors    int                   `json:"num_floors"`
-	Alive		 bool					`json:"alive"`	
+	Alive        bool                  `json:"alive"`
 }
 
 // NewRemoteElevatorState creates a new instance of  RemoteElevatorState
 func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 	return &RemoteElevatorState{
 		ID:           id,
-		TargetFloor:  0,
 		CurrentFloor: -1,
 		Direction:    elevio.MDStop,
 		DoorState:    elevator.DSClosed,
@@ -34,13 +32,13 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		Behavior:     elevator.BIdle,
 		LastSeenAt:   time.Now(),
 		NumFloors:    numFloors,
-		Alive:		  true,
+		Alive:        true,
 	}
 }
 
 func (res RemoteElevatorState) String() string {
-	return fmt.Sprintf("RemoteElevatorState{ID: %d, TargetFloor: %d, CurrentFloor: %d, Direction: %v, DoorState: %v, CabCalls: %v, Behavior: %v, LastSeenAt: %v}",
-		res.ID, res.TargetFloor, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
+	return fmt.Sprintf("RemoteElevatorState{ID: %d, CurrentFloor: %d, Direction: %v, DoorState: %v, CabCalls: %v, Behavior: %v, LastSeenAt: %v}",
+		res.ID, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
 }
 
 func (res RemoteElevatorState) AllowedToServe() bool {

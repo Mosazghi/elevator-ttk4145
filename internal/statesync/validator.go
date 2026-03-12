@@ -3,7 +3,6 @@ package statesync
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 )
@@ -50,11 +49,6 @@ func ValidateStateRemote(res *RemoteElevatorState) error {
 
 	if isMoving && isDoorOpen {
 		return fmt.Errorf("cannot move with door open")
-	}
-
-	if res.TargetFloor < 0 || res.TargetFloor >= res.NumFloors {
-		log.Printf("Target: %v, numFloors %v", res.TargetFloor, res.NumFloors)
-		return fmt.Errorf("target floor %d is out of bounds", res.TargetFloor)
 	}
 
 	// -1 because we could be inbetween floors
