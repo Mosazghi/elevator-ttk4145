@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -102,7 +102,7 @@ func (wv Worldview) String() string {
 }
 
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
-func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-chan network.UDPMessage, errChan <-chan error) {
+func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, errChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
 	localID := wv.LocalID
 	for {
@@ -111,7 +111,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			slog.Error("Network error", "error", err)
 		case peerData := <-rxChan:
 			message := Message{}
-			err := msgpack.Unmarshal(peerData.Data, &message)
+			err := msgpack.Unmarshal(peerData, &message)
 			if err != nil {
 				slog.Error("Failed to unmarshal message", "error", err)
 				continue
@@ -153,11 +153,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 			default:
 			}
 
-			txChan <- network.UDPMessage{
-				Data:    data,
-				Address: nil,
-			}
-
+			txChan <- data
 		}
 	}
 }

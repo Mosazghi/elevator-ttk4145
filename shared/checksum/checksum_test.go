@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test 1: Basic functionality
+// Basic functionality
 func TestCalculateChecksum_ValidInput(t *testing.T) {
 	data := map[string]interface{}{
 		"id":    1,
@@ -24,7 +24,7 @@ func TestCalculateChecksum_ValidInput(t *testing.T) {
 	// assert.Len(t, cs, 32, "SHA-256 produces 32 bytes")
 }
 
-// Test 2: Determinism - same input produces same checksum
+// Determinism - same input produces same checksum
 func TestCalculateChecksum_Deterministic(t *testing.T) {
 	data := map[string]int{"x": 1, "y": 2, "z": 3}
 
@@ -36,7 +36,7 @@ func TestCalculateChecksum_Deterministic(t *testing.T) {
 	assert.True(t, cs1 == cs2, "same input must produce same checksum")
 }
 
-// Test 3: Different inputs produce different checksums
+// Different inputs produce different checksums
 func TestCalculateChecksum_UniqueOutputs(t *testing.T) {
 	data1 := map[string]int{"value": 1}
 	data2 := map[string]int{"value": 2}
@@ -47,7 +47,7 @@ func TestCalculateChecksum_UniqueOutputs(t *testing.T) {
 	assert.False(t, cs1 == cs2, "different inputs should produce different checksums")
 }
 
-// Test 4: Edge cases - empty and nil values
+// Edge cases - empty and nil values
 func TestCalculateChecksum_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -72,7 +72,7 @@ func TestCalculateChecksum_EdgeCases(t *testing.T) {
 	}
 }
 
-// Test 5: Complex nested structures
+// Complex nested structures
 func TestCalculateChecksum_NestedStructures(t *testing.T) {
 	data := map[string]interface{}{
 		"elevator": map[string]interface{}{
@@ -93,7 +93,7 @@ func TestCalculateChecksum_NestedStructures(t *testing.T) {
 	// assert.Len(t, cs, 32)
 }
 
-// Test 6: Struct input
+// Struct input
 func TestCalculateChecksum_WithStruct(t *testing.T) {
 	type Message struct {
 		ID        string `json:"id"`
@@ -117,7 +117,7 @@ func TestCalculateChecksum_WithStruct(t *testing.T) {
 	assert.Equal(t, cs1, cs2, "struct checksums must be deterministic")
 }
 
-// Test 7: Order independence for structs (should be deterministic)
+// Order independence for structs (should be deterministic)
 func TestCalculateChecksum_StructFieldOrder(t *testing.T) {
 	type Message struct {
 		A int `json:"a"`
@@ -133,7 +133,7 @@ func TestCalculateChecksum_StructFieldOrder(t *testing.T) {
 	assert.Equal(t, cs1, cs2, "struct field order should not matter for identical values")
 }
 
-// Test 8: Large data structures
+// Large data structures
 func TestCalculateChecksum_LargeInput(t *testing.T) {
 	// Simulate a large worldview
 	worldview := make(map[string]interface{})
@@ -150,7 +150,7 @@ func TestCalculateChecksum_LargeInput(t *testing.T) {
 	// assert.Len(t, cs, 32)
 }
 
-// Test 9: JSON-unmarshalable types should error
+// JSON-unmarshalable types should error
 func TestCalculateChecksum_InvalidInput(t *testing.T) {
 	// Channels, functions, and complex types can't be marshaled to JSON
 	invalidInputs := []interface{}{
@@ -167,7 +167,7 @@ func TestCalculateChecksum_InvalidInput(t *testing.T) {
 	}
 }
 
-// Test 10: Stability across JSON round-trip
+// Stability across JSON round-trip
 func TestCalculateChecksum_JSONRoundTrip(t *testing.T) {
 	type Message struct {
 		ID     string `json:"id"`
@@ -187,7 +187,7 @@ func TestCalculateChecksum_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, cs1, cs2, "checksum should survive JSON round-trip")
 }
 
-// Test 11: Collision resistance
+// Collision resistance
 func TestCalculateChecksum_CollisionResistance(t *testing.T) {
 
 	checksums := make(map[string]bool)

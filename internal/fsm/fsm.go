@@ -68,7 +68,6 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 			sm.elev.SetCurrentFloorLight(floor)
-			slog.Debug("[arriveAtFloor] trigger")
 			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
 
 		case action := <-sm.ctrlActionChan:
@@ -95,8 +94,6 @@ func (sm *StateMachine) Run() {
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
 				sm.elev.SetDoor(action.Open)
-				// sm.elev.SetCallLight(elevio.Cab, localElvevator.CurrentFloor, false)
-
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
 			}
@@ -111,11 +108,11 @@ func (sm *StateMachine) Run() {
 
 		case shouldStop := <-sm.drvStop:
 			if shouldStop {
-				sm.elev.StopAction()
+				sm.elev.Stop()
 				sm.elev.SetStopLight(elevator.LSOn)
 			} else {
 				sm.elev.SetStopLight(elevator.LSOff)
-				sm.elev.ContinueAction()
+				sm.elev.ContinueLastDir()
 			}
 
 		}

@@ -11,7 +11,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/fsm"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	"github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/lmittmann/tint"
@@ -23,13 +23,6 @@ func main() {
 	SetupLogger(cfg.LogLevel)
 
 	// Check environment mode (ENV=production or ENV=prod enables production mode)
-	env := os.Getenv("ENV")
-	prodMode := env == "production" || env == "prod"
-	if prodMode {
-		slog.Warn("Running in production mode (echo filtering enabled)")
-	} else {
-		slog.Warn("Running in development mode (echo filtering disabled)")
-	}
 	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors)
 
 	drvButtons := make(chan elevio.ButtonEvent)
@@ -47,7 +40,7 @@ func main() {
 
 	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
 
-	network, err := network.NewNetwork(prodMode)
+	network, err := network.NewNetwork()
 	if err != nil {
 		slog.Error("failed to create network", "err", err)
 		return
