@@ -8,6 +8,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
 type StateMachine struct {
@@ -17,8 +18,9 @@ type StateMachine struct {
 	drvObst    chan bool
 	drvStop    chan bool
 	// Internal channels
-	ctrlTriggerChan chan controller.ControllerTriggerSrc
-	ctrlActionChan  chan any
+	ctrlTriggerChan      chan controller.ControllerTriggerSrc
+	ctrlActionChan       chan any
+	recoveredCabCallChan chan shared.Emtpy
 
 	elev *elevator.ElevatorState
 	wv   *statesync.Worldview
@@ -31,18 +33,20 @@ func NewStateMachine(
 	drvStop chan bool,
 	ctrlTriggerChan chan controller.ControllerTriggerSrc,
 	ctrlActionChan chan any,
+	recoveredCabCallChan chan shared.Emtpy,
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
 ) *StateMachine {
 	return &StateMachine{
-		drvButtons:      drvButtons,
-		drvFloors:       drvFloors,
-		drvObst:         drvObst,
-		drvStop:         drvStop,
-		ctrlTriggerChan: ctrlTriggerChan,
-		ctrlActionChan:  ctrlActionChan,
-		elev:            elev,
-		wv:              wv,
+		drvButtons:           drvButtons,
+		drvFloors:            drvFloors,
+		drvObst:              drvObst,
+		drvStop:              drvStop,
+		ctrlTriggerChan:      ctrlTriggerChan,
+		ctrlActionChan:       ctrlActionChan,
+		recoveredCabCallChan: recoveredCabCallChan,
+		elev:                 elev,
+		wv:                   wv,
 	}
 }
 
@@ -70,6 +74,12 @@ func (sm *StateMachine) Run() {
 			sm.elev.SetCurrentFloorLight(floor)
 			slog.Debug("[arriveAtFloor] trigger")
 			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
+
+		case <-sm.recoveredCabCallChan:
+			localElev := sm.wv.GetRemoteElevator()
+			sm.elev.SetCabCallLights(sm.wv.NumFloors, localElev.CabCalls)
+
+			sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 
 		case action := <-sm.ctrlActionChan:
 			// slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)

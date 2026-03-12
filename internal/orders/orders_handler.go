@@ -76,6 +76,10 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 	winner := ElevatorCost{-1, wv.NumFloors + 1, 100}
 
 	for id, elev := range wv.ElevatorStates {
+		if !elev.Alive {
+			continue
+		}
+
 		currentElevatorCost := ElevatorCost{-1, wv.NumFloors + 1, 0}
 		isObstructed := elev.IsObstructed
 
