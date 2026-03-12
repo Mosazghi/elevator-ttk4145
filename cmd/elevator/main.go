@@ -45,7 +45,7 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
+	elev := elevator.NewElevator(elevator.BehaviorIdle, elevio.MDStop, elevIoDriver)
 
 	network, err := network.NewNetwork(prodMode)
 	if err != nil {
@@ -78,7 +78,7 @@ func main() {
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
 		elev.OnInitBetweenFloors()
-		localElvevator.Behavior = elevator.BMoving
+		localElvevator.Behavior = elevator.BehaviorMoving
 		localElvevator.Direction = elevio.MDDown
 
 	}
@@ -86,7 +86,6 @@ func main() {
 	localElvevator.CurrentFloor = 0
 
 	err = wv.SetLocalElevator(&localElvevator)
-
 	if err != nil {
 		slog.Error("SetLocalElevator", "error", err)
 	}

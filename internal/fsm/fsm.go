@@ -109,6 +109,12 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
+			if isObstructed && sm.elev.Behavior == elevator.BehaviorDoorOpen {
+				sm.elev.StopAction()
+			} else {
+				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+			}
+
 		case shouldStop := <-sm.drvStop:
 			if shouldStop {
 				sm.elev.StopAction()

@@ -42,7 +42,7 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 
 func (ctrl *Controller) OnFloorArrival() {
 	elev := ctrl.wv.GetRemoteElevator()
-	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
+	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorDoorOpen, Direction: elevio.MDStop}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
 	ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
@@ -59,7 +59,7 @@ func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
 	}
 
 	// FIXME: Find a better solution than blocking for 500ms!
-	// time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	hcs := ctrl.wv.GetAllHallCalls()
 	for dir := range hcs[floor] {
 		isOurs := hcs[floor][dir].By == localElevator.ID && hcs[floor][dir].State == statesync.HSProcessing
@@ -78,29 +78,35 @@ func (ctrl *Controller) Start() {
 		case order := <-ctrl.hcLightChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
-			ctrl.doorTimerChan = nil
-			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-			ctrl.actionChan <- elevator.DoorAction{Open: false}
+			elev := ctrl.wv.GetRemoteElevator()
+
+			if elev.IsObstructed {
+				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+			} else {
+				ctrl.doorTimerChan = nil
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorIdle, Direction: elevio.MDStop}
+				ctrl.actionChan <- elevator.DoorAction{Open: false}
+			}
 		case triggerSrc := <-ctrl.triggerChan:
 			elev := ctrl.wv.GetRemoteElevator()
 			closestOrder := FetchClosestOrder(ctrl.wv)
 
 			switch elev.Behavior {
-			case elevator.BDoorOpen:
+			case elevator.BehaviorDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
-       }
-			case elevator.BMoving:
+				}
+			case elevator.BehaviorMoving:
 				if closestOrder.Empty() {
-					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorIdle, Direction: elevio.MDStop}
 					continue
 				}
 
 				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == CTSFArrivalFloor {
 					ctrl.OnFloorArrival()
 				}
-			case elevator.BIdle:
-				if closestOrder.Empty() {
+			case elevator.BehaviorIdle:
+				if closestOrder.Empty() || (elev.IsObstructed && elev.Behavior == elevator.BehaviorDoorOpen) {
 					continue
 				}
 
@@ -109,7 +115,7 @@ func (ctrl *Controller) Start() {
 					continue
 				}
 
-				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorMoving, Direction: closestOrder.MotorDirection}
 			}
 		}
 	}

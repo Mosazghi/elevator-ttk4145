@@ -29,7 +29,7 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		Direction:    elevio.MDStop,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     make([]bool, numFloors),
-		Behavior:     elevator.BIdle,
+		Behavior:     elevator.BehaviorIdle,
 		LastSeenAt:   time.Now(),
 		NumFloors:    numFloors,
 		Alive:        true,
@@ -42,7 +42,7 @@ func (res RemoteElevatorState) String() string {
 }
 
 func (res RemoteElevatorState) AllowedToServe() bool {
-	return res.Behavior == elevator.BIdle || res.Behavior == elevator.BDoorOpen
+	return res.Behavior == elevator.BehaviorIdle || res.Behavior == elevator.BehaviorDoorOpen
 }
 
 func (res RemoteElevatorState) WrongDirection(floor int) bool {
