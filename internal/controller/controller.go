@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
@@ -20,20 +21,22 @@ const (
 )
 
 type Controller struct {
-	wv          *statesync.Worldview
-	actionChan  chan any
-	triggerChan chan ControllerTriggerSrc
-	hcLightChan chan statesync.Order
-	doorTimer   *time.Timer
+	wv            *statesync.Worldview
+	actionChan    chan any
+	triggerChan   chan ControllerTriggerSrc
+	hcLightChan   chan statesync.Order
+	doorTimerChan <-chan time.Time
+	doorDuration  time.Duration
 }
 
 func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
 	return &Controller{
-		wv:          wv,
-		actionChan:  actionChan,
-		triggerChan: ctrlTrigger,
-		hcLightChan: hcLightChan,
-		doorTimer:   time.NewTimer(0),
+		wv:            wv,
+		actionChan:    actionChan,
+		triggerChan:   ctrlTrigger,
+		hcLightChan:   hcLightChan,
+		doorTimerChan: nil,
+		doorDuration:  config.DoorOpenTime,
 	}
 }
 
@@ -42,13 +45,33 @@ func (ctrl *Controller) OnFloorArrival() {
 	slog.Debug("Should stop")
 	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
-	ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: remote.CurrentFloor, State: false}
 
-	time.AfterFunc(3*time.Second, func() {
-		ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-		ctrl.actionChan <- elevator.DoorAction{Open: false}
-		slog.Debug("Finished stopping")
-	})
+	ctrl.clearAllOrdersAtFloor(remote.CurrentFloor)
+	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+}
+
+// clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
+func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
+
+	localElevator := ctrl.wv.GetRemoteElevator()
+
+	if localElevator.CabCalls[floor] {
+		ctrl.wv.SetCabCall(floor, false)
+		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
+	}
+
+	// FIXME: Find a better solution than blocking for 500ms!
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	hcs := ctrl.wv.GetAllHallCalls()
+	for dir := range hcs[floor] {
+		isOurs := hcs[floor][dir].By == localElevator.ID && hcs[floor][dir].State == statesync.HSProcessing
+		if isOurs {
+			err := ctrl.wv.CompleteHallCall(floor, statesync.HallCallDir(dir))
+			if err != nil {
+				slog.Error("Failed to complete hall call", "error", err)
+			}
+		}
+	}
 }
 
 func (ctrl *Controller) Start() {
@@ -56,7 +79,14 @@ func (ctrl *Controller) Start() {
 		select {
 		case order := <-ctrl.hcLightChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
+		case <-ctrl.doorTimerChan:
+			ctrl.doorTimerChan = nil
+			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+			ctrl.actionChan <- elevator.DoorAction{Open: false}
 		case triggerSrc := <-ctrl.triggerChan:
+			if ctrl.doorTimerChan != nil {
+				continue // door is open, ignore triggers
+			}
 			switch triggerSrc {
 			case CTSOrderUpdate:
 				localElevator := ctrl.wv.GetRemoteElevator()
@@ -67,7 +97,6 @@ func (ctrl *Controller) Start() {
 
 				if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
 					ctrl.OnFloorArrival()
-					closestOrder.Complete(ctrl.wv)
 					continue
 				}
 
@@ -77,19 +106,16 @@ func (ctrl *Controller) Start() {
 			case CTSFArrivalFloor:
 				localElevator := ctrl.wv.GetRemoteElevator()
 				closestOrder := FetchClosestOrder(ctrl.wv)
-				slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
+				// slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
 
 				if closestOrder.Empty() {
-					slog.Debug("[Controller] No calls available, stopping")
+					// slog.Debug("[Controller] No calls available, stopping")
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 					continue
 				}
 
 				if closestOrder.AtFloor(localElevator.CurrentFloor) {
-					slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
 					ctrl.OnFloorArrival()
-					time.Sleep(500 * time.Millisecond)
-					closestOrder.Complete(ctrl.wv)
 				}
 			}
 		}
@@ -101,8 +127,8 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	closestHallCall := FindClosestHallCall(worldView)
 	localElevator := worldView.GetRemoteElevator()
 
-	slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
-	slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
+	// slog.Info("[closestHallCall]", "floor", closestHallCall.Floor)
+	// slog.Info("[closestCabCall]", "floor", closestCabCall.Floor)
 
 	if !closestCabCall.Empty() && closestHallCall.Empty() {
 		return closestCabCall

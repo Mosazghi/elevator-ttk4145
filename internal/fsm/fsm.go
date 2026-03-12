@@ -72,7 +72,7 @@ func (sm *StateMachine) Run() {
 			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
 
 		case action := <-sm.ctrlActionChan:
-			slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
+			// slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
 			switch action := action.(type) {
 			case elevator.MoveAction:
 				err := sm.elev.DoMotorAction(action)

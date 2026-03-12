@@ -24,25 +24,27 @@ type Message struct {
 }
 
 type Worldview struct {
-	LocalID         int                          `json:"local_id"`
-	ElevatorStates  map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls       [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors       int                          `json:"num_floors"`
-	wvChan          chan Worldview
-	orderUpdateChan chan Order
-	mu              *sync.RWMutex
+	LocalID            int                          `json:"local_id"`
+	ElevatorStates     map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls          [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors          int                          `json:"num_floors"`
+	wvChan             chan Worldview
+	orderUpdateChan    chan Order
+	hasFetchedCabCalls bool
+	mu                 *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
 func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order) *Worldview {
 	wv := &Worldview{
-		LocalID:         localID,
-		ElevatorStates:  make(map[int]*RemoteElevatorState),
-		HallCalls:       make([][2]HallCallPairState, numFloors),
-		NumFloors:       numFloors,
-		wvChan:          wvChan,
-		orderUpdateChan: orderUpdateChan,
-		mu:              &sync.RWMutex{},
+		LocalID:            localID,
+		ElevatorStates:     make(map[int]*RemoteElevatorState),
+		HallCalls:          make([][2]HallCallPairState, numFloors),
+		NumFloors:          numFloors,
+		wvChan:             wvChan,
+		orderUpdateChan:    orderUpdateChan,
+		hasFetchedCabCalls: false,
+		mu:                 &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -121,6 +123,10 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.UDPMessage, rxChan <-cha
 				continue
 			}
 
+			wv.mu.Lock()
+			wv.checkifNodeReappeared(otherWv.LocalID)
+			wv.mu.Unlock()
+
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
@@ -170,6 +176,14 @@ func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
 	slog.Info("Cab calls recovered from peer", "cabCalls", myView.CabCalls)
 }
 
+func (wv *Worldview) checkifNodeReappeared(id int) {
+	other, exist := wv.ElevatorStates[id]
+	if exist && !other.Alive {
+		slog.Info("Node has reappeared", "id", id)
+		wv.ElevatorStates[id].Alive = true
+	}
+}
+
 // releaseAnyOrders releases orders that are assigned to lost
 // or obstructed nodes,
 // or orders that have been processing for too long without completion.
@@ -182,7 +196,7 @@ func (wv *Worldview) releaseAnyOrders() {
 			continue
 		}
 
-		if time.Since(state.LastSeenAt) > NodeLostTimeout {
+		if time.Since(state.LastSeenAt) > NodeLostTimeout && wv.ElevatorStates[id].Alive {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
 			wv.ElevatorStates[id].Alive = false
 		}
@@ -377,28 +391,20 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 
-	// Determine if Cab Calls should be fetched from peer
-	localPrevState := wv.ElevatorStates[wv.LocalID]
-	peerViewOfLocal := other.ElevatorStates[wv.LocalID]
+	_, weExist := other.ElevatorStates[wv.LocalID]
 
-	// Update peer state
-	otherLocalState.Alive = true
-	otherLocalState.LastSeenAt = time.Now()
 	wv.ElevatorStates[other.LocalID] = otherLocalState
 
-	// Fetch Cab Calls
-	fetchCabCalls := true
-	for _, cabCallIsFound := range localPrevState.CabCalls {
-		if cabCallIsFound {
-			fetchCabCalls = false
-			break
-		}
+	fetchCabCalls := false
+
+	if !wv.hasFetchedCabCalls && weExist {
+		fetchCabCalls = !slices.Equal(wv.ElevatorStates[wv.LocalID].CabCalls, other.ElevatorStates[wv.LocalID].CabCalls)
 	}
 
-	if fetchCabCalls && peerViewOfLocal != nil {
+	if fetchCabCalls {
+		wv.hasFetchedCabCalls = true
 		wv.FetchCabCallsOnReconnect(other)
 		// TODO: Send trigger til controller -> turn on cab call lights for local panel
-
 	}
 
 	// -- Validate Hall Calls --
