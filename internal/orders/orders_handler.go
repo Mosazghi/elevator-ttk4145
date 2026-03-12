@@ -66,7 +66,7 @@ func (o *OrderHandler) Run() {
 
 					o.trigger <- controller.CTSOrderUpdate
 				}
-				slog.Warn("[RunCost] Order picked up", "by", winner.id)
+				slog.Warn("Order picked up", "floor", floor, "dir", dir, "by", winner.id)
 			}
 		}
 	}
