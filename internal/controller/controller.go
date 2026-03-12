@@ -58,9 +58,8 @@ func (ctrl *Controller) clearAllOrdersAtFloor(floor int) {
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	// A little delay to ensure other nodes have had time to properly process
-	time.Sleep(150 * time.Millisecond)
-
+	// FIXME: Find a better solution than blocking for 500ms!
+	time.Sleep(150 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	hcs := ctrl.wv.GetAllHallCalls()
 	for dir := range hcs[floor] {
 		isOurs := hcs[floor][dir].By == elev.ID && hcs[floor][dir].State == statesync.HSProcessing
@@ -79,9 +78,15 @@ func (ctrl *Controller) Start() {
 		case order := <-ctrl.hcLightChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: shared.HallDirToButtonType(order.Dir), Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
-			ctrl.doorTimerChan = nil
-			ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
-			ctrl.actionChan <- elevator.DoorAction{Open: false}
+			elev := ctrl.wv.GetRemoteElevator()
+
+			if elev.IsObstructed {
+				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+			} else {
+				ctrl.doorTimerChan = nil
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
+				ctrl.actionChan <- elevator.DoorAction{Open: false}
+			}
 		case triggerSrc := <-ctrl.triggerChan:
 			elev := ctrl.wv.GetRemoteElevator()
 			closestOrder := FetchClosestOrder(ctrl.wv)
