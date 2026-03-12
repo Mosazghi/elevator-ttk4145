@@ -30,36 +30,37 @@ const (
 	LSOn
 )
 
+func (b Behavior) String() string {
+	switch b {
+	case BIdle:
+		return "idle"
+	case BMoving:
+		return "moving"
+	case BDoorOpen:
+		return "doorOpen"
+	default:
+		return "idle"
+	}
+}
+
 func (d DoorState) String() string {
 	switch d {
 	case DSClosed:
-		return "CLOSED"
+		return "closed"
 	case DSOpen:
-		return "OPEN"
+		return "open"
 	}
-	return "UNKNOWN"
+	return "unknown"
 }
 
 func (l LightState) String() string {
 	switch l {
 	case LSOff:
-		return "Off"
+		return "off"
 	case LSOn:
-		return "On"
+		return "on"
 	}
-	return "UNKNOWN"
-}
-
-func (b Behavior) String() string {
-	switch b {
-	case BIdle:
-		return "IDLE"
-	case BMoving:
-		return "MOVING"
-	case BDoorOpen:
-		return "DOOR_OPEN"
-	}
-	return "UNKNOWN"
+	return "unknown"
 }
 
 type ElevatorState struct {

@@ -1,7 +1,9 @@
 package elevio
 
-type MotorDirection int
-type ButtonType int
+type (
+	MotorDirection int
+	ButtonType     int
+)
 
 const (
 	MDUp   MotorDirection = 1

@@ -125,7 +125,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 			t.Fatal("No calls available")
 		}
 		if closestOrder.AtFloor(localElevator.CurrentFloor) {
-			controller.OnFloorArrival()
+			controller.OnFloorArrival(closestOrder)
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
@@ -172,7 +172,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 		}
 
 		if localElevator.AllowedToServe() && closestOrder.AtFloor(localElevator.CurrentFloor) {
-			controller.OnFloorArrival()
+			controller.OnFloorArrival(closestOrder)
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
@@ -225,7 +225,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 
 		if closestOrder.AtFloor(localElevator.CurrentFloor) {
 			slog.Info("[atFloor] true", "floor", closestOrder.Floor, "type", closestOrder.Type, "direction", closestOrder.MotorDirection)
-			controller.OnFloorArrival()
+			controller.OnFloorArrival(closestOrder)
 			time.Sleep(500 * time.Millisecond)
 			closestOrder.Complete(wv)
 		}
@@ -472,7 +472,8 @@ func drainActions(actionChan chan any) []any {
 func TestDoorTimer_OpensOnFloorArrival(t *testing.T) {
 	ctrl, actionChan, _ := newDoorTimerTestCtx(t, 2)
 
-	ctrl.OnFloorArrival()
+	closestOrder := FetchClosestOrder(ctrl.wv)
+	ctrl.OnFloorArrival(closestOrder)
 	time.Sleep(50 * time.Millisecond)
 
 	actions := drainActions(actionChan)
@@ -535,12 +536,13 @@ func TestDoorTimer_ClosesAfterTimeout(t *testing.T) {
 // while the door is still open replaces the timer with a fresh one.
 func TestDoorTimer_RearmOnSecondArrival(t *testing.T) {
 	ctrl, _, _ := newDoorTimerTestCtx(t, 2)
+	closestOrder := FetchClosestOrder(ctrl.wv)
 
-	ctrl.OnFloorArrival()
+	ctrl.OnFloorArrival(closestOrder)
 	firstChan := ctrl.doorTimerChan
 	require.NotNil(t, firstChan)
 
-	ctrl.OnFloorArrival()
+	ctrl.OnFloorArrival(closestOrder)
 	secondChan := ctrl.doorTimerChan
 	require.NotNil(t, secondChan)
 
@@ -570,8 +572,8 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 		hcLightChan:  make(chan statesync.Order, 10),
 		doorDuration: 3 * time.Second,
 	}
-
-	ctrl.clearAllOrdersAtFloor(2)
+	closesOrder := FetchClosestOrder(ctrl.wv)
+	ctrl.clearAllOrdersAtFloor(closesOrder)
 	time.Sleep(600 * time.Millisecond) // wait past the 500 ms sleep inside clearAllOrdersAtFloor
 
 	remoteElev := wv.GetRemoteElevator()
