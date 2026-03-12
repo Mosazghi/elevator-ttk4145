@@ -1,0 +1,91 @@
+package orders
+
+import (
+	"testing"
+
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	"github.com/stretchr/testify/assert"
+)
+
+const numFloors = 4
+
+// buildWV creates a minimal Worldview with the given elevator states for cost tests.
+func buildWV(t *testing.T, localID int, elevators map[int]*statesync.RemoteElevatorState) statesync.Worldview {
+	t.Helper()
+	wv := statesync.NewWorldView(localID, numFloors, make(chan statesync.Worldview, 1), make(chan statesync.Order, 1), make(chan Emtpy, 1))
+	wv.ElevatorStates = elevators
+	return *wv
+}
+
+// TestCalculateCost_SingleElevator – only one elevator, it must win.
+func TestCalculateCost_SingleElevator(t *testing.T) {
+	elev := statesync.NewRemoteElevatorState(1, numFloors)
+	elev.CurrentFloor = 0
+
+	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: elev})
+	winner := CalculateCost(&wv, 2, statesync.HDUp)
+
+	assert.Equal(t, 1, winner.id)
+}
+
+// TestCalculateCost_CloserElevatorWins – elevator on floor 3 beats one on floor 0 for a call on floor 3.
+func TestCalculateCost_CloserElevatorWins(t *testing.T) {
+	far := statesync.NewRemoteElevatorState(1, numFloors)
+	far.CurrentFloor = 0
+
+	near := statesync.NewRemoteElevatorState(2, numFloors)
+	near.CurrentFloor = 3
+
+	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: far, 2: near})
+	winner := CalculateCost(&wv, 3, statesync.HDUp)
+
+	assert.Equal(t, 2, winner.id, "closer elevator should win")
+}
+
+// TestCalculateCost_ObstructedPenalty – obstructed elevator loses to an unobstructed one at equal distance.
+func TestCalculateCost_ObstructedPenalty(t *testing.T) {
+	obstructed := statesync.NewRemoteElevatorState(1, numFloors)
+	obstructed.CurrentFloor = 2
+	obstructed.IsObstructed = true
+
+	clear := statesync.NewRemoteElevatorState(2, numFloors)
+	clear.CurrentFloor = 2
+	clear.IsObstructed = false
+
+	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: obstructed, 2: clear})
+	winner := CalculateCost(&wv, 2, statesync.HDUp)
+
+	assert.Equal(t, 2, winner.id, "non-obstructed elevator should win")
+}
+
+// TestCalculateCost_WrongDirectionPenalty – elevator going down is penalised for an Up call.
+func TestCalculateCost_WrongDirectionPenalty(t *testing.T) {
+	goingDown := statesync.NewRemoteElevatorState(1, numFloors)
+	goingDown.CurrentFloor = 2
+	goingDown.Direction = elevio.MDDown
+
+	idle := statesync.NewRemoteElevatorState(2, numFloors)
+	idle.CurrentFloor = 2
+	idle.Direction = elevio.MDStop
+
+	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: goingDown, 2: idle})
+	winner := CalculateCost(&wv, 2, statesync.HDUp)
+
+	assert.Equal(t, 2, winner.id, "idle elevator should beat one going the wrong way")
+}
+
+// TestCalculateCost_TieBrokenByLowerID – equal cost → lower ID wins.
+func TestCalculateCost_TieBrokenByLowerID(t *testing.T) {
+	e1 := statesync.NewRemoteElevatorState(1, numFloors)
+	e1.CurrentFloor = 1
+
+	e2 := statesync.NewRemoteElevatorState(2, numFloors)
+	e2.CurrentFloor = 1
+
+	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: e1, 2: e2})
+	winner := CalculateCost(&wv, 1, statesync.HDUp)
+
+	assert.Equal(t, 1, winner.id, "lower ID should win on equal cost")
+}

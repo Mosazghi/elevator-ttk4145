@@ -20,9 +20,8 @@ func (order *CurrentOrder) Complete(worldView *statesync.Worldview) {
 	} else {
 		err := worldView.CompleteHallCall(order.Floor, order.HallCallDirection)
 		if err != nil {
-			slog.Error("[CompleteHallCall] in order.Complete", "error", err)
+			slog.Error("error completing hall call", "err", err)
 		}
-		slog.Warn("[Completing hallcall]", "floor", order.Floor, "direction", order.HallCallDirection)
 	}
 }
 

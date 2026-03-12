@@ -8,7 +8,7 @@ import (
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	network "github.com/Mosazghi/elevator-ttk4145/internal/net"
+	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/stretchr/testify/assert"
@@ -305,8 +305,8 @@ func TestSetLocalElevator(t *testing.T) {
 // TestStartSyncing_BroadcastsOwnState verifies that the worldview broadcasts its state periodically
 func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	// Run StartSyncing in background
@@ -315,12 +315,12 @@ func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 	// Wait for at least one broadcast
 	select {
 	case msg := <-txChan:
-		assert.NotNil(t, msg.Data, "broadcast should contain data")
-		assert.Greater(t, len(msg.Data), 0, "broadcast data should not be empty")
+		assert.NotNil(t, msg, "broadcast should contain data")
+		assert.Greater(t, len(msg), 0, "broadcast data should not be empty")
 
 		// Verify the message can be unmarshaled
 		var received Message
-		err := msgpack.Unmarshal(msg.Data, &received)
+		err := msgpack.Unmarshal(msg, &received)
 		require.NoError(t, err, "broadcast data should be valid msgpack")
 		assert.Equal(t, wv.LocalID, received.Wv.LocalID, "broadcast should contain local ID")
 
@@ -334,8 +334,8 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	wv1 := NewTestWorldView(t, 1, 4)
 	wv2 := NewTestWorldView(t, 2, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	// Start syncing for wv1
@@ -348,7 +348,7 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 
 	// Wait for merge to complete and verify
 	time.Sleep(100 * time.Millisecond)
@@ -363,8 +363,8 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
@@ -381,7 +381,7 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 	require.NoError(t, err)
 
 	// Send the "own" message
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 
 	// Wait a bit
 	time.Sleep(100 * time.Millisecond)
@@ -397,14 +397,14 @@ func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
 func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
 	// Send invalid JSON
-	rxChan <- network.UDPMessage{Data: []byte("not valid json")}
+	rxChan <- []byte("not valid json")
 
 	// Should not crash; wait and verify system still works
 	time.Sleep(100 * time.Millisecond)
@@ -414,7 +414,7 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify valid message was processed
@@ -428,8 +428,8 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	wv1 := NewTestWorldView(t, 1, 4)
 	wv2 := NewTestWorldView(t, 2, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	jsonData, err := BuildWvJSON(wv2)
@@ -438,7 +438,7 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
 	// Send initial message from wv2
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify peer exists
@@ -473,8 +473,8 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	wv1 := NewTestWorldView(t, 1, 4)
 	wv2 := NewTestWorldView(t, 2, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	// Start syncing goroutine
@@ -498,7 +498,7 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	// Simulate message from the "reappeared" peer
 	data, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
-	rxChan <- network.UDPMessage{Data: data}
+	rxChan <- data
 
 	// Wait for StartSyncing to process the message
 	time.Sleep(100 * time.Millisecond)
@@ -518,8 +518,8 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
@@ -548,7 +548,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 			peer := NewTestWorldView(t, i, 4)
 			jsonData, err := BuildWvJSON(peer)
 			require.NoError(t, err)
-			rxChan <- network.UDPMessage{Data: jsonData}
+			rxChan <- jsonData
 			time.Sleep(15 * time.Millisecond)
 		}
 		done <- true
@@ -623,8 +623,8 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 func TestStartSyncing_NetworkErrors(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
@@ -640,7 +640,7 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify system still processes messages
@@ -657,8 +657,8 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	wv2 := NewTestWorldView(t, 2, 4)
 	wv3 := NewTestWorldView(t, 3, 4)
 
-	txChan := make(chan network.UDPMessage, 10)
-	rxChan := make(chan network.UDPMessage, 10)
+	txChan := make(chan network.DataPacket, 10)
+	rxChan := make(chan network.DataPacket, 10)
 	errChan := make(chan error, 10)
 
 	// fill elevator states for wv1
@@ -679,7 +679,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	jsonData, err := BuildWvJSON(wv2)
 	require.NoError(t, err)
 
-	rxChan <- network.UDPMessage{Data: jsonData}
+	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify wv1 merged the confirmations and added its own
@@ -705,7 +705,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	jsonData2, err := BuildWvJSON(wv3)
 	require.NoError(t, err)
 
-	rxChan <- network.UDPMessage{Data: jsonData2}
+	rxChan <- jsonData2
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify additional confirmation was merged

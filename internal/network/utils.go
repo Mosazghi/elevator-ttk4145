@@ -8,7 +8,6 @@ import (
 	"syscall"
 )
 
-// Private variable to improve cacheability
 var localIP string
 
 // LocalIP reutrns the machine's local IP address

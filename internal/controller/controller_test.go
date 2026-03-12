@@ -9,8 +9,9 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/Mosazghi/elevator-ttk4145/shared"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,11 +22,11 @@ const (
 )
 
 // Helper
-func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Worldview, arriveAtFloorChan chan struct{}) {
+func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Worldview, arriveAtFloorChan chan Emtpy) {
 	t.Helper()
 	wvChan = make(chan statesync.Worldview, 10)
-	arriveAtFloorChan = make(chan struct{}, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan shared.Emtpy))
+	arriveAtFloorChan = make(chan Emtpy, 10)
+	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan Emtpy, 1))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
@@ -34,7 +35,7 @@ func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Wo
 
 // newTestStart creates a controller without starting the goroutine.
 // Tests that need Start() running should call go controller.Start() themselves.
-func newTestStart(wv *statesync.Worldview, _ chan struct{}, actionChan chan any, _ chan struct{}, hcLight chan statesync.Order) *Controller {
+func newTestStart(wv *statesync.Worldview, _ chan Emtpy, actionChan chan any, _ chan Emtpy, hcLight chan statesync.Order) *Controller {
 	controller := NewController(wv, actionChan, make(chan ControllerTriggerSrc, 10), hcLight)
 	return controller
 }
@@ -62,11 +63,11 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	// hcLight := make(chan statesync.Order, 10)
 	// _ := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- struct{}{}
+	newOrder <- Emtpy{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -111,11 +112,11 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	arriveAtFloor <- struct{}{}
+	arriveAtFloor <- Emtpy{}
 	select {
 	case <-arriveAtFloor:
 		localElevator := wv.GetRemoteElevator()
@@ -156,11 +157,11 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- struct{}{}
+	newOrder <- Emtpy{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -207,11 +208,11 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	arriveAtFloor <- struct{}{}
+	arriveAtFloor <- Emtpy{}
 	select {
 	case <-arriveAtFloor:
 		localElevator := wv.GetRemoteElevator()
@@ -254,11 +255,11 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 	fmt.Println("Current floor:", elev.CurrentFloor)
 
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	hcLight := make(chan statesync.Order, 10)
 	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- struct{}{}
+	newOrder <- Emtpy{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -312,11 +313,11 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
-	newOrder := make(chan struct{}, 10)
+	newOrder := make(chan Emtpy, 10)
 	hcLight := make(chan statesync.Order, 10)
 	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- struct{}{}
+	newOrder <- Emtpy{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()

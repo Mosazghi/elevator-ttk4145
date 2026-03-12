@@ -3,12 +3,14 @@ package watchdog
 import (
 	"log/slog"
 	"time"
+
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
 type WatchDog struct {
-	pingChan chan struct{}
-	stopChan chan struct{}
-	done     chan struct{}
+	pingChan chan Emtpy
+	stopChan chan Emtpy
+	done     chan Emtpy
 	Timeout  chan bool
 }
 
@@ -19,9 +21,9 @@ func Start(duration float64) WatchDog {
 	interval := time.Duration(duration * float64(time.Second))
 
 	wd := WatchDog{
-		pingChan: make(chan struct{}, 1),
-		stopChan: make(chan struct{}),
-		done:     make(chan struct{}),
+		pingChan: make(chan Emtpy, 1),
+		stopChan: make(chan Emtpy),
+		done:     make(chan Emtpy),
 		Timeout:  make(chan bool, 1),
 	}
 
@@ -68,5 +70,5 @@ func (wd *WatchDog) Stop() {
 
 // Ping resets the watchdog timer, postponing the timeout
 func (wd *WatchDog) Ping() {
-	wd.pingChan <- struct{}{}
+	wd.pingChan <- Emtpy{}
 }

@@ -5,40 +5,31 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 )
 
-const (
-	BroadCastIP   = "255.255.255.255"
-	BroadCastPort = 30000
-	ChanBufferLen = 20
-)
-
-type UDPMessage struct {
-	Data    []byte
-	Address *net.UDPAddr
-}
+type DataPacket []byte
 
 type Network struct {
-	errChan    chan error
-	txChan     chan UDPMessage
-	rxChan     chan UDPMessage
-	conn       net.PacketConn
-	filterEcho bool
+	errChan chan error
+	txChan  chan DataPacket
+	rxChan  chan DataPacket
+	conn    net.PacketConn
 }
 
 // NewNetwork creates a new network
-func NewNetwork(filterEcho bool) (*Network, error) {
-	conn, err := CreateSocket(BroadCastPort)
+func NewNetwork() (*Network, error) {
+	conn, err := CreateSocket(BroadcastPort)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Network{
-		conn:       conn,
-		rxChan:     make(chan UDPMessage, ChanBufferLen),
-		txChan:     make(chan UDPMessage, ChanBufferLen),
-		errChan:    make(chan error, ChanBufferLen),
-		filterEcho: filterEcho,
+		conn:    conn,
+		rxChan:  make(chan DataPacket, NetChanBufferLen),
+		txChan:  make(chan DataPacket, NetChanBufferLen),
+		errChan: make(chan error, NetChanBufferLen),
 	}, nil
 }
 
@@ -57,11 +48,11 @@ func (n *Network) Start() {
 	go n.broadcast()
 }
 
-func (n *Network) TxChan() chan<- UDPMessage {
+func (n *Network) TxChan() chan<- DataPacket {
 	return n.txChan
 }
 
-func (n *Network) RxChan() <-chan UDPMessage {
+func (n *Network) RxChan() <-chan DataPacket {
 	return n.rxChan
 }
 
@@ -73,8 +64,10 @@ func (n *Network) ErrChan() <-chan error {
 func (n *Network) receive() {
 	buffer := make([]byte, 2048)
 
+	filterEcho := config.ProdMode
+
 	var localAddrStr string
-	if n.filterEcho {
+	if filterEcho {
 		localAddrStr, _ = LocalIP()
 	}
 	for {
@@ -87,30 +80,26 @@ func (n *Network) receive() {
 		data := make([]byte, bytesRead)
 		copy(data, buffer[:bytesRead])
 
-		// Extract IP from remote address (format is "IP:Port")
-		if n.filterEcho {
+		if filterEcho {
 			remoteIP := strings.Split(remoteAddress.String(), ":")[0]
 			if remoteIP == localAddrStr {
 				continue
 			}
 		}
 
-		n.rxChan <- UDPMessage{
-			Data:    data,
-			Address: remoteAddress.(*net.UDPAddr),
-		}
+		n.rxChan <- data
 	}
 }
 
 // broadcast sends a message to the broadcast address
 func (n *Network) broadcast() {
 	addr := &net.UDPAddr{
-		IP:   net.ParseIP(BroadCastIP),
-		Port: BroadCastPort,
+		IP:   net.ParseIP(BroadcastIP),
+		Port: BroadcastPort,
 	}
 
-	for msg := range n.txChan {
-		_, err := n.conn.WriteTo(msg.Data, addr)
+	for data := range n.txChan {
+		_, err := n.conn.WriteTo(data, addr)
 		if err != nil {
 			n.errChan <- fmt.Errorf("broadcast error: %w", err)
 		}

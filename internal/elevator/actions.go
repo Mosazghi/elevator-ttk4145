@@ -8,7 +8,6 @@ type MoveAction struct {
 }
 
 type (
-	StopAction  struct{}
 	LightAction struct {
 		ButtonType elevio.ButtonType
 		Floor      int
@@ -18,8 +17,4 @@ type (
 
 type DoorAction struct {
 	Open bool
-}
-
-type ClearOrdersAction struct {
-	Floor int
 }

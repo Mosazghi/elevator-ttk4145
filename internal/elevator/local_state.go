@@ -89,12 +89,12 @@ func (e *ElevatorState) DoMotorAction(action MoveAction) error {
 	return nil
 }
 
-func (e *ElevatorState) StopAction() {
+func (e *ElevatorState) Stop() {
 	e.io.SetMotorDirection(elevio.MDStop)
 }
 
-// ContinueAction the currently active order
-func (e *ElevatorState) ContinueAction() {
+// ContinueLastDir is used to continue in the last direction after a stop
+func (e *ElevatorState) ContinueLastDir() {
 	if e.Behavior == BMoving {
 		e.io.SetMotorDirection(e.Dir)
 	}
@@ -102,8 +102,6 @@ func (e *ElevatorState) ContinueAction() {
 
 // OnInitBetweenFloors is called when the elevator is initialized between floors
 func (e *ElevatorState) OnInitBetweenFloors() {
-	fmt.Println("Initializing: Between floors")
-
 	e.io.SetMotorDirection(elevio.MDDown)
 	e.Behavior = BMoving
 	e.Dir = elevio.MDDown
@@ -114,7 +112,7 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 
 func (e *ElevatorState) SetDoor(state bool) {
 	if state {
-		// PLAY SOUND
+		// TODO: PLAY SOUND?
 	}
 	e.io.SetDoorOpenLamp(state)
 }
