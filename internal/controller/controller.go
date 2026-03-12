@@ -89,8 +89,7 @@ func (ctrl *Controller) Start() {
 			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
-					ctrl.doorTimerChan = time.After(ctrl.doorDuration)
-				}
+       }
 			case elevator.BMoving:
 				if closestOrder.Empty() {
 					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
