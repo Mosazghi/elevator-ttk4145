@@ -42,7 +42,7 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 
 func (ctrl *Controller) OnFloorArrival() {
 	elev := ctrl.wv.GetRemoteElevator()
-	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorDoorOpen, Direction: elevio.MDStop}
+	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
 	ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
@@ -84,7 +84,7 @@ func (ctrl *Controller) Start() {
 				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 			} else {
 				ctrl.doorTimerChan = nil
-				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorIdle, Direction: elevio.MDStop}
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 				ctrl.actionChan <- elevator.DoorAction{Open: false}
 			}
 		case triggerSrc := <-ctrl.triggerChan:
@@ -92,21 +92,21 @@ func (ctrl *Controller) Start() {
 			closestOrder := FetchClosestOrder(ctrl.wv)
 
 			switch elev.Behavior {
-			case elevator.BehaviorDoorOpen:
+			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					ctrl.clearAllOrdersAtFloor(elev.CurrentFloor)
 				}
-			case elevator.BehaviorMoving:
+			case elevator.BMoving:
 				if closestOrder.Empty() {
-					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorIdle, Direction: elevio.MDStop}
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BIdle, Direction: elevio.MDStop}
 					continue
 				}
 
 				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == CTSFArrivalFloor {
 					ctrl.OnFloorArrival()
 				}
-			case elevator.BehaviorIdle:
-				if closestOrder.Empty() || (elev.IsObstructed && elev.Behavior == elevator.BehaviorDoorOpen) {
+			case elevator.BIdle:
+				if closestOrder.Empty() {
 					continue
 				}
 
@@ -115,7 +115,7 @@ func (ctrl *Controller) Start() {
 					continue
 				}
 
-				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorMoving, Direction: closestOrder.MotorDirection}
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
 			}
 		}
 	}

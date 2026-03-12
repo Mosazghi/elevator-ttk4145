@@ -15,9 +15,9 @@ type (
 )
 
 const (
-	BehaviorIdle Behavior = iota
-	BehaviorMoving
-	BehaviorDoorOpen
+	BIdle Behavior = iota
+	BMoving
+	BDoorOpen
 )
 
 const (
@@ -52,11 +52,11 @@ func (l LightState) String() string {
 
 func (b Behavior) String() string {
 	switch b {
-	case BehaviorIdle:
+	case BIdle:
 		return "IDLE"
-	case BehaviorMoving:
+	case BMoving:
 		return "MOVING"
-	case BehaviorDoorOpen:
+	case BDoorOpen:
 		return "DOOR_OPEN"
 	}
 	return "UNKNOWN"
@@ -95,7 +95,7 @@ func (e *ElevatorState) StopAction() {
 
 // ContinueAction the currently active order
 func (e *ElevatorState) ContinueAction() {
-	if e.Behavior == BehaviorMoving {
+	if e.Behavior == BMoving {
 		e.io.SetMotorDirection(e.Dir)
 	}
 }
@@ -105,7 +105,7 @@ func (e *ElevatorState) OnInitBetweenFloors() {
 	fmt.Println("Initializing: Between floors")
 
 	e.io.SetMotorDirection(elevio.MDDown)
-	e.Behavior = BehaviorMoving
+	e.Behavior = BMoving
 	e.Dir = elevio.MDDown
 }
 

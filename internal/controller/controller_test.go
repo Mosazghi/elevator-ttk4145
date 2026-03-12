@@ -80,7 +80,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDUp, "Expected elevator 1 to move up from floor 0 to floor 3")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BehaviorMoving, "Elevator 1 should attempt to move")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should attempt to move")
 
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
@@ -133,7 +133,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BehaviorDoorOpen, "Elevator 1 should open door when arrived at order floor")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BDoorOpen, "Elevator 1 should open door when arrived at order floor")
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
 	}
@@ -176,14 +176,14 @@ func TestGetNextAction_CabCall(t *testing.T) {
 		}
 
 		if localElevator.AllowedToServe() {
-			actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorMoving, Direction: closestOrder.MotorDirection}
+			actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
 		}
 		require.Equal(t, localElevator.CabCalls[2], true, "Cab-call should be set to true")
 
 	case action := <-actionChan:
 		switch action := action.(type) {
 		case elevator.MoveAction:
-			require.Equal(t, action.Behavior, elevator.BehaviorMoving, "Should have received Bmoving")
+			require.Equal(t, action.Behavior, elevator.BMoving, "Should have received Bmoving")
 			require.Equal(t, action.Direction, elevio.MDUp, "Should have received Bmoving")
 		}
 
@@ -242,7 +242,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 2
-	elev.Behavior = elevator.BehaviorIdle
+	elev.Behavior = elevator.BIdle
 	err := wv.SetLocalElevator(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
@@ -274,7 +274,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	case action := <-actionChan:
 		// Elevator at floor 2 should prefer the lower call at floor 1
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Elevator 1 should move down towards lower cab-call")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BehaviorMoving, "Elevator 1 should be moving")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should be moving")
 
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
@@ -330,7 +330,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDDown, "Expected elevator 1 to move down towards floor 0")
-		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BehaviorMoving, "Elevator 1 should be moving")
+		assert.Equal(t, action.(elevator.MoveAction).Behavior, elevator.BMoving, "Elevator 1 should be moving")
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for action")
 	}
@@ -343,7 +343,7 @@ func TestCalculateNearestHallCall(t *testing.T) {
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 1
-	elev.Behavior = elevator.BehaviorMoving
+	elev.Behavior = elevator.BMoving
 	elev.Direction = elevio.MDUp
 	err := wv.SetLocalElevator(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
@@ -379,7 +379,7 @@ func TestCalculateNearestCabCall(t *testing.T) {
 
 	elev := wv.GetRemoteElevator()
 	elev.CurrentFloor = 1
-	elev.Behavior = elevator.BehaviorMoving
+	elev.Behavior = elevator.BMoving
 	elev.Direction = elevio.MDUp
 	err := wv.SetLocalElevator(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
@@ -480,7 +480,7 @@ func TestDoorTimer_OpensOnFloorArrival(t *testing.T) {
 	for _, a := range actions {
 		switch act := a.(type) {
 		case elevator.MoveAction:
-			assert.Equal(t, elevator.BehaviorDoorOpen, act.Behavior)
+			assert.Equal(t, elevator.BDoorOpen, act.Behavior)
 			assert.Equal(t, elevio.MDStop, act.Direction)
 			gotMove = true
 		case elevator.DoorAction:
@@ -520,7 +520,7 @@ func TestDoorTimer_ClosesAfterTimeout(t *testing.T) {
 				gotClose = true
 			}
 		case elevator.MoveAction:
-			if act.Behavior == elevator.BehaviorIdle {
+			if act.Behavior == elevator.BIdle {
 				gotIdle = true
 			}
 		}

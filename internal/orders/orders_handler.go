@@ -81,6 +81,10 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 
 		currentElevatorCost.id = id
 
+		if !elev.Alive {
+			continue
+		}
+
 		if isObstructed {
 			currentElevatorCost.cost += shared.PenaltyObstructed
 		}

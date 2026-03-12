@@ -109,7 +109,7 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
-			if isObstructed && sm.elev.Behavior == elevator.BehaviorDoorOpen {
+			if isObstructed && sm.elev.Behavior == elevator.BDoorOpen {
 				sm.elev.StopAction()
 			} else {
 				sm.ctrlTriggerChan <- controller.CTSOrderUpdate

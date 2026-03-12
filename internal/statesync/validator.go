@@ -44,7 +44,7 @@ func ValidateStateRemote(res *RemoteElevatorState) error {
 		return fmt.Errorf("remote elevator state cannot be nil")
 	}
 
-	isMoving := res.Behavior == elevator.BehaviorMoving
+	isMoving := res.Behavior == elevator.BMoving
 	isDoorOpen := res.DoorState == elevator.DSOpen
 
 	if isMoving && isDoorOpen {

@@ -151,7 +151,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSClosed,
 		CabCalls:     []bool{false, false, false, true},
-		Behavior:     elevator.BehaviorMoving,
+		Behavior:     elevator.BMoving,
 		LastSeenAt:   time.Now(),
 		NumFloors:    4,
 	}
@@ -292,7 +292,7 @@ func TestSetLocalElevator(t *testing.T) {
 		Direction:    elevio.MDUp,
 		DoorState:    elevator.DSOpen,
 		CabCalls:     []bool{false, false, false, false},
-		Behavior:     elevator.BehaviorMoving,
+		Behavior:     elevator.BMoving,
 		LastSeenAt:   time.Now(),
 	}
 
