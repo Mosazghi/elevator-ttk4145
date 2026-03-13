@@ -26,7 +26,7 @@ func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Wo
 	t.Helper()
 	wvChan = make(chan statesync.Worldview, 10)
 	arriveAtFloorChan = make(chan Emtpy, 10)
-	worldview := statesync.NewWorldView(1, 4, wvChan, make(chan statesync.Order, 10), make(chan Emtpy, 1))
+	worldview := statesync.NewWorldView(1, 4, make(chan statesync.Order, 10), make(chan Emtpy, 1))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
@@ -408,9 +408,8 @@ func TestCalculateNearestCabCall(t *testing.T) {
 // Use this for tests that call OnFloorArrival() or inspect doorTimerChan directly.
 func newDoorTimerTestCtx(t *testing.T, floor int) (*Controller, chan any, chan ControllerTriggerSrc) {
 	t.Helper()
-	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, NumFloors, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -432,9 +431,8 @@ func newDoorTimerTestCtx(t *testing.T, floor int) (*Controller, chan any, chan C
 // newCtrlWithStart creates a controller with a short door duration and starts Start().
 func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration) (*Controller, chan any, chan ControllerTriggerSrc) {
 	t.Helper()
-	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, NumFloors, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -552,9 +550,8 @@ func TestDoorTimer_RearmOnSecondArrival(t *testing.T) {
 // TestDoorTimer_ClearsAllOrdersAtFloor verifies that both the cab call and
 // any hall call we own at the arrival floor are cleared simultaneously.
 func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
-	wvChan := make(chan statesync.Worldview, 10)
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, wvChan, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, NumFloors, orderChan, make(chan shared.Emtpy))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = 2
 	require.NoError(t, wv.SetLocalElevator(elev))

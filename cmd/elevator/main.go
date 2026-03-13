@@ -14,7 +14,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	"github.com/Mosazghi/elevator-ttk4145/shared"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/lmittmann/tint"
 )
 
@@ -58,9 +58,8 @@ func main() {
 	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
-	recoveredCabCallChan := make(chan shared.Emtpy, 5)
-	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan, recoveredCabCallChan)
+	recoveredCabCallChan := make(chan Emtpy, 5)
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
 
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
 	go ctrller.Start()
@@ -96,7 +95,6 @@ func main() {
 			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HSNone
 		}
 		elev.SetHallCallLights(wv.NumFloors, hallCallBools)
-		slog.Info("Lights should be set")
 	}
 
 	fsm := fsm.NewStateMachine(

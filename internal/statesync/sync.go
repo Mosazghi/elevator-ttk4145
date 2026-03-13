@@ -29,7 +29,6 @@ type Worldview struct {
 	ElevatorStates       map[int]*RemoteElevatorState `json:"elevator_states"`
 	HallCalls            [][2]HallCallPairState       `json:"hall_calls"`
 	NumFloors            int                          `json:"num_floors"`
-	wvChan               chan Worldview
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Emtpy
 	hasFetchedCabCalls   bool
@@ -37,13 +36,12 @@ type Worldview struct {
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
+func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
 	wv := &Worldview{
 		LocalID:              localID,
 		ElevatorStates:       make(map[int]*RemoteElevatorState),
 		HallCalls:            make([][2]HallCallPairState, numFloors),
 		NumFloors:            numFloors,
-		wvChan:               wvChan,
 		orderUpdateChan:      orderUpdateChan,
 		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
