@@ -87,7 +87,7 @@ func BuildHallRequestAssignerData(wv *statesync.Worldview) *HallRequestAssignerI
 
 	// Build elevator states
 	for id, elev := range wv.ElevatorStates {
-		if !elev.Alive {
+		if !elev.Alive || elev.IsObstructed {
 			continue
 		}
 
