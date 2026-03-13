@@ -74,26 +74,26 @@
 
 | Elevator | Initial condition | Action | Expected |
 |---|---|---|---|
-| 1 | Floor 2 idle | Press `Cab2` (already at floor 2) | Door lamp ON immediately for 3s; Cab2 lamp turns OFF; elevator stays still |
+| 1 $\checkmark$| Floor 2 idle | Press `Cab2` (already at floor 2) | Door lamp ON immediately for 3s; Cab2 lamp turns OFF; elevator stays still |
 | 1 | Approaching floor 3 with `Cab3` active | Also press `Hall3Up` before arrival | On stop at floor 3: clears Cab3; and clears hall call(s) according to your “served at stop” policy; door 3s; no extra stop at 3 afterwards |
-| 1 | Idle at floor F | Repeatedly press `CabF` while door is open | Door remains open as long as presses continue; door closes **3 seconds after the last press**. No motion occurs. |
-| 1 | Idle at floor F | Repeatedly press valid `HallFUp` / `HallFDown` | Door remains open as long as presses continue; door closes **3 seconds after the last press**. Corresponding hall lamp clears once served. |
+| 1 $\checkmark$ | Idle at floor F | Repeatedly press `CabF` while door is open | Door remains open as long as presses continue; door closes **3 seconds after the last press**. No motion occurs. |
+| 1 $\times$ | Idle at floor F | Repeatedly press valid `HallFUp` / `HallFDown` | Door remains open as long as presses continue; door closes **3 seconds after the last press**. Corresponding hall lamp clears once served. |
 
 ## 1.5 Lights (floor indicator + order lamps)
 
 | Elevator | Initial condition | Action | Expected |
 |---|---|---|---|
-| 1 | Between floor 2 and 3 moving up | Observe floor indicator | Indicator shows **last passed floor** (floor 2) while between floors (L4), and only one floor lamp lit (L5) |
-| 1 | Any | Press any order button | Corresponding button lamp turns ON quickly (L1), stays ON until served (L1/L2), then turns OFF when served (L4 FAT) |
+| 1 $\checkmark$ | Between floor 2 and 3 moving up | Observe floor indicator | Indicator shows **last passed floor** (floor 2) while between floors (L4), and only one floor lamp lit (L5) |
+| 1 $\checkmark$ | Any | Press any order button | Corresponding button lamp turns ON quickly (L1), stays ON until served (L1/L2), then turns OFF when served (L4 FAT) |
 
 ## 1.6 Door + obstruction behavior
 
 | Elevator | Initial condition | Action | Expected |
 |---|---|---|---|
-| 1 | Arrive at ordered floor | Observe | Door lamp ON exactly **3 seconds**, then OFF; elevator does not move during door open (S1/D1/D2/D3) |
-| 1 | Door lamp ON (open) | Toggle obstruction ON and keep ON > 3s | Door remains open as long as obstructed (D4/R1) |
-| 1 | Obstruction ON, door open | Toggle obstruction OFF | Door remains open for **3 more seconds**, then closes |
-| 1 | Door lamp OFF (closed) | Toggle obstruction ON | No effect (R1) |
+| 1 $\checkmark$ | Arrive at ordered floor | Observe | Door lamp ON exactly **3 seconds**, then OFF; elevator does not move during door open (S1/D1/D2/D3) |
+| 1 $\checkmark$ | Door lamp ON (open) | Toggle obstruction ON and keep ON > 3s | Door remains open as long as obstructed (D4/R1) |
+| 1 $\checkmark$ | Obstruction ON, door open | Toggle obstruction OFF | Door remains open for **3 more seconds**, then closes |
+| 1 $\checkmark$ | Door lamp OFF (closed) | Toggle obstruction ON | No effect (R1) |
 | 1 | Door lamp ON, CabF lamp OFF | Press `CabF` | Door remains open (timer resets); no duplicate order is created; cab lamp behavior remains consistent. |
 | 1 | Door lamp ON, HallF* lamp OFF | Press valid `HallF*` | Door remains open (timer resets); hall lamp clears immediately when served; no extra stop later. |
 
