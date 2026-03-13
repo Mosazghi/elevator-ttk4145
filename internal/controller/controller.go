@@ -32,6 +32,9 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 }
 
 func (ctrl *Controller) OnFloorArrival(order CurrentOrder) {
+	if order.Empty() {
+		return
+	}
 	ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BDoorOpen, Direction: elevio.MDStop}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 

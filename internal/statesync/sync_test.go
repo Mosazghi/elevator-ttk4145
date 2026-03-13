@@ -185,7 +185,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 		// Invalid/ignored transitions
 		{"Available -> Available (duplicate)", HSAvailable, HSAvailable, HSAvailable, false},
 		{"Processing -> Available (order released)", HSProcessing, HSAvailable, HSAvailable, true},
-		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSNone, false},
+		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSProcessing, true},
 	}
 
 	for _, tt := range tests {

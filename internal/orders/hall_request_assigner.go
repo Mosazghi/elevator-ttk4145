@@ -2,8 +2,11 @@ package orders
 
 import (
 	"encoding/json"
+	"log"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 
@@ -51,6 +54,7 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 		slog.Error("failed to unmarshal hall request assigner output", "error", err)
 		return winner
 	}
+	log.Println("hall request assigner output", "result", result)
 
 	for id, assigned := range result {
 		if assigned[floor][dir] {
@@ -103,10 +107,17 @@ func BuildHallRequestAssignerData(wv *statesync.Worldview) *HallRequestAssignerI
 }
 
 func getHallReqAssingerPath() string {
-	switch os := runtime.GOOS; os {
-	case "windows":
-		return "simulator/hall_request_assigner.exe"
-	default:
-		return "simulator/hall_request_assigner"
+	binaryName := "hall_request_assigner"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
 	}
+
+	if _, currentFile, _, ok := runtime.Caller(0); ok {
+		resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "simulator", binaryName))
+		if _, err := os.Stat(resolvedPath); err == nil {
+			return resolvedPath
+		}
+	}
+
+	return filepath.Clean(filepath.Join("simulator", binaryName))
 }
