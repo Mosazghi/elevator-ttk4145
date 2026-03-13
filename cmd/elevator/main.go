@@ -23,8 +23,7 @@ func main() {
 
 	SetupLogger(cfg.LogLevel)
 
-	// Check environment mode (ENV=production or ENV=prod enables production mode)
-	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors)
+	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors, "env", os.Getenv("ENV"))
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -46,7 +45,6 @@ func main() {
 		slog.Error("failed to create network", "err", err)
 		return
 	}
-
 	defer network.Close()
 
 	network.Start()
@@ -59,13 +57,13 @@ func main() {
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	recoveredCabCallChan := make(chan Emtpy, 5)
+
 	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
-
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
-	go ctrller.Start()
-	go wv.StartSyncing(txChan, rxChan, errChan)
-
 	orderHandler := orders.NewOrderHandler(wv, triggerAction, actionChan)
+
+	go wv.StartSyncing(txChan, rxChan, errChan)
+	go ctrller.Start()
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()

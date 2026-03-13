@@ -69,14 +69,12 @@ type ElevatorState struct {
 	Behavior Behavior
 }
 
-type ElevatorCallbacks interface {
-	DoMotorAction(action MoveAction)
-	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
-	SetCurrentFloorLight(floor int)
-	SetStopLight(state bool)
-	SetDoor(state DoorState)
-	String()
-	Stop()
+func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
+	return ElevatorState{
+		io:       driver,
+		Dir:      direction,
+		Behavior: behavior,
+	}
 }
 
 func (e *ElevatorState) DoMotorAction(action MoveAction) error {
@@ -160,12 +158,4 @@ func (e *ElevatorState) SetHallCallLights(numFloors int, hallCalls [][2]bool) {
 
 func (e *ElevatorState) String() {
 	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
-}
-
-func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
-	return ElevatorState{
-		io:       driver,
-		Dir:      direction,
-		Behavior: behavior,
-	}
 }
