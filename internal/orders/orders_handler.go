@@ -2,6 +2,7 @@ package orders
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
@@ -14,34 +15,35 @@ type ElevatorCost struct {
 }
 
 type OrderHandler struct {
-	wvChan    chan statesync.Worldview
+	wv        *statesync.Worldview
 	trigger   chan controller.ControllerTriggerSrc
 	actionCah chan any
 }
 
-func NewOrderHandler(wvChan chan statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
+func NewOrderHandler(wv *statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
 	return &OrderHandler{
-		wvChan:    wvChan,
+		wv:        wv,
 		trigger:   trigger,
 		actionCah: actionChan,
 	}
 }
 
 func (o *OrderHandler) Run() {
-	for wv := range o.wvChan {
-		hallCalls := wv.GetAllHallCalls()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for range ticker.C {
+		hallCalls := o.wv.GetAllHallCalls()
 
 		for floor, hallCall := range hallCalls {
 			for dir := range hallCalls[floor] {
-				isNone := hallCall[dir].State == statesync.HSNone
 				isAvailable := hallCall[dir].State == statesync.HSAvailable
 
-				if isNone || !isAvailable {
+				if !isAvailable {
 					continue
 				}
 
 				aliveCount := 0
-				for _, elev := range wv.ElevatorStates {
+				for _, elev := range o.wv.ElevatorStates {
 					if elev.Alive {
 						aliveCount++
 					}
@@ -53,9 +55,9 @@ func (o *OrderHandler) Run() {
 					continue
 				}
 
-				winner := CalculateCost(&wv, floor, statesync.HallCallDir(dir))
-				if winner.id == wv.LocalID {
-					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
+				winner := CalculateCost(o.wv, floor, statesync.HallCallDir(dir))
+				if winner.id == o.wv.LocalID {
+					err := o.wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 					if err != nil {
 						slog.Error("[worldview error", "err", err)
 					}

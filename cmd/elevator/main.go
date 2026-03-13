@@ -66,7 +66,7 @@ func main() {
 	go ctrller.Start()
 	go wv.StartSyncing(txChan, rxChan, errChan)
 
-	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
+	orderHandler := orders.NewOrderHandler(wv, triggerAction, actionChan)
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()

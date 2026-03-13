@@ -107,6 +107,7 @@ func (wv Worldview) String() string {
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
 func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, errChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
+	defer ticker.Stop()
 	localID := wv.LocalID
 	for {
 		select {
@@ -149,11 +150,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 			if err != nil {
 				slog.Error("Failed to build worldview message", "error", err)
 				continue
-			}
-
-			select {
-			case wv.wvChan <- *wv:
-			default:
 			}
 
 			txChan <- data
