@@ -49,7 +49,7 @@ func (o *OrderHandler) Run() {
 
 				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= aliveCount
 
-				if !isConfirmedByAll || !isAvailable {
+				if !isConfirmedByAll {
 					continue
 				}
 
@@ -57,12 +57,13 @@ func (o *OrderHandler) Run() {
 				if winner.id == wv.LocalID {
 					err := wv.ProcessHallCall(floor, statesync.HallCallDir(dir))
 					if err != nil {
-						slog.Error("[RunCost] Got worldview error", "error", err)
+						slog.Error("[worldview error", "err", err)
 					}
+					slog.Info("set to processing", "floor", floor, "Direction", dir, "id", winner.id)
 
 					o.trigger <- controller.CTSOrderUpdate
 				}
-				slog.Warn("Order picked up", "floor", floor, "dir", dir, "by", winner.id)
+				slog.Info("order picked up", "floor", floor, "dir", dir, "by", winner.id)
 			}
 		}
 	}
