@@ -14,7 +14,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	"github.com/Mosazghi/elevator-ttk4145/shared"
+	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/lmittmann/tint"
 )
 
@@ -23,8 +23,7 @@ func main() {
 
 	SetupLogger(cfg.LogLevel)
 
-	// Check environment mode (ENV=production or ENV=prod enables production mode)
-	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors)
+	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors, "env", os.Getenv("ENV"))
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -46,7 +45,6 @@ func main() {
 		slog.Error("failed to create network", "err", err)
 		return
 	}
-
 	defer network.Close()
 
 	network.Start()
@@ -58,15 +56,14 @@ func main() {
 	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
-	recoveredCabCallChan := make(chan shared.Emtpy, 5)
-	wvChan := make(chan statesync.Worldview, 20)
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, wvChan, orderUpdateChan, recoveredCabCallChan)
+	recoveredCabCallChan := make(chan Emtpy, 5)
 
+	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
-	go ctrller.Start()
-	go wv.StartSyncing(txChan, rxChan, errChan)
+	orderHandler := orders.NewOrderHandler(wv, triggerAction, actionChan)
 
-	orderHandler := orders.NewOrderHandler(wvChan, triggerAction, actionChan)
+	go wv.StartSyncing(txChan, rxChan, errChan)
+	go ctrller.Start()
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevator()
@@ -87,6 +84,7 @@ func main() {
 	// Sync all button lights with the current worldview state before entering the
 	// main event loop, so the elevator server matches any persisted/recovered calls.
 	{
+		time.Sleep(1500 * time.Millisecond)
 		elev.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCallBools := make([][2]bool, wv.NumFloors)
@@ -95,7 +93,6 @@ func main() {
 			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HSNone
 		}
 		elev.SetHallCallLights(wv.NumFloors, hallCallBools)
-
 	}
 
 	fsm := fsm.NewStateMachine(

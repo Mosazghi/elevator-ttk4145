@@ -1,7 +1,9 @@
 package elevio
 
-type MotorDirection int
-type ButtonType int
+type (
+	MotorDirection int
+	ButtonType     int
+)
 
 const (
 	MDUp   MotorDirection = 1
@@ -16,11 +18,11 @@ const (
 func (md MotorDirection) String() string {
 	switch md {
 	case MDUp:
-		return "Up"
+		return "up"
 	case MDDown:
-		return "Down"
+		return "down"
 	case MDStop:
-		return "Stop"
+		return "stop"
 	default:
 		return "Unknown"
 	}

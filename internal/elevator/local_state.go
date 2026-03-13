@@ -30,36 +30,37 @@ const (
 	LSOn
 )
 
+func (b Behavior) String() string {
+	switch b {
+	case BIdle:
+		return "idle"
+	case BMoving:
+		return "moving"
+	case BDoorOpen:
+		return "doorOpen"
+	default:
+		return "idle"
+	}
+}
+
 func (d DoorState) String() string {
 	switch d {
 	case DSClosed:
-		return "CLOSED"
+		return "closed"
 	case DSOpen:
-		return "OPEN"
+		return "open"
 	}
-	return "UNKNOWN"
+	return "unknown"
 }
 
 func (l LightState) String() string {
 	switch l {
 	case LSOff:
-		return "Off"
+		return "off"
 	case LSOn:
-		return "On"
+		return "on"
 	}
-	return "UNKNOWN"
-}
-
-func (b Behavior) String() string {
-	switch b {
-	case BIdle:
-		return "IDLE"
-	case BMoving:
-		return "MOVING"
-	case BDoorOpen:
-		return "DOOR_OPEN"
-	}
-	return "UNKNOWN"
+	return "unknown"
 }
 
 type ElevatorState struct {
@@ -68,14 +69,12 @@ type ElevatorState struct {
 	Behavior Behavior
 }
 
-type ElevatorCallbacks interface {
-	DoMotorAction(action MoveAction)
-	SetCallLight(buttonType elevio.ButtonType, floor int, state bool)
-	SetCurrentFloorLight(floor int)
-	SetStopLight(state bool)
-	SetDoor(state DoorState)
-	String()
-	Stop()
+func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
+	return ElevatorState{
+		io:       driver,
+		Dir:      direction,
+		Behavior: behavior,
+	}
 }
 
 func (e *ElevatorState) DoMotorAction(action MoveAction) error {
@@ -141,9 +140,10 @@ func (e *ElevatorState) SetAllLights(numFloors int, cabCalls []bool, hallCalls [
 	e.SetCabCallLights(numFloors, cabCalls)
 	e.SetHallCallLights(numFloors, hallCalls)
 }
+
 // SetCabCallLights sets lights for all active cab calls
 func (e *ElevatorState) SetCabCallLights(numFloors int, cabCalls []bool) {
-	for floor := 0; floor < numFloors; floor ++{
+	for floor := 0; floor < numFloors; floor++ {
 		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
 	}
 }
@@ -158,12 +158,4 @@ func (e *ElevatorState) SetHallCallLights(numFloors int, hallCalls [][2]bool) {
 
 func (e *ElevatorState) String() {
 	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
-}
-
-func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
-	return ElevatorState{
-		io:       driver,
-		Dir:      direction,
-		Behavior: behavior,
-	}
 }

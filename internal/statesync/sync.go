@@ -29,7 +29,6 @@ type Worldview struct {
 	ElevatorStates       map[int]*RemoteElevatorState `json:"elevator_states"`
 	HallCalls            [][2]HallCallPairState       `json:"hall_calls"`
 	NumFloors            int                          `json:"num_floors"`
-	wvChan               chan Worldview
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Emtpy
 	hasFetchedCabCalls   bool
@@ -37,13 +36,12 @@ type Worldview struct {
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, wvChan chan Worldview, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
+func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
 	wv := &Worldview{
 		LocalID:              localID,
 		ElevatorStates:       make(map[int]*RemoteElevatorState),
 		HallCalls:            make([][2]HallCallPairState, numFloors),
 		NumFloors:            numFloors,
-		wvChan:               wvChan,
 		orderUpdateChan:      orderUpdateChan,
 		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
@@ -107,6 +105,7 @@ func (wv Worldview) String() string {
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
 func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, errChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
+	defer ticker.Stop()
 	localID := wv.LocalID
 	for {
 		select {
@@ -149,11 +148,6 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 			if err != nil {
 				slog.Error("Failed to build worldview message", "error", err)
 				continue
-			}
-
-			select {
-			case wv.wvChan <- *wv:
-			default:
 			}
 
 			txChan <- data
@@ -467,7 +461,8 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					}
 				}
 			case HSProcessing:
-				if ourHCState.State == HSAvailable && otherHCState.By == other.LocalID {
+				// We can accept if our is HSNone because we might be on startup
+				if ourHCState.State == HSAvailable || ourHCState.State == HSNone && otherHCState.By == other.LocalID {
 					slog.Info("processing order", "by", otherHCState.By, "floor", floor, "dir", dir, "timestamp", otherHCState.Timestamp)
 					wv.HallCalls[floor][dir].By = otherHCState.By
 					wv.HallCalls[floor][dir].State = HSProcessing

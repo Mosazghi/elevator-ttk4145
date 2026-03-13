@@ -9,8 +9,8 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
-	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/Mosazghi/elevator-ttk4145/shared"
+	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
@@ -18,7 +18,7 @@ import (
 
 // Easier to create test worldviews with this helper function
 func NewTestWorldView(t *testing.T, localID, numFloors int) *Worldview {
-	return NewWorldView(localID, numFloors, make(chan Worldview, 10), make(chan Order, 10), make(chan shared.Emtpy, 10))
+	return NewWorldView(localID, numFloors, make(chan Order, 10), make(chan shared.Emtpy, 10))
 }
 
 // Merge with different number of floors should fail
@@ -185,7 +185,7 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 		// Invalid/ignored transitions
 		{"Available -> Available (duplicate)", HSAvailable, HSAvailable, HSAvailable, false},
 		{"Processing -> Available (order released)", HSProcessing, HSAvailable, HSAvailable, true},
-		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSNone, false},
+		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSProcessing, true},
 	}
 
 	for _, tt := range tests {

@@ -7,6 +7,14 @@ import (
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 )
 
+type ControllerTriggerSrc int
+
+const (
+	CTSFArrivalFloor ControllerTriggerSrc = iota
+	CTSOrderUpdate
+	CTSHCLights
+)
+
 type CurrentOrder struct {
 	Floor             int
 	Type              elevio.ButtonType
@@ -16,7 +24,10 @@ type CurrentOrder struct {
 
 func (order *CurrentOrder) Complete(worldView *statesync.Worldview) {
 	if order.Type == elevio.Cab {
-		worldView.SetCabCall(order.Floor, false)
+		err := worldView.SetCabCall(order.Floor, false)
+		if err != nil {
+			slog.Error("error completing cab call", "err", err)
+		}
 	} else {
 		err := worldView.CompleteHallCall(order.Floor, order.HallCallDirection)
 		if err != nil {
