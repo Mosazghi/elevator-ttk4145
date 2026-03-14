@@ -431,7 +431,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:     HallCallStateNone,
 						By:        -1,
-						Timestamp: 0,
+						Timestamp: time.Now().UnixMilli(), // ← keep timestamp on None to mark "just completed"
 					}
 					wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
 				}
@@ -463,8 +463,9 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 
 			case HallCallStateProcessing:
-				// We can accept if our is HSNone because we might be on startup
-				if ourHallCall.State == HallCallStateConfirmed || ourHallCall.State == HallCallStateNone {
+				// We can accept if our is none because we might be on startup
+				if ourHallCall.State == HallCallStateConfirmed ||
+					(ourHallCall.State == HallCallStateNone && ourHallCall.Timestamp == 0) { // only accept if NOT just completed
 					if otherHallCall.By == other.LocalID {
 						slog.Info("processing order", "by", otherHallCall.By, "floor", floor, "dir", dir, "timestamp", otherHallCall.Timestamp)
 						wv.HallCalls[floor][dir].By = otherHallCall.By
