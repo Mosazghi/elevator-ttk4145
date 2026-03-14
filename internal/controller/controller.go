@@ -48,6 +48,8 @@ func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
 	floor := order.Floor
 
 	if elev.CabCalls[floor] {
+		// NOTE: Have to set cab call to false here as well if the elevator is on the same floor,
+		// and just reconnected
 		ctrl.wv.SetCabCall(floor, false)
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}

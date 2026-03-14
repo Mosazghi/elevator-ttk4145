@@ -6,9 +6,10 @@ type (
 )
 
 const (
-	HSNone HallCallState = iota
-	HSAvailable
-	HSProcessing
+	HallCallStateNone HallCallState = iota
+	HallCallStateUnconfirmed
+	HallCallStateConfirmed
+	HallCallStateProcessing
 )
 
 const (
@@ -17,8 +18,7 @@ const (
 )
 
 type HallCallPairState struct {
-	State       HallCallState // the state of the hall call (available, processing, none)
-	By          int           // the id of the elevator that has taken the order
-	ConfirmedBy []int         // the ids of the elevators that have (seen) confirmed the order
-	Timestamp   int64         // the timestamp of when the order was being processed
+	State     HallCallState // the state of the hall call (available, processing, none)
+	By        int           // the id of the elevator that has taken the order
+	Timestamp int64         // the timestamp of when the order was being processed
 }

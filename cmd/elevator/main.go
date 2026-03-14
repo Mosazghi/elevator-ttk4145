@@ -88,11 +88,12 @@ func main() {
 		elev.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCallBools := make([][2]bool, wv.NumFloors)
+		cabCalls := localElvevator.CabCalls
 		for floor, pair := range hallCallStates {
-			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HSNone
-			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HSNone
+			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
+			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
 		}
-		elev.SetHallCallLights(wv.NumFloors, hallCallBools)
+		elev.SetAllLights(wv.NumFloors, cabCalls, hallCallBools)
 	}
 
 	fsm := fsm.NewStateMachine(

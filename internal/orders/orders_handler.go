@@ -36,24 +36,12 @@ func (o *OrderHandler) Run() {
 
 		for floor, hallCall := range hallCalls {
 			for dir := range hallCalls[floor] {
-				isAvailable := hallCall[dir].State == statesync.HSAvailable
+				isConfirmed := hallCall[dir].State == statesync.HallCallStateConfirmed
 
-				if !isAvailable {
+				if !isConfirmed {
 					continue
 				}
-
-				aliveCount := 0
-				for _, elev := range o.wv.ElevatorStates {
-					if elev.Alive {
-						aliveCount++
-					}
-				}
-
-				isConfirmedByAll := len(hallCall[dir].ConfirmedBy) >= aliveCount
-
-				if !isConfirmedByAll {
-					continue
-				}
+				slog.Warn("Calcing cost function", "floor", floor, "dir", dir)
 
 				winner := CalculateCost(o.wv, floor, statesync.HallCallDir(dir))
 				if winner.id == o.wv.LocalID {
@@ -61,7 +49,7 @@ func (o *OrderHandler) Run() {
 					if err != nil {
 						slog.Error("[worldview error", "err", err)
 					}
-					slog.Info("set to processing", "floor", floor, "Direction", dir, "id", winner.id)
+					slog.Info("won, set to processing", "floor", floor, "dir", dir, "id", winner.id)
 
 					o.trigger <- controller.CTSOrderUpdate
 				}

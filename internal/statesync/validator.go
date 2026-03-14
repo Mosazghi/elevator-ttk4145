@@ -18,17 +18,17 @@ func IsValidFloor(floor, maxFloors int) bool {
 // IsValidDirTransition checks if a transition from currDir to newDir is valid
 func IsValidDirTransition(currState, newState HallCallState) error {
 	switch currState {
-	case HSAvailable:
-		if newState == HSNone {
+	case HallCallStateConfirmed:
+		if newState == HallCallStateNone {
 			return fmt.Errorf("cannot go to Available from None")
 		}
 
-	case HSProcessing:
-		if newState == HSAvailable {
+	case HallCallStateUnconfirmed:
+		if newState == HallCallStateConfirmed {
 			return fmt.Errorf("cannot go to Processing from Available")
 		}
-	case HSNone:
-		if newState == HSProcessing {
+	case HallCallStateNone:
+		if newState == HallCallStateUnconfirmed {
 			return fmt.Errorf("cannot go to None from Processing")
 		}
 	default:
