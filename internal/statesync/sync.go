@@ -246,37 +246,26 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	// 	return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
 	// }
 
-	var result HallCallPairState
-	result.State = state
+	var resultHallCall HallCallPairState
+	resultHallCall.State = state
 
-	existing := wv.HallCalls[floor][dir]
+	existingHallCall := wv.HallCalls[floor][dir]
 
 	if state == HallCallStateProcessing {
-		existing.By = wv.LocalID
-		result.By = wv.LocalID
-		result.Timestamp = time.Now().UnixMilli()
+		resultHallCall.By = wv.LocalID
+		resultHallCall.Timestamp = time.Now().UnixMilli()
 	} else {
-		result.By = -1
-		result.Timestamp = 0
+		resultHallCall.By = -1
+		resultHallCall.Timestamp = 0
 	}
 
-	switch state {
-	case HallCallStateConfirmed:
-		// result.ConfirmedBy = append(result.ConfirmedBy, wv.LocalID)
-	case HallCallStateProcessing:
-		if existing.By != wv.LocalID {
-			return fmt.Errorf("cannot process hall call that is not assigned to local elevator")
-		}
-	// 	result.ConfirmedBy = make([]int, len(existing.ConfirmedBy))
-	// 	copy(result.ConfirmedBy, existing.ConfirmedBy)
-	case HallCallStateNone:
-		if existing.State == HallCallStateProcessing && existing.By != wv.LocalID {
+	if state == HallCallStateNone && existingHallCall.State == HallCallStateProcessing {
+		if existingHallCall.By != wv.LocalID {
 			return fmt.Errorf("cannot complete hall call that is being processed by another elevator")
 		}
-	default:
 	}
 
-	wv.HallCalls[floor][dir] = result
+	wv.HallCalls[floor][dir] = resultHallCall
 	return nil
 }
 
@@ -291,7 +280,6 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
-	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
 	wv.mu.RLock()
 
 	aliveCount := 0
@@ -301,13 +289,23 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 		}
 	}
 
+	var targetState HallCallState
+
 	wv.mu.RUnlock()
 
 	// Alone on network , skip Unconfirmed, go straight to Confirmed
 	if aliveCount <= 1 {
-		return wv.setHallCall(floor, dir, HallCallStateConfirmed)
+		targetState = HallCallStateConfirmed
+	} else {
+		targetState = HallCallStateUnconfirmed
 	}
-	return wv.setHallCall(floor, dir, HallCallStateUnconfirmed)
+
+	if err := wv.setHallCall(floor, dir, targetState); err != nil {
+		return err
+	}
+
+	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+	return nil
 }
 
 // ProcessHallCall process the hall call by the local elevator
@@ -454,6 +452,10 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				if ourHallCall.State == HallCallStateNone || ourHallCall.State == HallCallStateUnconfirmed {
 					// Peer already promoted → accept it
 					wv.HallCalls[floor][dir].State = HallCallStateConfirmed
+
+					if ourHallCall.State == HallCallStateNone {
+						wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+					}
 				}
 
 				if ourHallCall.State == HallCallStateProcessing && ourHallCall.By == other.LocalID {
