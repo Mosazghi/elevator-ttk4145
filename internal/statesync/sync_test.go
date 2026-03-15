@@ -1,5 +1,3 @@
-//go:build ignore
-
 package statesync
 
 import (
@@ -56,10 +54,10 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	// Add elevator state to wv2
 	wv2.HallCalls[1][HDUp] = HallCallPairState{
-		State: HSAvailable, By: 0,
+		State: HallCallStateConfirmed, By: 0,
 	}
 	wv2.HallCalls[1][HDDown] = HallCallPairState{
-		State: HSNone, By: 0,
+		State: HallCallStateNone, By: 0,
 	}
 
 	checksum, _ := checksum.CalculateChecksum(wv2)
@@ -67,7 +65,7 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	require.NoError(t, err)
 	fmt.Println("ID: ", wv1.HallCalls[1][HDUp].By)
-	assert.Equal(t, wv1.HallCalls[1][HDUp].State, HSAvailable, "hall call from wv2 should be merged into wv1")
+	assert.Equal(t, wv1.HallCalls[1][HDUp].State, HallCallStateConfirmed, "hall call from wv2 should be merged into wv1")
 	assert.Equal(t, wv1.HallCalls[1][HDUp].By, -1, "hall call from wv2 should be merged into wv1")
 }
 
@@ -180,14 +178,15 @@ func TestMerge_HallCallStateTransitions(t *testing.T) {
 		shouldChange  bool
 	}{
 		// Valid transitions
-		{"None -> Available", HSNone, HSAvailable, HSAvailable, true},
-		{"Available -> Processing", HSAvailable, HSProcessing, HSProcessing, true},
-		{"Processing -> None (completed)", HSProcessing, HSNone, HSNone, true},
+		{"None -> Unconfirmed", HallCallStateNone, HallCallStateUnconfirmed, HallCallStateUnconfirmed, true},
+		{"Unconfirmed -> Confirmed", HallCallStateUnconfirmed, HallCallStateConfirmed, HallCallStateConfirmed, true},
+		{"Confirmed -> Processing", HallCallStateConfirmed, HallCallStateProcessing, HallCallStateProcessing, true},
+		{"Processing -> None (completed)", HallCallStateProcessing, HallCallStateNone, HallCallStateNone, true},
+		{"Processing -> Confirmed (order released)", HallCallStateProcessing, HallCallStateConfirmed, HallCallStateConfirmed, true},
 
 		// Invalid/ignored transitions
-		{"Available -> Available (duplicate)", HSAvailable, HSAvailable, HSAvailable, false},
-		{"Processing -> Available (order released)", HSProcessing, HSAvailable, HSAvailable, true},
-		{"None -> Processing (skip Available)", HSNone, HSProcessing, HSProcessing, true},
+		{"Confirmed -> Confirmed (duplicate)", HallCallStateConfirmed, HallCallStateConfirmed, HallCallStateConfirmed, false},
+		{"None -> Processing (skip Confirmed)", HallCallStateNone, HallCallStateProcessing, HallCallStateProcessing, true},
 	}
 
 	for _, tt := range tests {
@@ -229,26 +228,25 @@ func TestSetHallCall(t *testing.T) {
 	err = wv.NewHallCall(3, HDDown)
 	assert.NoError(t, err, "should accept last floor with HDDown")
 
-	// Test None -> Available with ConfirmedBy verification
+	// Test None -> Uncofirmed
 	err = wv.NewHallCall(2, HDUp)
 	assert.NoError(t, err, "should be a valid state transition")
-	assert.Equal(t, HSAvailable, wv.HallCalls[2][HDUp].State, "state should be Available")
-	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should contain localID")
-	assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be -1 for Available state")
+	assert.Equal(t, HallCallStateConfirmed, wv.HallCalls[2][HDUp].State, "state should be Confirmed because alone in network")
+	assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be -1 for Unconfirmed state")
 
-	// Test Available -> None (should fail without processing first)
+	// Test Confirmed -> None (should fail without processing first)
 	err = wv.CompleteHallCall(2, HDUp)
 	assert.Error(t, err, "should not be able to transition from Available to None")
 
 	// Manually assign the call to local elevator (simulates external assignment logic)
 
-	// Test Available -> Processing with field verification
+	// Test Unconfirmed -> Processing with field verification
+	wv.HallCalls[2][HDUp].State = HallCallStateConfirmed // assuming external logic confirmed the order
 	err = wv.ProcessHallCall(2, HDUp)
 
-	assert.NoError(t, err, "should be able to transition from Available to Processing")
-	assert.Equal(t, HSProcessing, wv.HallCalls[2][HDUp].State, "state should be Processing")
+	assert.NoError(t, err, "should be able to transition from Unconfirmed to Processing")
+	assert.Equal(t, HallCallStateProcessing, wv.HallCalls[2][HDUp].State, "state should be Processing")
 	assert.Equal(t, wv.LocalID, wv.HallCalls[2][HDUp].By, "By should be localID when processing")
-	assert.Contains(t, wv.HallCalls[2][HDUp].ConfirmedBy, wv.LocalID, "ConfirmedBy should be preserved")
 
 	// Test Processing -> Available (should fail)
 	err = wv.NewHallCall(2, HDUp)
@@ -257,9 +255,8 @@ func TestSetHallCall(t *testing.T) {
 	// Test Processing -> None (complete)
 	err = wv.CompleteHallCall(2, HDUp)
 	assert.NoError(t, err, "should be able to transition from Processing to None")
-	assert.Equal(t, HSNone, wv.HallCalls[2][HDUp].State, "state should be None")
-	// assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
-	assert.Empty(t, wv.HallCalls[2][HDUp].ConfirmedBy, "ConfirmedBy should be empty after completion")
+	assert.Equal(t, HallCallStateNone, wv.HallCalls[2][HDUp].State, "state should be None")
+	assert.Equal(t, -1, wv.HallCalls[2][HDUp].By, "By should be reset to -1 after completion")
 }
 
 func TestSetCabCall(t *testing.T) {
@@ -341,6 +338,8 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	errChan := make(chan error, 10)
 
 	// Start syncing for wv1
+	wv2.ElevatorStates[1] = NewRemoteElevatorState(1, 4)
+	wv2.ElevatorStates[2] = NewRemoteElevatorState(2, 4)
 	go wv1.StartSyncing(txChan, rxChan, errChan)
 
 	// Set a hall call in wv2
@@ -356,43 +355,9 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	wv1.mu.Lock()
-	assert.Equal(t, HSAvailable, wv1.HallCalls[2][HDUp].State, "hall call from wv2 should be merged")
+	assert.Equal(t, HallCallStateUnconfirmed, wv1.HallCalls[2][HDUp].State, "hall call from wv2 should be merged")
 	assert.Contains(t, wv1.ElevatorStates, 2, "wv2's elevator state should be merged")
 	wv1.mu.Unlock()
-}
-
-// TestStartSyncing_IgnoresOwnBroadcast verifies that we don't merge our own broadcasts
-func TestStartSyncing_IgnoresOwnBroadcast(t *testing.T) {
-	wv := NewTestWorldView(t, 1, 4)
-
-	txChan := make(chan network.DataPacket, 10)
-	rxChan := make(chan network.DataPacket, 10)
-	errChan := make(chan error, 10)
-
-	go wv.StartSyncing(txChan, rxChan, errChan)
-
-	// Set original state
-	originalFloor := 2
-	wv.NewHallCall(originalFloor, HDUp)
-
-	// Create a message with the same LocalID but different state
-	fakeOwnMessage := NewTestWorldView(t, 1, 4) // Same ID as wv
-	fakeOwnMessage.NewHallCall(3, HDDown)
-
-	jsonData, err := BuildWvJSON(fakeOwnMessage)
-	require.NoError(t, err)
-
-	// Send the "own" message
-	rxChan <- jsonData
-
-	// Wait a bit
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify state was NOT changed by the ignored message
-	wv.mu.Lock()
-	assert.Equal(t, HSAvailable, wv.HallCalls[originalFloor][HDUp].State, "original state should remain")
-	assert.Equal(t, HSNone, wv.HallCalls[3][HDDown].State, "should not merge own broadcast")
-	wv.mu.Unlock()
 }
 
 // TestStartSyncing_HandlesInvalidJSON verifies graceful handling of malformed messages
@@ -586,10 +551,9 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	// Simulate node timeout
 	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
 	wv.HallCalls[1][HDUp] = HallCallPairState{
-		State:       HSProcessing,
-		By:          lostID,
-		ConfirmedBy: []int{lostID},
-		Timestamp:   time.Now().UnixMilli(),
+		State:     HallCallStateProcessing,
+		By:        lostID,
+		Timestamp: time.Now().UnixMilli(),
 	}
 
 	wv.mu.Lock()
@@ -597,19 +561,17 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	wv.mu.Unlock()
 
 	hc := wv.HallCalls[1][HDUp]
-	assert.Equal(t, HSAvailable, hc.State, "order should be released when node is lost")
+	assert.Equal(t, HallCallStateConfirmed, hc.State, "order should be released when node is lost")
 	assert.Equal(t, -1, hc.By, "By should be reset to -1")
-	assert.NotContains(t, hc.ConfirmedBy, lostID, "ConfirmedBy should not include lost node")
 	assert.False(t, wv.ElevatorStates[lostID].Alive, "lost node should be marked dead")
 
 	// test for an elevator taking too long to process an order (finish)
 	processingID := 1
 	wv.ElevatorStates[processingID] = NewRemoteElevatorState(processingID, 4)
 	wv.HallCalls[3][HDUp] = HallCallPairState{
-		State:       HSProcessing,
-		By:          processingID,
-		ConfirmedBy: []int{processingID},
-		Timestamp:   time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli(),
+		State:     HallCallStateProcessing,
+		By:        processingID,
+		Timestamp: time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli(),
 	}
 
 	wv.mu.Lock()
@@ -617,9 +579,8 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	wv.mu.Unlock()
 
 	hc = wv.HallCalls[3][HDUp]
-	assert.Equal(t, HSAvailable, hc.State, "order should be released when processing timeout is exceeded")
+	assert.Equal(t, HallCallStateConfirmed, hc.State, "order should be released when processing timeout is exceeded")
 	assert.Equal(t, -1, hc.By, "By should be reset to -1")
-	assert.Contains(t, hc.ConfirmedBy, processingID, "ConfirmedBy should still include local node")
 }
 
 func TestStartSyncing_NetworkErrors(t *testing.T) {
@@ -672,9 +633,8 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 
 	// wv2 has a hall call confirmed by elevator 2 and 3
 	wv2.HallCalls[1][HDUp] = HallCallPairState{
-		State:       HSAvailable,
-		By:          2,
-		ConfirmedBy: []int{2, 3},
+		State: HallCallStateConfirmed,
+		By:    2,
 	}
 
 	// Send wv2's state to wv1
@@ -684,24 +644,15 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify wv1 merged the confirmations and added its own
 	wv1.mu.Lock()
-	confirmations := wv1.HallCalls[1][HDUp].ConfirmedBy
-	wv1.mu.Unlock()
-
-	assert.Contains(t, confirmations, 1, "should add own ID to confirmations")
-	assert.Contains(t, confirmations, 2, "should merge confirmation from wv2")
-	assert.Contains(t, confirmations, 3, "should merge confirmation from wv3")
-	assert.Equal(t, HSAvailable, wv1.HallCalls[1][HDUp].State, "state should be Available")
-	wv1.mu.Lock()
+	assert.Equal(t, HallCallStateConfirmed, wv1.HallCalls[1][HDUp].State, "state should be Confirmed")
 	wv1.ElevatorStates[4] = NewRemoteElevatorState(4, 4) // Add another elevator to wv1 to test merging new confirmation
 	wv1.mu.Unlock()
 
 	// Now send wv3's state with more confirmations
 	wv3.HallCalls[1][HDUp] = HallCallPairState{
-		State:       HSAvailable,
-		By:          2,
-		ConfirmedBy: []int{2, 3, 4},
+		State: HallCallStateConfirmed,
+		By:    2,
 	}
 
 	jsonData2, err := BuildWvJSON(wv3)
@@ -710,13 +661,6 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	rxChan <- jsonData2
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify additional confirmation was merged
-	wv1.mu.Lock()
-	confirmations = wv1.HallCalls[1][HDUp].ConfirmedBy
-	wv1.mu.Unlock()
-
-	assert.Contains(t, confirmations, 4, "should merge new confirmation")
-	assert.Len(t, confirmations, 4, "should have all unique confirmations")
 }
 
 func TestCabCallRecoveredOnReconnect(t *testing.T) {

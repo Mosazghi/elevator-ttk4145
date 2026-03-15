@@ -305,6 +305,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 
 	// Assign calls - floor 3 goes to elevator 2 (using external assignment for testing)
 	// floor 0 goes to elevator 1
+	wv.HallCalls[0][statesync.HDDown].State = statesync.HallCallStateConfirmed // Simulate assignment to elevator 1
 	err = wv.ProcessHallCall(0, statesync.HDDown)
 	require.NoError(t, err, "Failed to process hall call for elevator 1")
 

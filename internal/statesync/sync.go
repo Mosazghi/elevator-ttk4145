@@ -235,21 +235,18 @@ func (wv *Worldview) releaseAnyOrders() {
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
-	// slog.Info("[setHallCall] Setting hall call", "floor", floor, "dir", dir, "state", state) // log the new state of the hall call
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
-	// currDirState := wv.HallCalls[floor][dir]
+	existingHallCall := wv.HallCalls[floor][dir]
 
-	// if err := IsValidDirTransition(currDirState.State, state); err != nil {
-	// 	return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
-	// }
+	if err := IsValidDirTransition(existingHallCall.State, state); err != nil {
+		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
+	}
 
 	var resultHallCall HallCallPairState
 	resultHallCall.State = state
-
-	existingHallCall := wv.HallCalls[floor][dir]
 
 	if state == HallCallStateProcessing {
 		resultHallCall.By = wv.LocalID
