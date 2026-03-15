@@ -282,8 +282,11 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 // CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
 func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
+	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
+		return err
+	}
 	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
-	return wv.setHallCall(floor, dir, HallCallStateNone)
+	return nil
 }
 
 // NewHallCall creates a new order on the systems
