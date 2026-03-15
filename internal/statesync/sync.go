@@ -150,28 +150,18 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 	}
 }
 
-// FetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
+// fetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
 // and signals cab lights to be turned back on when applicable.
-//
 // Must be called with lock held.
-func (wv *Worldview) FetchCabCallsOnReconnect(other *Worldview) {
+func (wv *Worldview) fetchCabCallsOnReconnect(other *Worldview) {
 	peerView := other.ElevatorStates[wv.LocalID]
-	myView := wv.ElevatorStates[wv.LocalID]
 
 	for floor, peerCabCallValue := range peerView.CabCalls {
-		// prevView := myView.CabCalls[floor]
-		myView.CabCalls[floor] = myView.CabCalls[floor] || peerCabCallValue
-
-		// if !prevView && myView.CabCalls[floor] {
-		// 	wv.actionChan <- elevator.LightAction{
-		// 		ButtonType: elevio.Cab,
-		// 		Floor:      floor,
-		// 		State:      true,
-		// 	}
-		// }
+		existingCabCallValue := wv.ElevatorStates[wv.LocalID].CabCalls[floor]
+		wv.ElevatorStates[wv.LocalID].CabCalls[floor] = existingCabCallValue || peerCabCallValue
 	}
 	wv.recoveredCabCallChan <- Emtpy{}
-	slog.Info("[Merge] Cab calls recovered from peer", "cabCalls", myView.CabCalls)
+	slog.Debug("cab calls recovered from peer", "cabCalls", wv.ElevatorStates[wv.LocalID].CabCalls)
 }
 
 func (wv *Worldview) checkifNodeReappeared(id int) {
@@ -412,7 +402,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	}
 
 	if fetchCabCalls {
-		wv.FetchCabCallsOnReconnect(other)
+		wv.fetchCabCallsOnReconnect(other)
 		wv.hasFetchedCabCalls = true
 	}
 
