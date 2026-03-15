@@ -23,7 +23,7 @@ type StateMachine struct {
 	// Internal channels
 	ctrlTriggerChan      chan controller.ControllerTriggerSrc
 	ctrlActionChan       chan any
-	recoveredCabCallChan chan shared.Emtpy
+	recoveredCabCallChan chan shared.Empty
 
 	elev *elevator.ElevatorState
 	wv   *statesync.Worldview
@@ -38,7 +38,7 @@ func NewStateMachine(
 	drvStop chan bool,
 	ctrlTriggerChan chan controller.ControllerTriggerSrc,
 	ctrlActionChan chan any,
-	recoveredCabCallChan chan shared.Emtpy,
+	recoveredCabCallChan chan shared.Empty,
 	elev *elevator.ElevatorState,
 	wv *statesync.Worldview,
 ) *StateMachine {
@@ -58,8 +58,10 @@ func NewStateMachine(
 
 func (sm *StateMachine) Run() {
 	go sm.watchdog.Start()
+	defer sm.watchdog.Stop()
 
 	watchdogTicker := time.NewTicker(1 * time.Second)
+
 	for {
 		localElvevator := sm.wv.GetRemoteElevator()
 
@@ -68,7 +70,7 @@ func (sm *StateMachine) Run() {
 			sm.watchdog.Ping()
 		case <-sm.watchdog.Timeout:
 			slog.Error("Watchdog timedout.. restarting")
-			reinit.Reinitialization()
+			reinit.Reinitialize()
 		case order := <-sm.drvButtons:
 			err := sm.makeNewOrder(order)
 			if err != nil {

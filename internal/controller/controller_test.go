@@ -22,11 +22,11 @@ const (
 )
 
 // Helper
-func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Worldview, arriveAtFloorChan chan Emtpy) {
+func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Worldview, arriveAtFloorChan chan Empty) {
 	t.Helper()
 	wvChan = make(chan statesync.Worldview, 10)
-	arriveAtFloorChan = make(chan Emtpy, 10)
-	worldview := statesync.NewWorldView(1, 4, make(chan statesync.Order, 10), make(chan Emtpy, 1))
+	arriveAtFloorChan = make(chan Empty, 10)
+	worldview := statesync.NewWorldView(1, 4, make(chan statesync.Order, 10), make(chan Empty, 1))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	_ = worldview.SetLocalElevator(elev)
 
@@ -35,7 +35,7 @@ func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Wo
 
 // newTestStart creates a controller without starting the goroutine.
 // Tests that need Start() running should call go controller.Start() themselves.
-func newTestStart(wv *statesync.Worldview, _ chan Emtpy, actionChan chan any, _ chan Emtpy, hcLight chan statesync.Order) *Controller {
+func newTestStart(wv *statesync.Worldview, _ chan Empty, actionChan chan any, _ chan Empty, hcLight chan statesync.Order) *Controller {
 	controller := NewController(wv, actionChan, make(chan ControllerTriggerSrc, 10), hcLight)
 	return controller
 }
@@ -63,11 +63,11 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	// hcLight := make(chan statesync.Order, 10)
 	// _ := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- Emtpy{}
+	newOrder <- Empty{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -112,11 +112,11 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
 	// Start the goroutine AFTER state setup is complete
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	arriveAtFloor <- Emtpy{}
+	arriveAtFloor <- Empty{}
 	select {
 	case <-arriveAtFloor:
 		localElevator := wv.GetRemoteElevator()
@@ -157,11 +157,11 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- Emtpy{}
+	newOrder <- Empty{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -208,11 +208,11 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after setting cab call")
 
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	hcLight := make(chan statesync.Order, 10)
 	controller := newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	arriveAtFloor <- Emtpy{}
+	arriveAtFloor <- Empty{}
 	select {
 	case <-arriveAtFloor:
 		localElevator := wv.GetRemoteElevator()
@@ -255,11 +255,11 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 
 	fmt.Println("Current floor:", elev.CurrentFloor)
 
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	hcLight := make(chan statesync.Order, 10)
 	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- Emtpy{}
+	newOrder <- Empty{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -314,11 +314,11 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	err = wv.Merge(wv, cs)
 	require.NoError(t, err, "Failed to merge worldview after creating new hall call")
 
-	newOrder := make(chan Emtpy, 10)
+	newOrder := make(chan Empty, 10)
 	hcLight := make(chan statesync.Order, 10)
 	newTestStart(wv, arriveAtFloor, actionChan, newOrder, hcLight)
 
-	newOrder <- Emtpy{}
+	newOrder <- Empty{}
 	select {
 	case <-newOrder:
 		localElevator := wv.GetRemoteElevator()
@@ -410,7 +410,7 @@ func TestCalculateNearestCabCall(t *testing.T) {
 func newDoorTimerTestCtx(t *testing.T, floor int, numFloors int) (*Controller, chan any, chan ControllerTriggerSrc) {
 	t.Helper()
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Empty))
 	elev := statesync.NewRemoteElevatorState(ID, numFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -433,7 +433,7 @@ func newDoorTimerTestCtx(t *testing.T, floor int, numFloors int) (*Controller, c
 func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration, numFloors int) (*Controller, chan any, chan ControllerTriggerSrc) {
 	t.Helper()
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Empty))
 	elev := statesync.NewRemoteElevatorState(ID, numFloors)
 	elev.CurrentFloor = floor
 	require.NoError(t, wv.SetLocalElevator(elev))
@@ -520,7 +520,7 @@ func TestDoorTimer_RearmOnSecondArrival(t *testing.T) {
 // any hall call we own at the arrival floor are cleared simultaneously.
 func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	orderChan := make(chan statesync.Order, 10)
-	wv := statesync.NewWorldView(ID, NumFloors, orderChan, make(chan shared.Emtpy))
+	wv := statesync.NewWorldView(ID, NumFloors, orderChan, make(chan shared.Empty))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = 2
 	require.NoError(t, wv.SetLocalElevator(elev))

@@ -56,7 +56,7 @@ func main() {
 	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
-	recoveredCabCallChan := make(chan Emtpy, 5)
+	recoveredCabCallChan := make(chan Empty, 5)
 
 	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
 	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)

@@ -8,19 +8,19 @@ import (
 )
 
 type WatchDog struct {
-	pingChan chan Emtpy
-	stopChan chan Emtpy
-	done     chan Emtpy
-	Timeout  chan Emtpy
+	pingChan chan Empty
+	stopChan chan Empty
+	done     chan Empty
+	Timeout  chan Empty
 	duration time.Duration
 }
 
 func New(duration time.Duration) *WatchDog {
 	return &WatchDog{
-		pingChan: make(chan Emtpy, 1),
-		stopChan: make(chan Emtpy),
-		done:     make(chan Emtpy),
-		Timeout:  make(chan Emtpy, 1),
+		pingChan: make(chan Empty, 1),
+		stopChan: make(chan Empty),
+		done:     make(chan Empty),
+		Timeout:  make(chan Empty, 1),
 		duration: duration,
 	}
 }
@@ -38,7 +38,7 @@ func (wd *WatchDog) Start() {
 		select {
 		case <-timer.C:
 			slog.Error("[Watchdog] Timed out")
-			wd.Timeout <- Emtpy{}
+			wd.Timeout <- Empty{}
 			return
 
 		case <-wd.pingChan:
@@ -68,5 +68,5 @@ func (wd *WatchDog) Stop() {
 
 // Ping resets the watchdog timer, postponing the timeout
 func (wd *WatchDog) Ping() {
-	wd.pingChan <- Emtpy{}
+	wd.pingChan <- Empty{}
 }
