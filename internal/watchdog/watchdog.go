@@ -11,50 +11,48 @@ type WatchDog struct {
 	pingChan chan Emtpy
 	stopChan chan Emtpy
 	done     chan Emtpy
-	Timeout  chan bool
+	Timeout  chan Emtpy
+	duration time.Duration
 }
 
-// Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
-func Start(duration float64) WatchDog {
-	slog.Info("[Watchdog] Starting...")
-
-	interval := time.Duration(duration * float64(time.Second))
-
-	wd := WatchDog{
+func New(duration time.Duration) *WatchDog {
+	return &WatchDog{
 		pingChan: make(chan Emtpy, 1),
 		stopChan: make(chan Emtpy),
 		done:     make(chan Emtpy),
-		Timeout:  make(chan bool, 1),
+		Timeout:  make(chan Emtpy, 1),
+		duration: duration,
 	}
+}
 
-	go func() {
-		slog.Info("[Watchdog] Started")
-		timer := time.NewTimer(interval)
-		defer timer.Stop()
-		defer close(wd.done)
+// Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
+func (wd *WatchDog) Start() {
+	slog.Info("[Watchdog] Starting...")
 
-		for {
-			select {
-			case <-timer.C:
-				slog.Error("[Watchdog] Timed out")
-				wd.Timeout <- true
-				return
+	slog.Info("[Watchdog] Started")
+	timer := time.NewTimer(wd.duration)
+	defer timer.Stop()
+	defer close(wd.done)
 
-			case <-wd.pingChan:
-				slog.Debug("[Watchdog] Ping received -> Timer is reset.")
-				if !timer.Stop() {
-					<-timer.C
-				}
-				timer.Reset(interval)
+	for {
+		select {
+		case <-timer.C:
+			slog.Error("[Watchdog] Timed out")
+			wd.Timeout <- Emtpy{}
+			return
 
-			case <-wd.stopChan:
-				slog.Info("[Watchdog] Timer Stopped")
-				return
+		case <-wd.pingChan:
+			slog.Debug("[Watchdog] Ping received -> Timer is reset.")
+			if !timer.Stop() {
+				<-timer.C
 			}
-		}
-	}()
+			timer.Reset(wd.duration)
 
-	return wd
+		case <-wd.stopChan:
+			slog.Info("[Watchdog] Timer Stopped")
+			return
+		}
+	}
 }
 
 // Stop stops the watchdog timer

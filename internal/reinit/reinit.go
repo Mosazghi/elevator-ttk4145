@@ -6,9 +6,8 @@ import (
 	"syscall"
 )
 
-// Reinitialization restarts the program in the same terminal with identical arguments.
-func Reinitialization() {
-
+// Reinitialize restarts the program in the same terminal with identical arguments.
+func Reinitialize() {
 	exe, err := os.Executable()
 	if err != nil {
 		slog.Error("[Reinit] Failed to get executable path", "error", err)
@@ -24,13 +23,11 @@ func Reinitialization() {
 
 // ErrorHandler calls on Reinitialization() on any errNo received.
 func ErrorHandler(errCh <-chan int) {
-
 	for {
 		select {
 		case <-errCh:
 			slog.Warn("[ErrorHandler] Fatal Error detected -> Reinitializing")
-			Reinitialization()
+			Reinitialize()
 		}
 	}
-
 }
