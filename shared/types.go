@@ -1,3 +1,3 @@
 package shared
 
-type Emtpy struct{}
+type Empty struct{}

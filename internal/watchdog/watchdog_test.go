@@ -7,8 +7,9 @@ import (
 
 // TestWatchdogTimeout tests that the watchdog times out when not pinged
 func TestWatchdogTimeout(t *testing.T) {
-	wd := Start(0.1) // 100ms timeout
+	wd := New(100 * time.Millisecond) // 100ms timeout
 	defer wd.Stop()
+	go wd.Start()
 
 	select {
 	case <-wd.Timeout:
@@ -20,8 +21,10 @@ func TestWatchdogTimeout(t *testing.T) {
 
 // TestWatchdogPing tests that pinging prevents timeout
 func TestWatchdogPing(t *testing.T) {
-	wd := Start(0.2) // 200ms timeout
+	wd := New(200 * time.Millisecond) // 200ms timeout
+
 	defer wd.Stop()
+	go wd.Start()
 
 	// Ping every 100ms for 500ms
 	done := make(chan bool)
@@ -43,7 +46,10 @@ func TestWatchdogPing(t *testing.T) {
 
 // TestWatchdogStop tests that the watchdog can be stopped
 func TestWatchdogStop(t *testing.T) {
-	wd := Start(1.0)
+	wd := New(1.0 * time.Second)
+	defer wd.Stop()
+	go wd.Start()
+
 	wd.Stop()
 
 	// Stopping again should not panic
@@ -52,8 +58,9 @@ func TestWatchdogStop(t *testing.T) {
 
 // TestWatchdogTimeoutAfterPings tests timeout occurs after pings stop
 func TestWatchdogTimeoutAfterPings(t *testing.T) {
-	wd := Start(0.15) // 150ms timeout
+	wd := New(150 * time.Millisecond) // 150ms timeout
 	defer wd.Stop()
+	go wd.Start()
 
 	wd.Ping()
 	time.Sleep(50 * time.Millisecond)

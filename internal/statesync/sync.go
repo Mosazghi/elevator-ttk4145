@@ -30,13 +30,13 @@ type Worldview struct {
 	HallCalls            [][2]HallCallPairState       `json:"hall_calls"`
 	NumFloors            int                          `json:"num_floors"`
 	orderUpdateChan      chan Order
-	recoveredCabCallChan chan Emtpy
+	recoveredCabCallChan chan Empty
 	hasFetchedCabCalls   bool
 	mu                   *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
-func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Emtpy) *Worldview {
+func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Empty) *Worldview {
 	wv := &Worldview{
 		LocalID:              localID,
 		ElevatorStates:       make(map[int]*RemoteElevatorState),
@@ -160,7 +160,7 @@ func (wv *Worldview) fetchCabCallsOnReconnect(other *Worldview) {
 		existingCabCallValue := wv.ElevatorStates[wv.LocalID].CabCalls[floor]
 		wv.ElevatorStates[wv.LocalID].CabCalls[floor] = existingCabCallValue || peerCabCallValue
 	}
-	wv.recoveredCabCallChan <- Emtpy{}
+	wv.recoveredCabCallChan <- Empty{}
 	slog.Debug("cab calls recovered from peer", "cabCalls", wv.ElevatorStates[wv.LocalID].CabCalls)
 }
 
