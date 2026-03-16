@@ -23,6 +23,7 @@ type CurrentOrder struct {
 }
 
 func (order *CurrentOrder) Complete(worldView *statesync.Worldview) {
+	slog.Debug("Completing order..", "floor", order.Floor, "type", order.Type)
 	if order.Type == elevio.Cab {
 		err := worldView.SetCabCall(order.Floor, false)
 		if err != nil {

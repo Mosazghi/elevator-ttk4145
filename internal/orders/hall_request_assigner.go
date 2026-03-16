@@ -2,7 +2,6 @@ package orders
 
 import (
 	"encoding/json"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -54,7 +53,6 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 		slog.Error("failed to unmarshal hall request assigner output", "error", err)
 		return winner
 	}
-	log.Println("hall request assigner output", "result", result)
 
 	for id, assigned := range result {
 		if assigned[floor][dir] {
@@ -82,7 +80,7 @@ func BuildHallRequestAssignerData(wv *statesync.Worldview) *HallRequestAssignerI
 	// Build hall calls
 	for floor, pair := range hcs {
 		for dir, state := range pair {
-			isActive := state.State == statesync.HSAvailable || state.State == statesync.HSProcessing
+			isActive := state.State == statesync.HallCallStateConfirmed || state.State == statesync.HallCallStateProcessing
 			if isActive {
 				hrs.HallRequests[floor][dir] = true
 			}

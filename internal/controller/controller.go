@@ -49,11 +49,13 @@ func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
 	floor := order.Floor
 
 	if elev.CabCalls[floor] {
+		// NOTE: Have to set cab call to false here as well if the elevator is on the same floor,
+		// and just reconnected
 		ctrl.wv.SetCabCall(floor, false)
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	time.Sleep(1000 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	order.Complete(ctrl.wv)
 }
 

@@ -20,7 +20,7 @@ type StateMachine struct {
 	// Internal channels
 	ctrlTriggerChan      chan controller.ControllerTriggerSrc
 	ctrlActionChan       chan any
-	recoveredCabCallChan chan shared.Emtpy
+	recoveredCabCallChan chan shared.Empty
 
 	elev *elevator.ElevatorService
 	wv   *statesync.Worldview
@@ -33,7 +33,7 @@ func NewStateMachine(
 	drvStop chan bool,
 	ctrlTriggerChan chan controller.ControllerTriggerSrc,
 	ctrlActionChan chan any,
-	recoveredCabCallChan chan shared.Emtpy,
+	recoveredCabCallChan chan shared.Empty,
 	elev *elevator.ElevatorService,
 	wv *statesync.Worldview,
 ) *StateMachine {
@@ -118,7 +118,6 @@ func (sm *StateMachine) Run() {
 
 			case elevator.DoorAction:
 				if !action.Open {
-					slog.Debug("[anyOrder] trigger (at door close)")
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
 				sm.elev.SetDoor(action.Open)
