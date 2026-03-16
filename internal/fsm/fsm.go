@@ -61,6 +61,7 @@ func (sm *StateMachine) Run() {
 	defer sm.watchdog.Stop()
 
 	watchdogTicker := time.NewTicker(1 * time.Second)
+	defer watchdogTicker.Stop()
 
 	for {
 		localElvevator := sm.wv.GetRemoteElevator()
