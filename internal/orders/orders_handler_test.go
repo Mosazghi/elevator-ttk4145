@@ -48,6 +48,7 @@ func TestCalculateCost_CloserElevatorWins(t *testing.T) {
 	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: far, 2: near})
 	err := wv.NewHallCall(3, statesync.HDUp)
 	require.NoError(t, err)
+	wv.HallCalls[3][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(3, statesync.HDUp)
 	require.NoError(t, err)
 	winner := CalculateCost(&wv, 3, statesync.HDUp)
@@ -68,6 +69,7 @@ func TestCalculateCost_ObstructedPenalty(t *testing.T) {
 	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: obstructed, 2: clear})
 	err := wv.NewHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
+	wv.HallCalls[2][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
 	winner := CalculateCost(&wv, 2, statesync.HDUp)
@@ -88,6 +90,7 @@ func TestCalculateCost_WrongDirectionPenalty(t *testing.T) {
 	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: goingDown, 2: idle})
 	err := wv.NewHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
+	wv.HallCalls[2][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
 	winner := CalculateCost(&wv, 2, statesync.HDUp)

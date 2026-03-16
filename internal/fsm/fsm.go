@@ -100,7 +100,6 @@ func (sm *StateMachine) Run() {
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 			case elevator.DoorAction:
 				if !action.Open {
-					slog.Debug("[anyOrder] trigger (at door close)")
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
 				sm.elev.SetDoor(action.Open)

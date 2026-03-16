@@ -131,7 +131,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 		}
 		hallCalls := wv.GetAllHallCalls()
 		call := hallCalls[3][statesync.HDUp]
-		require.Equal(t, call.State, statesync.HSNone, "Hall call needs to be set to none, arrived at floor")
+		require.Equal(t, call.State, statesync.HallCallStateNone, "Hall call needs to be set to none, arrived at floor")
 
 	case action := <-actionChan:
 		assert.Equal(t, action.(elevator.MoveAction).Direction, elevio.MDStop, "Expected elevator 1 to stop at order floor")
@@ -305,6 +305,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 
 	// Assign calls - floor 3 goes to elevator 2 (using external assignment for testing)
 	// floor 0 goes to elevator 1
+	wv.HallCalls[0][statesync.HDDown].State = statesync.HallCallStateConfirmed // Simulate assignment to elevator 1
 	err = wv.ProcessHallCall(0, statesync.HDDown)
 	require.NoError(t, err, "Failed to process hall call for elevator 1")
 
@@ -545,6 +546,6 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	assert.False(t, remoteElev.CabCalls[2], "cab call at floor 2 should be cleared")
 
 	hcs := wv.GetAllHallCalls()
-	assert.Equal(t, statesync.HSNone, hcs[2][statesync.HDUp].State, "hall call at floor 2 should be cleared")
+	assert.Equal(t, statesync.HallCallStateNone, hcs[2][statesync.HDUp].State, "hall call at floor 2 should be cleared")
 	assert.Equal(t, false, remoteElev.CabCalls[2], "cab call at floor 2 should be cleared")
 }
