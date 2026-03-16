@@ -18,7 +18,7 @@ import (
 
 // Easier to create test worldviews with this helper function
 func NewTestWorldView(t *testing.T, localID, numFloors int) *Worldview {
-	return NewWorldView(localID, numFloors, make(chan Order, 10), make(chan shared.Emtpy, 10))
+	return NewWorldView(localID, numFloors, make(chan Order, 10), make(chan shared.Empty, 10))
 }
 
 // Merge with different number of floors should fail
@@ -660,7 +660,6 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 
 	rxChan <- jsonData2
 	time.Sleep(100 * time.Millisecond)
-
 }
 
 func TestCabCallRecoveredOnReconnect(t *testing.T) {

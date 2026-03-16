@@ -3,11 +3,14 @@ package fsm
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+	"github.com/Mosazghi/elevator-ttk4145/internal/reinit"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	wd "github.com/Mosazghi/elevator-ttk4145/internal/watchdog"
 	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
@@ -24,6 +27,8 @@ type StateMachine struct {
 
 	elev *elevator.ElevatorService
 	wv   *statesync.Worldview
+
+	watchdog *wd.WatchDog
 }
 
 func NewStateMachine(
@@ -47,14 +52,26 @@ func NewStateMachine(
 		recoveredCabCallChan: recoveredCabCallChan,
 		elev:                 elev,
 		wv:                   wv,
+		watchdog:             wd.New(5 * time.Second),
 	}
 }
 
 func (sm *StateMachine) Run() {
+	go sm.watchdog.Start()
+	defer sm.watchdog.Stop()
+
+	watchdogTicker := time.NewTicker(1 * time.Second)
+	defer watchdogTicker.Stop()
+
 	for {
 		localElvevator := sm.wv.GetRemoteElevator()
 
 		select {
+		case <-watchdogTicker.C:
+			sm.watchdog.Ping()
+		case <-sm.watchdog.Timeout:
+			slog.Error("Watchdog timedout.. restarting")
+			reinit.Reinitialize()
 		case order := <-sm.drvButtons:
 			if localElvevator.UndefinedState() {
 				continue

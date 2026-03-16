@@ -8,53 +8,51 @@ import (
 )
 
 type WatchDog struct {
-	pingChan chan Emtpy
-	stopChan chan Emtpy
-	done     chan Emtpy
-	Timeout  chan bool
+	pingChan chan Empty
+	stopChan chan Empty
+	done     chan Empty
+	Timeout  chan Empty
+	duration time.Duration
+}
+
+func New(duration time.Duration) *WatchDog {
+	return &WatchDog{
+		pingChan: make(chan Empty, 1),
+		stopChan: make(chan Empty),
+		done:     make(chan Empty),
+		Timeout:  make(chan Empty, 1),
+		duration: duration,
+	}
 }
 
 // Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
-func Start(duration float64) WatchDog {
+func (wd *WatchDog) Start() {
 	slog.Info("[Watchdog] Starting...")
 
-	interval := time.Duration(duration * float64(time.Second))
+	slog.Info("[Watchdog] Started")
+	timer := time.NewTimer(wd.duration)
+	defer timer.Stop()
+	defer close(wd.done)
 
-	wd := WatchDog{
-		pingChan: make(chan Emtpy, 1),
-		stopChan: make(chan Emtpy),
-		done:     make(chan Emtpy),
-		Timeout:  make(chan bool, 1),
-	}
+	for {
+		select {
+		case <-timer.C:
+			slog.Error("[Watchdog] Timed out")
+			wd.Timeout <- Empty{}
+			return
 
-	go func() {
-		slog.Info("[Watchdog] Started")
-		timer := time.NewTimer(interval)
-		defer timer.Stop()
-		defer close(wd.done)
-
-		for {
-			select {
-			case <-timer.C:
-				slog.Error("[Watchdog] Timed out")
-				wd.Timeout <- true
-				return
-
-			case <-wd.pingChan:
-				slog.Debug("[Watchdog] Ping received -> Timer is reset.")
-				if !timer.Stop() {
-					<-timer.C
-				}
-				timer.Reset(interval)
-
-			case <-wd.stopChan:
-				slog.Info("[Watchdog] Timer Stopped")
-				return
+		case <-wd.pingChan:
+			slog.Debug("[Watchdog] Ping received -> Timer is reset.")
+			if !timer.Stop() {
+				<-timer.C
 			}
-		}
-	}()
+			timer.Reset(wd.duration)
 
-	return wd
+		case <-wd.stopChan:
+			slog.Info("[Watchdog] Timer Stopped")
+			return
+		}
+	}
 }
 
 // Stop stops the watchdog timer
@@ -70,5 +68,5 @@ func (wd *WatchDog) Stop() {
 
 // Ping resets the watchdog timer, postponing the timeout
 func (wd *WatchDog) Ping() {
-	wd.pingChan <- Emtpy{}
+	wd.pingChan <- Empty{}
 }

@@ -15,7 +15,7 @@ const numFloors = 4
 // buildWV creates a minimal Worldview with the given elevator states for cost tests.
 func buildWV(t *testing.T, localID int, elevators map[int]*statesync.RemoteElevatorState) statesync.Worldview {
 	t.Helper()
-	wv := statesync.NewWorldView(localID, numFloors, make(chan statesync.Order, 1), make(chan Emtpy, 1))
+	wv := statesync.NewWorldView(localID, numFloors, make(chan statesync.Order, 1), make(chan Empty, 1))
 	wv.ElevatorStates = elevators
 	return *wv
 }
