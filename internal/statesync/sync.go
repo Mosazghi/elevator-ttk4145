@@ -13,17 +13,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type Order struct {
-	Floor     int
-	Dir       HallCallDir
-	Completed bool
-}
-
-type Message struct {
-	Wv       Worldview
-	Checksum uint64
-}
-
 type Worldview struct {
 	LocalID              int                          `json:"local_id"`
 	ElevatorStates       map[int]*RemoteElevatorState `json:"elevator_states"`
@@ -49,8 +38,8 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 	}
 
 	for i := range wv.HallCalls {
-		wv.HallCalls[i][HDDown].By = -1
-		wv.HallCalls[i][HDUp].By = -1
+		wv.HallCalls[i][HDDown].AssignedBy = -1
+		wv.HallCalls[i][HDUp].AssignedBy = -1
 	}
 
 	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
@@ -81,9 +70,9 @@ func (wv *Worldview) deepCopy() Worldview {
 	for i, floorCalls := range wv.HallCalls {
 		for j, call := range floorCalls {
 			wvCopy.HallCalls[i][j] = HallCallPairState{
-				State:     call.State,
-				By:        call.By,
-				Timestamp: call.Timestamp,
+				State:      call.State,
+				AssignedBy: call.AssignedBy,
+				Timestamp:  call.Timestamp,
 			}
 		}
 	}
@@ -114,7 +103,7 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 				continue
 			}
 
-			otherWv := message.Wv
+			otherWv := message.Worldview
 
 			if otherWv.LocalID == localID {
 				continue
@@ -194,7 +183,7 @@ func (wv *Worldview) releaseAnyOrders() {
 		for dir := range wv.HallCalls[floor] {
 			hc := wv.HallCalls[floor][dir]
 
-			assignedNode, exist := wv.ElevatorStates[hc.By]
+			assignedNode, exist := wv.ElevatorStates[hc.AssignedBy]
 			isNodeLost := exist && !assignedNode.Alive
 
 			hasOrderTimedout := hc.State == HallCallStateProcessing && hc.Timestamp != 0 &&
@@ -209,11 +198,11 @@ func (wv *Worldview) releaseAnyOrders() {
 					reason = "order timed out"
 				}
 
-				slog.Warn("releasing order", "by", hc.By, "floor", floor, "dir", dir, "reason", reason)
+				slog.Warn("releasing order", "by", hc.AssignedBy, "floor", floor, "dir", dir, "reason", reason)
 				wv.HallCalls[floor][dir] = HallCallPairState{
-					State:     HallCallStateConfirmed,
-					By:        -1,
-					Timestamp: 0,
+					State:      HallCallStateConfirmed,
+					AssignedBy: -1,
+					Timestamp:  0,
 				}
 			}
 
@@ -239,15 +228,15 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	resultHallCall.State = state
 
 	if state == HallCallStateProcessing {
-		resultHallCall.By = wv.LocalID
+		resultHallCall.AssignedBy = wv.LocalID
 		resultHallCall.Timestamp = time.Now().UnixMilli()
 	} else {
-		resultHallCall.By = -1
+		resultHallCall.AssignedBy = -1
 		resultHallCall.Timestamp = 0
 	}
 
 	if state == HallCallStateNone && existingHallCall.State == HallCallStateProcessing {
-		if existingHallCall.By != wv.LocalID {
+		if existingHallCall.AssignedBy != wv.LocalID {
 			return fmt.Errorf("cannot complete hall call that is being processed by another elevator")
 		}
 	}
@@ -261,7 +250,7 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
 		return err
 	}
-	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
+	wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: true}
 	return nil
 }
 
@@ -291,7 +280,7 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 		return err
 	}
 
-	wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+	wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
 	return nil
 }
 
@@ -413,22 +402,22 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			ourHallCall := wv.HallCalls[floor][dir]
 			switch otherHallCall.State {
 			case HallCallStateNone:
-				if ourHallCall.State == HallCallStateProcessing && ourHallCall.By == other.LocalID {
-					slog.Info("order completed", "by", ourHallCall.By, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
+				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
+					slog.Info("order completed", "by", ourHallCall.AssignedBy, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{
-						State:     HallCallStateNone,
-						By:        -1,
-						Timestamp: time.Now().UnixMilli(), // ← keep timestamp on None to mark "just completed"
+						State:      HallCallStateNone,
+						AssignedBy: -1,
+						Timestamp:  time.Now().UnixMilli(), // ← keep timestamp on None to mark "just completed"
 					}
-					wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: true}
+					wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: true}
 				}
 			case HallCallStateUnconfirmed:
 				if ourHallCall.State == HallCallStateNone {
-					slog.Info("new uncofirmed order", "by", otherHallCall.By, "floor", floor, "dir", dir)
+					slog.Info("new uncofirmed order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir].State = HallCallStateUnconfirmed
 
-					wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+					wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
 				}
 
 				if ourHallCall.State == HallCallStateUnconfirmed {
@@ -441,16 +430,16 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir].State = HallCallStateConfirmed
 
 					if ourHallCall.State == HallCallStateNone {
-						wv.orderUpdateChan <- Order{Floor: floor, Dir: HallCallDir(dir), Completed: false}
+						wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
 					}
 				}
 
-				if ourHallCall.State == HallCallStateProcessing && ourHallCall.By == other.LocalID {
-					slog.Warn("order has been released", "by", otherHallCall.By, "floor", floor, "dir", dir)
+				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
+					slog.Warn("order has been released", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir] = HallCallPairState{
-						State:     HallCallStateConfirmed,
-						By:        -1,
-						Timestamp: 0,
+						State:      HallCallStateConfirmed,
+						AssignedBy: -1,
+						Timestamp:  0,
 					}
 				}
 
@@ -458,9 +447,9 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				// We can accept if our is none because we might be on startup
 				if ourHallCall.State == HallCallStateConfirmed ||
 					(ourHallCall.State == HallCallStateNone && ourHallCall.Timestamp == 0) { // only accept if NOT just completed
-					if otherHallCall.By == other.LocalID {
-						slog.Info("processing order", "by", otherHallCall.By, "floor", floor, "dir", dir, "timestamp", otherHallCall.Timestamp)
-						wv.HallCalls[floor][dir].By = otherHallCall.By
+					if otherHallCall.AssignedBy == other.LocalID {
+						slog.Info("processing order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir, "timestamp", otherHallCall.Timestamp)
+						wv.HallCalls[floor][dir].AssignedBy = otherHallCall.AssignedBy
 						wv.HallCalls[floor][dir].State = HallCallStateProcessing
 						wv.HallCalls[floor][dir].Timestamp = otherHallCall.Timestamp
 					}

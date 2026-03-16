@@ -12,7 +12,7 @@ func BuildWvJSON(wv *Worldview) ([]byte, error) {
 		return nil, err
 	}
 
-	msg := Message{Wv: *wv, Checksum: checksum}
+	msg := Message{Worldview: *wv, Checksum: checksum}
 
 	data, err := msgpack.Marshal(msg)
 	if err != nil {
