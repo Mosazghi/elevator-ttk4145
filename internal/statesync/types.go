@@ -44,7 +44,18 @@ func (hd HallCallDir) String() string {
 }
 
 type HallCallPairState struct {
-	State     HallCallState // the state of the hall call (available, processing, none)
-	By        int           // the id of the elevator that has taken the order
-	Timestamp int64         // the timestamp of when the order was being processed
+	State      HallCallState // the state of the hall call (available, processing, none)
+	AssignedBy int           // the id of the elevator that has taken the order
+	Timestamp  int64         // the timestamp of when the order was being processed
+}
+
+type Order struct {
+	Floor     int
+	Direction HallCallDir
+	Completed bool
+}
+
+type Message struct {
+	Worldview Worldview
+	Checksum  uint64
 }

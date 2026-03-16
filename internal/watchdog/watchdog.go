@@ -42,7 +42,6 @@ func (wd *WatchDog) Start() {
 			return
 
 		case <-wd.pingChan:
-			slog.Debug("[Watchdog] Ping received -> Timer is reset.")
 			if !timer.Stop() {
 				<-timer.C
 			}
