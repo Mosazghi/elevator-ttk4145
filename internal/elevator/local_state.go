@@ -3,7 +3,7 @@ package elevator
 
 import (
 	"fmt"
-	"log/slog"
+	"slices"
 
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
@@ -21,13 +21,13 @@ const (
 )
 
 const (
-	DSClosed DoorState = iota
-	DSOpen
+	DoorClosed DoorState = iota
+	DoorOpen
 )
 
 const (
-	LSOff LightState = iota
-	LSOn
+	LightOff LightState = iota
+	LightOn
 )
 
 func (b Behavior) String() string {
@@ -45,9 +45,9 @@ func (b Behavior) String() string {
 
 func (d DoorState) String() string {
 	switch d {
-	case DSClosed:
+	case DoorClosed:
 		return "closed"
-	case DSOpen:
+	case DoorOpen:
 		return "open"
 	}
 	return "unknown"
@@ -55,80 +55,67 @@ func (d DoorState) String() string {
 
 func (l LightState) String() string {
 	switch l {
-	case LSOff:
+	case LightOff:
 		return "off"
-	case LSOn:
+	case LightOn:
 		return "on"
 	}
 	return "unknown"
 }
 
-type ElevatorState struct {
-	io       elevio.ElevatorDriver
-	Dir      elevio.MotorDirection
-	Behavior Behavior
+type ElevatorService struct {
+	io elevio.ElevatorDriver
 }
 
-func NewElevator(behavior Behavior, direction elevio.MotorDirection, driver elevio.ElevatorDriver) ElevatorState {
-	return ElevatorState{
-		io:       driver,
-		Dir:      direction,
-		Behavior: behavior,
+func NewElevatorService(driver elevio.ElevatorDriver) ElevatorService {
+	return ElevatorService{
+		io: driver,
 	}
 }
 
-func (e *ElevatorState) DoMotorAction(action MoveAction) error {
-	if action.Direction != elevio.MDDown && action.Direction != elevio.MDUp && action.Direction != elevio.MDStop {
-		return fmt.Errorf("[Elevator] Got an invalid direction, Received: %v", action.Direction)
+func (e *ElevatorService) MoveDirection(direction elevio.MotorDirection) error {
+	legalDirections := []elevio.MotorDirection{elevio.MDUp, elevio.MDDown}
+
+	if !slices.Contains(legalDirections, direction) {
+		return fmt.Errorf("[ElevatorService] Got an invalid direction, Received: %v", direction)
 	}
 
-	e.Behavior = action.Behavior
-	e.Dir = action.Direction
-	e.io.SetMotorDirection(e.Dir)
+	e.io.SetMotorDirection(direction)
 	return nil
 }
 
-func (e *ElevatorState) Stop() {
+func (e *ElevatorService) Stop() {
 	e.io.SetMotorDirection(elevio.MDStop)
 }
 
-// ContinueLastDir is used to continue in the last direction after a stop
-func (e *ElevatorState) ContinueLastDir() {
-	if e.Behavior == BMoving {
-		e.io.SetMotorDirection(e.Dir)
-	}
-}
-
-// OnInitBetweenFloors is called when the elevator is initialized between floors
-func (e *ElevatorState) OnInitBetweenFloors() {
-	e.io.SetMotorDirection(elevio.MDDown)
-	e.Behavior = BMoving
-	e.Dir = elevio.MDDown
-}
-
-// Return an int along getNextAction func to indicate light on/off
-// Off happends when MDStop and BIdle while other is always on.
-
-func (e *ElevatorState) SetDoor(state bool) {
+func (e *ElevatorService) SetDoor(state bool) {
 	if state {
 		// TODO: PLAY SOUND?
 	}
 	e.io.SetDoorOpenLamp(state)
 }
 
-func (e *ElevatorState) SetStopLight(state LightState) {
-	if state == LSOff {
+func (e *ElevatorService) ClearAllLights(amountOfFloors int) {
+	for floor := range amountOfFloors {
+		e.io.SetButtonLamp(elevio.Cab, floor, false)
+		e.io.SetButtonLamp(elevio.HallUp, floor, false)
+		e.io.SetButtonLamp(elevio.HallDown, floor, false)
+	}
+}
+
+func (e *ElevatorService) SetStopLight(state LightState) {
+	if state == LightOff {
 		e.io.SetStopLamp(false)
 	} else {
 		e.io.SetStopLamp(true)
 	}
 }
 
-func (e *ElevatorState) SetCallLight(buttonType elevio.ButtonType, floor int, state bool) {
+func (e *ElevatorService) SetCallLight(buttonType elevio.ButtonType, floor int, state bool) {
 	e.io.SetButtonLamp(buttonType, floor, state)
 }
 
-func (e *ElevatorState) SetCurrentFloorLight(floor int) {
+func (e *ElevatorService) SetCurrentFloorLight(floor int) {
 	e.io.SetFloorIndicator(floor)
 }
 
@@ -136,26 +123,22 @@ func (e *ElevatorState) SetCurrentFloorLight(floor int) {
 // hallCalls[floor][0] = HallDown light (matches statesync.HDDown=0),
 // hallCalls[floor][1] = HallUp light (matches statesync.HDUp=1).
 // The caller is responsible for converting statesync types to [][2]bool before calling this.
-func (e *ElevatorState) SetAllLights(numFloors int, cabCalls []bool, hallCalls [][2]bool) {
+func (e *ElevatorService) SetAllLights(numFloors int, cabCalls []bool, hallCalls [][2]bool) {
 	e.SetCabCallLights(numFloors, cabCalls)
 	e.SetHallCallLights(numFloors, hallCalls)
 }
 
 // SetCabCallLights sets lights for all active cab calls
-func (e *ElevatorState) SetCabCallLights(numFloors int, cabCalls []bool) {
+func (e *ElevatorService) SetCabCallLights(numFloors int, cabCalls []bool) {
 	for floor := 0; floor < numFloors; floor++ {
 		e.io.SetButtonLamp(elevio.Cab, floor, cabCalls[floor])
 	}
 }
 
 // SetHallCallLights sets lights for all active hall calls
-func (e *ElevatorState) SetHallCallLights(numFloors int, hallCalls [][2]bool) {
+func (e *ElevatorService) SetHallCallLights(numFloors int, hallCalls [][2]bool) {
 	for floor := 0; floor < numFloors; floor++ {
 		e.io.SetButtonLamp(elevio.HallDown, floor, hallCalls[floor][0])
 		e.io.SetButtonLamp(elevio.HallUp, floor, hallCalls[floor][1])
 	}
-}
-
-func (e *ElevatorState) String() {
-	slog.Info("[Elevator] Current ElevatorState: ", "behavior", e.Behavior, "Direction", e.Dir)
 }

@@ -38,7 +38,7 @@ func main() {
 	go elevIoDriver.PollObstructionSwitch(drvObstr)
 	go elevIoDriver.PollStopButton(drvStop)
 
-	elev := elevator.NewElevator(elevator.BIdle, elevio.MDStop, elevIoDriver)
+	elevatorService := elevator.NewElevatorService(elevIoDriver)
 
 	network, err := network.NewNetwork()
 	if err != nil {
@@ -69,12 +69,12 @@ func main() {
 	localElvevator := wv.GetRemoteElevator()
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
-		elev.OnInitBetweenFloors()
-		localElvevator.Behavior = elevator.BMoving
+		elevatorService.MoveDirection(elevio.MDDown)
 		localElvevator.Direction = elevio.MDDown
+		localElvevator.Behavior = elevator.BMoving
 	}
 
-	localElvevator.CurrentFloor = 0
+	elevatorService.ClearAllLights(localElvevator.NumFloors)
 
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
@@ -85,15 +85,14 @@ func main() {
 	// main event loop, so the elevator server matches any persisted/recovered calls.
 	{
 		time.Sleep(1500 * time.Millisecond)
-		elev.SetDoor(false)
+		elevatorService.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCallBools := make([][2]bool, wv.NumFloors)
-		cabCalls := localElvevator.CabCalls
 		for floor, pair := range hallCallStates {
 			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
 			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
 		}
-		elev.SetAllLights(wv.NumFloors, cabCalls, hallCallBools)
+		elevatorService.SetHallCallLights(wv.NumFloors, hallCallBools)
 	}
 
 	fsm := fsm.NewStateMachine(
@@ -104,7 +103,7 @@ func main() {
 		triggerAction,
 		actionChan,
 		recoveredCabCallChan,
-		&elev,
+		&elevatorService,
 		wv,
 	)
 

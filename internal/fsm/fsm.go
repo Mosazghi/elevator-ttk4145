@@ -25,7 +25,7 @@ type StateMachine struct {
 	ctrlActionChan       chan any
 	recoveredCabCallChan chan shared.Empty
 
-	elev *elevator.ElevatorState
+	elev *elevator.ElevatorService
 	wv   *statesync.Worldview
 
 	watchdog *wd.WatchDog
@@ -39,7 +39,7 @@ func NewStateMachine(
 	ctrlTriggerChan chan controller.ControllerTriggerSrc,
 	ctrlActionChan chan any,
 	recoveredCabCallChan chan shared.Empty,
-	elev *elevator.ElevatorState,
+	elev *elevator.ElevatorService,
 	wv *statesync.Worldview,
 ) *StateMachine {
 	return &StateMachine{
@@ -73,6 +73,12 @@ func (sm *StateMachine) Run() {
 			slog.Error("Watchdog timedout.. restarting")
 			reinit.Reinitialize()
 		case order := <-sm.drvButtons:
+			if localElvevator.UndefinedState() {
+				continue
+			}
+			// ISSUE: If a order is process in a valid state, then it WILL NOT change direction (move until stop logic)
+			// Solution: I need to stop after reaching a floor for the internal start, and only then
+
 			err := sm.makeNewOrder(order)
 			if err != nil {
 				slog.Error("Failed to make new order", "error", err)
@@ -101,20 +107,32 @@ func (sm *StateMachine) Run() {
 			// slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
 			switch action := action.(type) {
 			case elevator.MoveAction:
-				err := sm.elev.DoMotorAction(action)
+				err := sm.elev.MoveDirection(action.Direction)
 				if err != nil {
 					slog.Error("failed to set action", "err", err)
 				}
 
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
+
 				sm.wv.SetLocalElevator(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
 				}
 
+			case elevator.StopAction:
+				sm.elev.Stop()
+
+				localElvevator.Behavior = action.Behavior
+				err := sm.wv.SetLocalElevator(&localElvevator)
+				if err != nil {
+					slog.Error("SetLocalElevator", "err", err)
+				}
+				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+
 			case elevator.LightAction:
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+
 			case elevator.DoorAction:
 				if !action.Open {
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
@@ -132,7 +150,7 @@ func (sm *StateMachine) Run() {
 				slog.Error("[StateMachine] SetLocalElevator", "error", err)
 			}
 
-			if isObstructed && sm.elev.Behavior == elevator.BDoorOpen {
+			if isObstructed && localElvevator.Behavior == elevator.BDoorOpen {
 				sm.elev.Stop()
 			} else {
 				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
@@ -141,10 +159,10 @@ func (sm *StateMachine) Run() {
 		case shouldStop := <-sm.drvStop:
 			if shouldStop {
 				sm.elev.Stop()
-				sm.elev.SetStopLight(elevator.LSOn)
+				sm.elev.SetStopLight(elevator.LightOn)
 			} else {
-				sm.elev.SetStopLight(elevator.LSOff)
-				sm.elev.ContinueLastDir()
+				sm.elev.SetStopLight(elevator.LightOff)
+				sm.elev.MoveDirection(localElvevator.Direction)
 			}
 
 		}

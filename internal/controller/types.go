@@ -41,6 +41,10 @@ func (order *CurrentOrder) Empty() bool {
 	return order.Floor == -1
 }
 
+func (order *CurrentOrder) OppositeDirection(elevatorDirection elevio.MotorDirection) bool {
+	return order.MotorDirection != elevatorDirection
+}
+
 func (order *CurrentOrder) AtFloor(floor int) bool {
 	if floor == -1 {
 		return false
