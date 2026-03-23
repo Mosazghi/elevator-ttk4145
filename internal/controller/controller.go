@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"log/slog"
 	"math"
 	"time"
 
@@ -120,8 +119,6 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	if closestCabCall.Empty() && !closestHallCall.Empty() {
 		return closestHallCall
 	}
-
-	slog.Error("[FetchClosestOrder]", "cabCost", cabCallCost, "hallCost", hallCallCost, "localElevator direction", worldView.GetRemoteElevator().Direction)
 
 	if cabCallCost < hallCallCost {
 		return closestCabCall

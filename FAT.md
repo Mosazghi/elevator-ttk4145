@@ -52,7 +52,7 @@
 |---|---|---|---|
 | 1 $\checkmark$ | Powered on at a **known floor** (e.g. floor 2) | Start program | Immediately enters **defined state**; floor lamp shows 2; does not move unnecessarily |
 | 1 $\checkmark$ | Powered on **between floors** (undefined position) | Start program | Performs initialization travel until a floor sensor is reached; only then becomes **defined** |
-| 1 $\times$| Undefined position | Press any `Hall*` / `Cab*` during init | **Ignored** until defined state is reached (no order lights latched / no motion caused by these presses) |
+| 1 $\checkmark$| Undefined position | Press any `Hall*` / `Cab*` during init | **Ignored** until defined state is reached (no order lights latched / no motion caused by these presses) |
 
 > last one fails on purpose
 >
@@ -220,4 +220,3 @@ bugs:
 
 - performing 5.2 but pressing cab3 instead of cab2, The light on cab3 on E1 remains on indefinitely
 - pressing hall or cab after obstruction is on, the door closes after 3 sec, it should be on
-

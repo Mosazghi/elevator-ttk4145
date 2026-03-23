@@ -54,6 +54,14 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 		return winner
 	}
 
+	var oppositeDirection statesync.HallCallDir
+
+	if dir == statesync.HDUp {
+		oppositeDirection = statesync.HDDown
+	} else {
+		oppositeDirection = statesync.HDUp
+	}
+
 	for id, assigned := range result {
 		if assigned[floor][dir] {
 			ID, err := strconv.Atoi(id)
@@ -61,6 +69,11 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 				slog.Error("failed to parse elevator ID from hall request assigner output", "error", err, "id", id)
 				continue
 			}
+
+			if wv.HallCalls[floor][oppositeDirection].AssignedBy == ID {
+				continue
+			}
+
 			winner.id = ID
 			winner.floor = floor
 			break
