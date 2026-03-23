@@ -89,6 +89,10 @@ func (ctrl *Controller) Start() {
 					continue
 				}
 
+				if triggerSrc == CTSOrderUpdate {
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+				}
+
 				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == CTSFArrivalFloor {
 					ctrl.OnFloorArrival(closestOrder)
 				}
