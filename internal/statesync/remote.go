@@ -47,7 +47,7 @@ func (res *RemoteElevatorState) AllowedToServe() bool {
 	return res.Behavior == elevator.BIdle || res.Behavior == elevator.BDoorOpen
 }
 
-func (res *RemoteElevatorState) WrongHallCallDirection(hallCallDirection HallCallDir) bool {
+func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDir) bool {
 	var direction elevio.MotorDirection
 	if hallCallDirection == HDUp {
 		direction = elevio.MDUp
@@ -58,7 +58,7 @@ func (res *RemoteElevatorState) WrongHallCallDirection(hallCallDirection HallCal
 	return res.Direction != direction
 }
 
-func (res *RemoteElevatorState) WrongMotorDirection(direction elevio.MotorDirection) bool {
+func (res *RemoteElevatorState) IsOppositeMotorDirection(direction elevio.MotorDirection) bool {
 	return res.Direction != direction
 }
 

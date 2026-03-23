@@ -408,7 +408,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:      HallCallStateNone,
 						AssignedBy: -1,
-						Timestamp:  time.Now().UnixMilli(), // ← keep timestamp on None to mark "just completed"
+						Timestamp:  time.Now().UnixMilli(), // keep timestamp on None to mark "just completed"
 					}
 					wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: true}
 				}

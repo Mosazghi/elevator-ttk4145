@@ -151,8 +151,8 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 		// NOTE: ask about this
 		// Kinda the same as closestOrder.WrongDirection ?? But imo more clear
-		if localElevator.WrongMotorDirection(motorDirection) {
-			cost += shared.PenaltyWrongMotorDirection
+		if localElevator.IsOppositeMotorDirection(motorDirection) {
+			cost += shared.PenaltyOppositeMotorDirection
 		}
 
 		cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
@@ -191,12 +191,12 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 				motorDirection = localElevator.Direction
 			}
 
-			if localElevator.WrongMotorDirection(motorDirection) {
-				cost += shared.PenaltyWrongMotorDirection
+			if localElevator.IsOppositeMotorDirection(motorDirection) {
+				cost += shared.PenaltyOppositeMotorDirection
 			}
 
-			if localElevator.WrongHallCallDirection(statesync.HallCallDir(direction)) {
-				cost += shared.PenaltyWrongHallCallDirection
+			if localElevator.IsOppositeHallCallDirection(statesync.HallCallDir(direction)) {
+				cost += shared.PenaltyOppositeHallCallDirection
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
