@@ -87,12 +87,13 @@ func main() {
 		time.Sleep(1500 * time.Millisecond)
 		elevatorService.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
-		hallCallBools := make([][2]bool, wv.NumFloors)
+		hallCalls := make([][2]bool, wv.NumFloors)
+		cabCalls := localElvevator.CabCalls
 		for floor, pair := range hallCallStates {
-			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
-			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
+			hallCalls[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
+			hallCalls[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
 		}
-		elevatorService.SetHallCallLights(wv.NumFloors, hallCallBools)
+		elevatorService.SetAllLights(wv.NumFloors, cabCalls, hallCalls)
 	}
 
 	fsm := fsm.NewStateMachine(
