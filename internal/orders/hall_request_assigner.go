@@ -54,13 +54,12 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 		return winner
 	}
 
-	var oppositeDirection statesync.HallCallDir
-
-	if dir == statesync.HDUp {
-		oppositeDirection = statesync.HDDown
-	} else {
-		oppositeDirection = statesync.HDUp
-	}
+	// var oppositeDirection statesync.HallCallDir
+	// if dir == statesync.HDUp {
+	// 	oppositeDirection = statesync.HDDown
+	// } else {
+	// 	oppositeDirection = statesync.HDUp
+	// }
 
 	for id, assigned := range result {
 		if assigned[floor][dir] {
@@ -70,9 +69,9 @@ func CalculateCost(wv *statesync.Worldview, floor int, dir statesync.HallCallDir
 				continue
 			}
 
-			if wv.HallCalls[floor][oppositeDirection].AssignedBy == ID {
-				continue
-			}
+			// if wv.HallCalls[floor][oppositeDirection].AssignedBy == ID {
+			// 	continue
+			// }
 
 			winner.id = ID
 			winner.floor = floor
