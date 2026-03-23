@@ -43,17 +43,7 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) {
 
 // clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
 func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
-	elev := ctrl.wv.GetRemoteElevator()
-	floor := order.Floor
-
-	if elev.CabCalls[floor] {
-		// NOTE: Have to set cab call to false here as well if the elevator is on the same floor,
-		// and just reconnected
-		ctrl.wv.SetCabCall(floor, false)
-		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
-	}
-
-	// time.Sleep(50 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	order.Complete(ctrl.wv)
 	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 }
@@ -62,7 +52,7 @@ func (ctrl *Controller) Start() {
 	for {
 		select {
 		case order := <-ctrl.hcLightChan:
-			ctrl.actionChan <- elevator.LightAction{ButtonType: HallDirToButtonType(order.Direction), Floor: order.Floor, State: !order.Completed}
+			ctrl.actionChan <- elevator.LightAction{ButtonType: order.Type, Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
 			elev := ctrl.wv.GetRemoteElevator()
 
@@ -204,7 +194,12 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
-			orderType = HallDirToButtonType(hallCallDirection)
+
+			if hallCallDirection == statesync.HDUp {
+				orderType = elevio.HallUp
+			} else {
+				orderType = elevio.HallDown
+			}
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 

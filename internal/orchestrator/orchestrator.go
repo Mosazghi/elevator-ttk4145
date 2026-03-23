@@ -1,4 +1,4 @@
-package fsm
+package orchestrator
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/shared"
 )
 
-type StateMachine struct {
+type Orchestrator struct {
 	// Input channels
 	drvButtons chan elevio.ButtonEvent
 	drvFloors  chan int
@@ -31,7 +31,7 @@ type StateMachine struct {
 	watchdog *wd.WatchDog
 }
 
-func NewStateMachine(
+func NewOrchestrator(
 	drvButtons chan elevio.ButtonEvent,
 	drvFloors chan int,
 	drvObst chan bool,
@@ -41,8 +41,8 @@ func NewStateMachine(
 	recoveredCabCallChan chan shared.Empty,
 	elev *elevator.ElevatorService,
 	wv *statesync.Worldview,
-) *StateMachine {
-	return &StateMachine{
+) *Orchestrator {
+	return &Orchestrator{
 		drvButtons:           drvButtons,
 		drvFloors:            drvFloors,
 		drvObst:              drvObst,
@@ -52,15 +52,15 @@ func NewStateMachine(
 		recoveredCabCallChan: recoveredCabCallChan,
 		elev:                 elev,
 		wv:                   wv,
-		watchdog:             wd.New(5 * time.Second),
+		watchdog:             wd.New(WatchdogTimeout),
 	}
 }
 
-func (sm *StateMachine) Run() {
+func (sm *Orchestrator) Run() {
 	go sm.watchdog.Start()
 	defer sm.watchdog.Stop()
 
-	watchdogTicker := time.NewTicker(1 * time.Second)
+	watchdogTicker := time.NewTicker(WatchdogInterval)
 	defer watchdogTicker.Stop()
 
 	for {
@@ -90,7 +90,7 @@ func (sm *StateMachine) Run() {
 			localElvevator.CurrentFloor = floor
 			err := sm.wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+				slog.Error("SetLocalElevator", "error", err)
 			}
 			sm.elev.SetCurrentFloorLight(floor)
 			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
@@ -131,6 +131,7 @@ func (sm *StateMachine) Run() {
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 
 			case elevator.DoorAction:
+				slog.Info("Door action")
 				if !action.Open {
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
@@ -144,7 +145,7 @@ func (sm *StateMachine) Run() {
 
 			err := sm.wv.SetLocalElevator(&localElvevator)
 			if err != nil {
-				slog.Error("[StateMachine] SetLocalElevator", "error", err)
+				slog.Error("SetLocalElevator", "error", err)
 			}
 
 			if isObstructed && localElvevator.Behavior == elevator.BDoorOpen {
@@ -166,7 +167,7 @@ func (sm *StateMachine) Run() {
 	}
 }
 
-func (sm *StateMachine) makeNewOrder(order elevio.ButtonEvent) error {
+func (sm *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
 	var err error
 	switch order.Button {
 	case elevio.Cab:

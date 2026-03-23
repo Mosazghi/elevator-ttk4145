@@ -1,6 +1,7 @@
 package statesync
 
 import (
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -20,4 +21,11 @@ func BuildWvJSON(wv *Worldview) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+func HallDirToButtonType(dir HallCallDir) elevio.ButtonType {
+	if dir == HDDown {
+		return elevio.HallDown
+	}
+	return elevio.HallUp
 }
