@@ -195,11 +195,7 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 			hallCallDirection = statesync.HallCallDir(direction)
 
-			if hallCallDirection == statesync.HDUp {
-				orderType = elevio.HallUp
-			} else {
-				orderType = elevio.HallDown
-			}
+			orderType = statesync.HallDirToButtonType(hallCallDirection)
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
