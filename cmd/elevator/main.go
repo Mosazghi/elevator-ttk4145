@@ -74,6 +74,8 @@ func main() {
 		localElvevator.Behavior = elevator.BMoving
 	}
 
+	elevatorService.ClearAllLights(localElvevator.NumFloors)
+
 	err = wv.SetLocalElevator(&localElvevator)
 	if err != nil {
 		slog.Error("SetLocalElevator", "error", err)
