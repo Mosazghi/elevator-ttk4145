@@ -7,6 +7,10 @@ type MoveAction struct {
 	Direction elevio.MotorDirection
 }
 
+type StopAction struct {
+	Behavior Behavior
+}
+
 type (
 	LightAction struct {
 		ButtonType elevio.ButtonType

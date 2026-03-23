@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestElevator(t *testing.T) ElevatorState {
+func setupTestElevator(t *testing.T) ElevatorService {
 	t.Helper()
 	elevIoDriver := elevio.NewElevIoFakeDriver(4)
 	return NewElevator(BIdle, elevio.MDUp, elevIoDriver)

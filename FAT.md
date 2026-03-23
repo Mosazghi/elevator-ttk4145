@@ -1,7 +1,9 @@
 # FATTY ACIDS
+
 ![morbo](wheelchair-scooter.gif "FATTY")
 
 **Scope**
+
 - Floors: **m = 4** (1..4)
 - Elevators: **n = 1..3**
 - Must pass with **0% packet loss** (normal) and remain functional with **up to 30% packet loss** (degraded).
@@ -9,6 +11,7 @@
 - The English spec is treated as **multi-elevator (distributed)** behavior.
 
 **Notation**
+
 - Hall calls: `HallFUp`, `HallFDown` (F ∈ {1..4}, only valid directions at edges)
 - Cab calls: `CabF` (local to a single elevator workspace)
 - “Door open” is indicated by **door lamp ON**
@@ -17,6 +20,7 @@
 - “Defined state” = controller knows current floor (floor indicator correct; not “between floors unknown”)
 
 **Packet loss setup (example)**
+
 - Run the system with `packetloss.sh` / `packetloss.d` set to:
   - **0%** (baseline), then **10%**, **20%**, **30%**
 - For any test marked “(PL)”, run it at **each** loss level: 0/10/20/30.
@@ -46,10 +50,12 @@
 
 | Elevator | Initial condition | Action | Expected |
 |---|---|---|---|
-| 1 | Powered on at a **known floor** (e.g. floor 2) | Start program | Immediately enters **defined state**; floor lamp shows 2; does not move unnecessarily |
-| 1 | Powered on **between floors** (undefined position) | Start program | Performs initialization travel until a floor sensor is reached; only then becomes **defined** |
-| 1 | Undefined position | Press any `Hall*` / `Cab*` during init | **Ignored** until defined state is reached (no order lights latched / no motion caused by these presses) |
+| 1 $\checkmark$ | Powered on at a **known floor** (e.g. floor 2) | Start program | Immediately enters **defined state**; floor lamp shows 2; does not move unnecessarily |
+| 1 $\checkmark$ | Powered on **between floors** (undefined position) | Start program | Performs initialization travel until a floor sensor is reached; only then becomes **defined** |
+| 1 $\times$| Undefined position | Press any `Hall*` / `Cab*` during init | **Ignored** until defined state is reached (no order lights latched / no motion caused by these presses) |
+
 > last one fails on purpose
+>
 ## 1.2 Handling of orders (basic)
 
 | Elevator | Initial condition | Action | Expected |
@@ -184,13 +190,14 @@
 ---
 
 # 5. Direction-specific hall clearing & “announce direction change” (distributed spec)
+>
 > fails both of these tests
+>
 ## 5.1 Passing through (no direction change)
 
 | Elevators | Initial condition | Action | Expected |
 |---|---|---|---|
 | 1, 2, 3 | E1 at floor 1. E2 and E3 at floor 4. No hall or cab calls are active. | 1. Inside E1, press `Cab3` (or any floor above 2). Confirm that E1 starts moving upward toward floor 3.<br>2. While E1 is between floors 1 and 2, press `Hall2Up` and `Hall2Down`. | **At the moment E1 arrives at floor 2:**<br>• E1 stops at floor 2 and opens its door.<br>• Door remains open for the normal door-open duration only (no extra delay).<br>• `Hall2Up` light turns **OFF** on all workspaces at the time the door opens.<br>• `Hall2Down` light remains **ON** on all workspaces while the door is open.<br>• Door closes after the normal door-open duration.<br>• E1 continues moving upward toward floor 3 after leaving floor 2.<br><br>**After E1 departs:**<br>• `Hall2Down` remains active and visible in the system state.<br>• `Hall2Down` is cleared only when an elevator later arrives at floor 2 while moving downward. |
-
 
 ---
 
@@ -200,14 +207,17 @@
 |---|---|---|---|
 | 1, 2, 3 | E1 at floor 1. E2 and E3 at floor 4. No hall or cab calls are active. | 1. Inside E1, press `Cab2`.<br>2. While E1 is between floors 1 and 2, press `Hall2Up` and `Hall2Down`.<br>3. While E1 is stopped at floor 2 with its door open, press `Hall1Down` (or any hall-down request below floor 2). | **At the moment E1 arrives at floor 2:**<br>• E1 stops at floor 2 and opens its door.<br>• `Hall2Up` light turns **OFF** on all workspaces when the door opens.<br>• `Hall2Down` light remains **ON** on all workspaces.<br><br>**During the stop at floor 2:**<br>• Door remains open for the normal door-open duration **plus an additional 3 seconds** (continuous open, no close/reopen).<br><br>**After the extra 3 seconds:**<br>• Door closes.<br>• E1 departs **downward** toward floor 1.<br><br>**After E1 departs:**<br>• `Hall1Up` remains active and visible in the system state.<br>• `Hall2Down` is cleared only when an elevator later arrives at floor 2 while moving downward. <br>• Note, an elevator on 4th floor might go down, but thats not a bug, hall assigner wants that|
 
-
 ---
 
-tests to add 
+tests to add
+
 - obstruction on, then press hall, door should stay on
 - obstruction on, then press cab, door should stay on
 - 2.2.2 vague af. should be between floor x and y isntead of on floor 2 going up.
-- 
+-
+
 bugs:
+
 - performing 5.2 but pressing cab3 instead of cab2, The light on cab3 on E1 remains on indefinitely
 - pressing hall or cab after obstruction is on, the door closes after 3 sec, it should be on
+

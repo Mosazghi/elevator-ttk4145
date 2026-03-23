@@ -8,6 +8,8 @@ import (
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 )
 
+const UndefinedFloor = -1
+
 type RemoteElevatorState struct {
 	ID           int                   `json:"id"`
 	CurrentFloor int                   `json:"current_floor"`
@@ -36,15 +38,30 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 	}
 }
 
-func (res RemoteElevatorState) String() string {
+func (res *RemoteElevatorState) String() string {
 	return fmt.Sprintf("RemoteElevatorState{ID: %d, CurrentFloor: %d, Direction: %v, DoorState: %v, CabCalls: %v, Behavior: %v, LastSeenAt: %v}",
 		res.ID, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
 }
 
-func (res RemoteElevatorState) AllowedToServe() bool {
+func (res *RemoteElevatorState) AllowedToServe() bool {
 	return res.Behavior == elevator.BIdle || res.Behavior == elevator.BDoorOpen
 }
 
-func (res RemoteElevatorState) WrongDirection(floor int) bool {
-	return (res.Direction == elevio.MDDown && floor > res.CurrentFloor) || (res.Direction == elevio.MDUp && floor < res.CurrentFloor)
+func (res *RemoteElevatorState) WrongHallCallDirection(hallCallDirection HallCallDir) bool {
+	var direction elevio.MotorDirection
+	if hallCallDirection == HDUp {
+		direction = elevio.MDUp
+	} else {
+		direction = elevio.MDDown
+	}
+
+	return res.Direction != direction
+}
+
+func (res *RemoteElevatorState) WrongMotorDirection(direction elevio.MotorDirection) bool {
+	return res.Direction != direction
+}
+
+func (res *RemoteElevatorState) UndefinedState() bool {
+	return res.CurrentFloor == UndefinedFloor && res.Direction != elevio.MDStop
 }
