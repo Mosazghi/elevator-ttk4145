@@ -39,7 +39,6 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) {
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
 	ctrl.clearAllOrdersAtFloor(order)
-	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 }
 
 // clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
@@ -54,8 +53,9 @@ func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	// time.Sleep(50 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	order.Complete(ctrl.wv)
+	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 }
 
 func (ctrl *Controller) Start() {
