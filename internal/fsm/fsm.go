@@ -76,12 +76,10 @@ func (sm *StateMachine) Run() {
 			if localElvevator.UndefinedState() {
 				continue
 			}
-			// ISSUE: If a order is process in a valid state, then it WILL NOT change direction (move until stop logic)
-			// Solution: I need to stop after reaching a floor for the internal start, and only then
-
 			err := sm.makeNewOrder(order)
 			if err != nil {
 				slog.Error("Failed to make new order", "error", err)
+				continue
 			}
 
 			if order.Button == elevio.Cab {
@@ -104,7 +102,6 @@ func (sm *StateMachine) Run() {
 			sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 
 		case action := <-sm.ctrlActionChan:
-			// slog.Debug("[StateMachine] Received action", "type", fmt.Sprintf("%T", action), "value", action)
 			switch action := action.(type) {
 			case elevator.MoveAction:
 				err := sm.elev.MoveDirection(action.Direction)

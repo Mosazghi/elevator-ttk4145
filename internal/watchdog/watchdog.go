@@ -67,5 +67,8 @@ func (wd *WatchDog) Stop() {
 
 // Ping resets the watchdog timer, postponing the timeout
 func (wd *WatchDog) Ping() {
-	wd.pingChan <- Empty{}
+	select {
+	case wd.pingChan <- Empty{}:
+	default:
+	}
 }

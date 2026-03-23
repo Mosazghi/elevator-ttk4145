@@ -265,6 +265,12 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 		}
 	}
 
+	localElevator := wv.ElevatorStates[wv.LocalID]
+	if aliveCount <= 1 && localElevator.IsObstructed {
+		wv.mu.RUnlock()
+		return fmt.Errorf("cannot place new hall call when alone on network and local elevator is obstructed")
+	}
+
 	var targetState HallCallState
 
 	wv.mu.RUnlock()
