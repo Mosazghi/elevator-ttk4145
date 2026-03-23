@@ -53,7 +53,7 @@ func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
 		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
 	}
 
-	// time.Sleep(50 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
+	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 	order.Complete(ctrl.wv)
 	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 }
