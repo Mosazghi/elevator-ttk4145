@@ -162,7 +162,7 @@ func (sm *StateMachine) Run() {
 				sm.elev.SetStopLight(elevator.LightOn)
 			} else {
 				sm.elev.SetStopLight(elevator.LightOff)
-				sm.elev.MoveDirection(localElvevator.Direction)
+				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 			}
 
 		}
