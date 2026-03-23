@@ -86,6 +86,7 @@ func main() {
 		elevatorService.SetDoor(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCallBools := make([][2]bool, wv.NumFloors)
+		cabCalls := localElvevator.CabCalls
 		for floor, pair := range hallCallStates {
 			hallCallBools[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
 			hallCallBools[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
