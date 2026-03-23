@@ -614,6 +614,31 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	assert.True(t, exists, "should continue operating after network error")
 }
 
+func TestNewHallCall_WhenRecentlyDisconnected_ShouldReturnError(t *testing.T) {
+	wv := NewTestWorldView(t, 1, 4)
+
+	wv.mu.Lock()
+	wv.lastNetworkError = time.Now()
+	wv.mu.Unlock()
+
+	err := wv.NewHallCall(1, HDUp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network is disconnected")
+	assert.Equal(t, HallCallStateNone, wv.HallCalls[1][HDUp].State)
+}
+
+func TestNewHallCall_WhenNoRecentDisconnection_ShouldSucceed(t *testing.T) {
+	wv := NewTestWorldView(t, 1, 4)
+
+	wv.mu.Lock()
+	wv.lastNetworkError = time.Now().Add(-100 * time.Millisecond)
+	wv.mu.Unlock()
+
+	err := wv.NewHallCall(1, HDUp)
+	require.NoError(t, err)
+	assert.Equal(t, HallCallStateConfirmed, wv.HallCalls[1][HDUp].State)
+}
+
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged
 func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	wv1 := NewTestWorldView(t, 1, 4)

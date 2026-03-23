@@ -22,6 +22,7 @@ type Worldview struct {
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Empty
 	hasFetchedCabCalls   bool
+	lastNetworkError     time.Time
 	mu                   *sync.RWMutex
 }
 
@@ -35,6 +36,7 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 		orderUpdateChan:      orderUpdateChan,
 		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
+		lastNetworkError:     time.Time{},
 		mu:                   &sync.RWMutex{},
 	}
 
@@ -88,14 +90,17 @@ func (wv Worldview) String() string {
 }
 
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
-func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, errChan <-chan error) {
+func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
 	defer ticker.Stop()
 	localID := wv.LocalID
+
 	for {
 		select {
-		case err := <-errChan:
-			slog.Error("Network error", "error", err)
+		case <-netErrChan:
+			wv.mu.Lock()
+			wv.lastNetworkError = time.Now()
+			wv.mu.Unlock()
 		case peerData := <-rxChan:
 			message := Message{}
 			err := msgpack.Unmarshal(peerData, &message)
@@ -211,6 +216,12 @@ func (wv *Worldview) releaseAnyOrders() {
 	}
 }
 
+// isDisconnected returns true if the local node is considered disconnected from the network,
+// false otherwise
+func (wv *Worldview) isDisconnected() bool {
+	return time.Since(wv.lastNetworkError) <= time.Duration(DisconnectedTimeout)
+}
+
 // setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mu.Lock()
@@ -258,6 +269,11 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 	wv.mu.RLock()
+
+	if wv.isDisconnected() {
+		wv.mu.RUnlock()
+		return fmt.Errorf("cannot place new hall call when network is disconnected")
+	}
 
 	aliveCount := 0
 	for _, state := range wv.ElevatorStates {

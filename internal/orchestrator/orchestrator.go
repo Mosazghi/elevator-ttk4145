@@ -131,7 +131,6 @@ func (sm *Orchestrator) Run() {
 				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
 
 			case elevator.DoorAction:
-				slog.Info("Door action")
 				if !action.Open {
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
@@ -179,8 +178,5 @@ func (sm *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
 		err = sm.wv.NewHallCall(order.Floor, statesync.HDDown)
 	}
 
-	if err != nil {
-		slog.Error("failed to set new cab/hall call", "err", err)
-	}
 	return err
 }
