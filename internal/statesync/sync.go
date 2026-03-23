@@ -428,7 +428,9 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 			dir := HallCallDir(dir)
 			switch otherHallCall.State {
 			case HallCallStateNone:
-				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
+				// We accept even if our is Confirmed because 'other' might have completed from the
+				// same floor as the order floor, thus bypassing Processing sequence
+				if (ourHallCall.State == HallCallStateProcessing || ourHallCall.State == HallCallStateConfirmed) && ourHallCall.AssignedBy == other.LocalID {
 					slog.Info("order completed", "by", ourHallCall.AssignedBy, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{

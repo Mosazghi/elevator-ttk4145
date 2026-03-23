@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"log/slog"
 	"math"
 	"time"
 
@@ -31,21 +32,25 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 	}
 }
 
-func (ctrl *Controller) OnFloorArrival(order CurrentOrder) {
+func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
-		return
+		return nil
 	}
 	ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BDoorOpen}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
-	ctrl.clearAllOrdersAtFloor(order)
+	return ctrl.clearOrderAtFloor(order)
 }
 
-// clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
-func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
-	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
-	order.Complete(ctrl.wv)
+// clearOrderAtFloor completes all cab calls and hall calls at the given floor
+func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
+	err := order.Complete(ctrl.wv)
+	if err != nil {
+		return err
+	}
+
 	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+	return nil
 }
 
 func (ctrl *Controller) Start() {
@@ -71,7 +76,10 @@ func (ctrl *Controller) Start() {
 
 			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
-					ctrl.clearAllOrdersAtFloor(closestOrder)
+					err := ctrl.clearOrderAtFloor(closestOrder)
+					if err != nil {
+						slog.Error("error clearing at floor", "err", err)
+					}
 				}
 			case elevator.BMoving:
 				if closestOrder.Empty() || closestOrder.OppositeDirection(elev.Direction) {

@@ -543,7 +543,7 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	case <-ticker.C:
 		closesOrder := FetchClosestOrder(ctrl.wv)
 
-		ctrl.clearAllOrdersAtFloor(closesOrder)
+		ctrl.clearOrderAtFloor(closesOrder)
 		time.Sleep(600 * time.Millisecond) // wait past the 500 ms sleep inside clearAllOrdersAtFloor
 
 		remoteElev := wv.GetRemoteElevator()
