@@ -159,9 +159,9 @@ func (sm *StateMachine) Run() {
 		case shouldStop := <-sm.drvStop:
 			if shouldStop {
 				sm.elev.Stop()
-				sm.elev.SetStopLight(elevator.LSOn)
+				sm.elev.SetStopLight(elevator.LightOn)
 			} else {
-				sm.elev.SetStopLight(elevator.LSOff)
+				sm.elev.SetStopLight(elevator.LightOff)
 				sm.elev.MoveDirection(localElvevator.Direction)
 			}
 

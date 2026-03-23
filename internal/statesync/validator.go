@@ -51,7 +51,7 @@ func ValidateStateRemote(res *RemoteElevatorState) error {
 	}
 
 	isMoving := res.Behavior == elevator.BMoving
-	isDoorOpen := res.DoorState == elevator.DSOpen
+	isDoorOpen := res.DoorState == elevator.DoorOpen
 
 	if isMoving && isDoorOpen {
 		return fmt.Errorf("cannot move with door open")

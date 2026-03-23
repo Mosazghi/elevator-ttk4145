@@ -29,7 +29,7 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		ID:           id,
 		CurrentFloor: -1,
 		Direction:    elevio.MDStop,
-		DoorState:    elevator.DSClosed,
+		DoorState:    elevator.DoorClosed,
 		CabCalls:     make([]bool, numFloors),
 		Behavior:     elevator.BIdle,
 		LastSeenAt:   time.Now(),

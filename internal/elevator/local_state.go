@@ -21,13 +21,13 @@ const (
 )
 
 const (
-	DSClosed DoorState = iota
-	DSOpen
+	DoorClosed DoorState = iota
+	DoorOpen
 )
 
 const (
-	LSOff LightState = iota
-	LSOn
+	LightOff LightState = iota
+	LightOn
 )
 
 func (b Behavior) String() string {
@@ -45,9 +45,9 @@ func (b Behavior) String() string {
 
 func (d DoorState) String() string {
 	switch d {
-	case DSClosed:
+	case DoorClosed:
 		return "closed"
-	case DSOpen:
+	case DoorOpen:
 		return "open"
 	}
 	return "unknown"
@@ -55,9 +55,9 @@ func (d DoorState) String() string {
 
 func (l LightState) String() string {
 	switch l {
-	case LSOff:
+	case LightOff:
 		return "off"
-	case LSOn:
+	case LightOn:
 		return "on"
 	}
 	return "unknown"
@@ -104,7 +104,7 @@ func (e *ElevatorService) ClearAllLights(amountOfFloors int) {
 }
 
 func (e *ElevatorService) SetStopLight(state LightState) {
-	if state == LSOff {
+	if state == LightOff {
 		e.io.SetStopLamp(false)
 	} else {
 		e.io.SetStopLamp(true)
