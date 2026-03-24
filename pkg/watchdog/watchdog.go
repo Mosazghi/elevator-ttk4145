@@ -1,12 +1,14 @@
+// Package watchdog provides a simple timer mechanism to detect and handle timeouts in various components of the elevator system.
 package watchdog
 
 import (
 	"log/slog"
 	"time"
 
-	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 )
 
+// WatchDog implements a simple watchdog timer.
 type WatchDog struct {
 	pingChan chan Empty
 	stopChan chan Empty
@@ -15,6 +17,7 @@ type WatchDog struct {
 	duration time.Duration
 }
 
+// New creates a watchdog with the given timeout duration.
 func New(duration time.Duration) *WatchDog {
 	return &WatchDog{
 		pingChan: make(chan Empty, 1),
@@ -25,7 +28,7 @@ func New(duration time.Duration) *WatchDog {
 	}
 }
 
-// Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
+// Start runs the timer loop until timeout or explicit stop.
 func (wd *WatchDog) Start() {
 	timer := time.NewTimer(wd.duration)
 	defer timer.Stop()
@@ -34,7 +37,7 @@ func (wd *WatchDog) Start() {
 	for {
 		select {
 		case <-timer.C:
-			slog.Error("[Watchdog] Timed out")
+			slog.Warn("timed out")
 			wd.Timeout <- Empty{}
 			return
 
@@ -45,13 +48,13 @@ func (wd *WatchDog) Start() {
 			timer.Reset(wd.duration)
 
 		case <-wd.stopChan:
-			slog.Info("[Watchdog] Timer Stopped")
+			slog.Info("timer Stopped")
 			return
 		}
 	}
 }
 
-// Stop stops the watchdog timer
+// Stop terminates the timer loop and waits for shutdown completion.
 func (wd *WatchDog) Stop() {
 	select {
 	case <-wd.done:
@@ -62,7 +65,7 @@ func (wd *WatchDog) Stop() {
 	}
 }
 
-// Ping resets the watchdog timer, postponing the timeout
+// Ping requests a timer reset; extra pings are coalesced.
 func (wd *WatchDog) Ping() {
 	select {
 	case wd.pingChan <- Empty{}:

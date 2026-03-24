@@ -7,9 +7,8 @@ import (
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	"github.com/Mosazghi/elevator-ttk4145/shared"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
 )
 
 type Controller struct {
@@ -154,7 +153,7 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 		// NOTE: ask about this
 		// Kinda the same as closestOrder.WrongDirection ?? But imo more clear
 		if localElevator.IsOppositeMotorDirection(motorDirection) {
-			cost += shared.PenaltyOppositeMotorDirection
+			cost += PenaltyOppositeMotorDirection
 		}
 
 		cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
@@ -194,11 +193,11 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 			}
 
 			if localElevator.IsOppositeMotorDirection(motorDirection) {
-				cost += shared.PenaltyOppositeMotorDirection
+				cost += PenaltyOppositeMotorDirection
 			}
 
 			if localElevator.IsOppositeHallCallDirection(statesync.HallCallDir(direction)) {
-				cost += shared.PenaltyOppositeHallCallDirection
+				cost += PenaltyOppositeHallCallDirection
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)

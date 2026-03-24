@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
-	. "github.com/Mosazghi/elevator-ttk4145/shared"
-	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/checksum"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/vmihailenco/msgpack/v5"
 )
 

@@ -1,6 +1,6 @@
 package statesync
 
-import elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+import elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
 
 type (
 	HallCallState int

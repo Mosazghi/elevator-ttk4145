@@ -7,11 +7,11 @@ import (
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
-	"github.com/Mosazghi/elevator-ttk4145/internal/reinit"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	wd "github.com/Mosazghi/elevator-ttk4145/internal/watchdog"
-	"github.com/Mosazghi/elevator-ttk4145/shared"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/reinit"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/watchdog"
 )
 
 type Orchestrator struct {
@@ -28,7 +28,7 @@ type Orchestrator struct {
 	elev *elevator.ElevatorService
 	wv   *statesync.Worldview
 
-	watchdog *wd.WatchDog
+	watchdog *watchdog.WatchDog
 }
 
 func NewOrchestrator(
@@ -52,7 +52,7 @@ func NewOrchestrator(
 		recoveredCabCallChan: recoveredCabCallChan,
 		elev:                 elev,
 		wv:                   wv,
-		watchdog:             wd.New(WatchdogTimeout),
+		watchdog:             watchdog.New(WatchdogTimeout),
 	}
 }
 
