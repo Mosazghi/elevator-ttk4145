@@ -617,9 +617,9 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 func TestNewHallCall_WhenRecentlyDisconnected_ShouldReturnError(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	wv.lastNetworkError = time.Now()
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 
 	err := wv.NewHallCall(1, HDUp)
 	require.Error(t, err)
@@ -630,9 +630,9 @@ func TestNewHallCall_WhenRecentlyDisconnected_ShouldReturnError(t *testing.T) {
 func TestNewHallCall_WhenNoRecentDisconnection_ShouldSucceed(t *testing.T) {
 	wv := NewTestWorldView(t, 1, 4)
 
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	wv.lastNetworkError = time.Now().Add(-100 * time.Millisecond)
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 
 	err := wv.NewHallCall(1, HDUp)
 	require.NoError(t, err)

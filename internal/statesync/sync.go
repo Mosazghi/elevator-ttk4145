@@ -98,9 +98,9 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 	for {
 		select {
 		case <-netErrChan:
-			wv.mu.Lock()
+			wv.mutex.Lock()
 			wv.lastNetworkError = time.Now()
-			wv.mu.Unlock()
+			wv.mutex.Unlock()
 		case peerData := <-rxChan:
 			message := Message{}
 			err := msgpack.Unmarshal(peerData, &message)
@@ -275,7 +275,7 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 	wv.mutex.RLock()
 
 	if wv.isDisconnected() {
-		wv.mu.RUnlock()
+		wv.mutex.RUnlock()
 		return fmt.Errorf("cannot place new hall call when network is disconnected")
 	}
 
