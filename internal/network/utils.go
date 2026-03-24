@@ -10,8 +10,8 @@ import (
 
 var localIP string
 
-// LocalIP reutrns the machine's local IP address
-func LocalIP() (string, error) {
+// GetLocalIP returns the machine's local IP address, cached after first lookup.
+func GetLocalIP() (string, error) {
 	if localIP == "" {
 		conn, err := net.DialTCP("tcp4", nil, &net.TCPAddr{IP: []byte{8, 8, 8, 8}, Port: 53})
 		if err != nil {
@@ -23,8 +23,8 @@ func LocalIP() (string, error) {
 	return localIP, nil
 }
 
-// CreateSocket creates a UDP socket with SO_REUSEADDR, SO_BROADCAST enabled.
-// Allows multiple programs to bind to the same port.
+// CreateSocket creates a UDP socket with SO_REUSEADDR and SO_BROADCAST,
+// allowing multiple programs to bind to the same port.
 func CreateSocket(port int) (net.PacketConn, error) {
 	s, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 	if err != nil {
