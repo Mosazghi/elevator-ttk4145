@@ -1,4 +1,4 @@
-package orders
+package order_handler
 
 import (
 	"testing"
@@ -32,9 +32,10 @@ func TestCalculateCost_SingleElevator(t *testing.T) {
 	err = wv.ProcessHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
 
-	winner := CalculateCost(&wv, 2, statesync.HDUp)
+	winnerID, err := CalculateCost(&wv, 2, statesync.HDUp)
+	require.NoError(t, err)
 
-	assert.Equal(t, 1, winner.id)
+	assert.Equal(t, 1, winnerID)
 }
 
 // TestCalculateCost_CloserElevatorWins – elevator on floor 3 beats one on floor 0 for a call on floor 3.
@@ -51,9 +52,10 @@ func TestCalculateCost_CloserElevatorWins(t *testing.T) {
 	wv.HallCalls[3][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(3, statesync.HDUp)
 	require.NoError(t, err)
-	winner := CalculateCost(&wv, 3, statesync.HDUp)
+	winnerID, _ := CalculateCost(&wv, 3, statesync.HDUp)
+	require.NoError(t, err)
 
-	assert.Equal(t, 2, winner.id, "closer elevator should win")
+	assert.Equal(t, 2, winnerID, "closer elevator should win")
 }
 
 // TestCalculateCost_ObstructedPenalty – obstructed elevator loses to an unobstructed one at equal distance.
@@ -72,9 +74,10 @@ func TestCalculateCost_ObstructedPenalty(t *testing.T) {
 	wv.HallCalls[2][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
-	winner := CalculateCost(&wv, 2, statesync.HDUp)
+	winnerID, err := CalculateCost(&wv, 2, statesync.HDUp)
+	require.NoError(t, err)
 
-	assert.Equal(t, 2, winner.id, "non-obstructed elevator should win")
+	assert.Equal(t, 2, winnerID, "non-obstructed elevator should win")
 }
 
 // TestCalculateCost_WrongDirectionPenalty – elevator going down is penalised for an Up call.
@@ -93,7 +96,8 @@ func TestCalculateCost_WrongDirectionPenalty(t *testing.T) {
 	wv.HallCalls[2][statesync.HDUp].State = statesync.HallCallStateConfirmed // Simulate assignment to trigger cost calculation
 	err = wv.ProcessHallCall(2, statesync.HDUp)
 	require.NoError(t, err)
-	winner := CalculateCost(&wv, 2, statesync.HDUp)
+	winnerID, err := CalculateCost(&wv, 2, statesync.HDUp)
+	require.NoError(t, err)
 
-	assert.Equal(t, 2, winner.id, "idle elevator should beat one going the wrong way")
+	assert.Equal(t, 2, winnerID, "idle elevator should beat one going the wrong way")
 }
