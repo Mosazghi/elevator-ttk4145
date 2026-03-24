@@ -48,7 +48,7 @@ func NewOrder() CurrentOrder {
 	return CurrentOrder{
 		Floor:             -1,
 		Type:              elevio.Cab,
-		MotorDirection:    elevio.MDStop,
+		MotorDirection:    elevio.MotorDirectionStop,
 		HallCallDirection: statesync.HallCallDirectionDown,
 	}
 }

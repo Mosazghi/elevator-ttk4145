@@ -24,7 +24,7 @@ func buildWV(t *testing.T, localID int, elevators map[int]*statesync.RemoteEleva
 func TestCalculateCost_SingleElevator(t *testing.T) {
 	elev := statesync.NewRemoteElevatorState(1, numFloors)
 	elev.CurrentFloor = 0
-	elev.Direction = elevio.MDUp
+	elev.Direction = elevio.MotorDirectionUp
 
 	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: elev})
 	err := wv.NewHallCall(2, statesync.HallCallDirectionUp)
@@ -84,11 +84,11 @@ func TestCalculateCost_ObstructedPenalty(t *testing.T) {
 func TestCalculateCost_WrongDirectionPenalty(t *testing.T) {
 	goingDown := statesync.NewRemoteElevatorState(1, numFloors)
 	goingDown.CurrentFloor = 2
-	goingDown.Direction = elevio.MDDown
+	goingDown.Direction = elevio.MotorDirectionDown
 
 	idle := statesync.NewRemoteElevatorState(2, numFloors)
 	idle.CurrentFloor = 2
-	idle.Direction = elevio.MDStop
+	idle.Direction = elevio.MotorDirectionStop
 
 	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: goingDown, 2: idle})
 	err := wv.NewHallCall(2, statesync.HallCallDirectionUp)

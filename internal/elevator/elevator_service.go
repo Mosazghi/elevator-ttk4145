@@ -76,7 +76,7 @@ func NewElevatorService(driver elevio.ElevatorDriver) ElevatorService {
 
 // SetMoveDirection sets the motor direction to equal the intended direction of movement.
 func (es *ElevatorService) SetMoveDirection(direction elevio.MotorDirection) error {
-	legalDirections := []elevio.MotorDirection{elevio.MDUp, elevio.MDDown}
+	legalDirections := []elevio.MotorDirection{elevio.MotorDirectionUp, elevio.MotorDirectionDown}
 
 	if !slices.Contains(legalDirections, direction) {
 		return fmt.Errorf("[ElevatorService] Got an invalid direction, Received: %v", direction)
@@ -88,7 +88,7 @@ func (es *ElevatorService) SetMoveDirection(direction elevio.MotorDirection) err
 
 // StopMotor disables the motor.
 func (es *ElevatorService) StopMotor() {
-	es.io.SetMotorDirection(elevio.MDStop)
+	es.io.SetMotorDirection(elevio.MotorDirectionStop)
 }
 
 // SetDoorState sets the door state.

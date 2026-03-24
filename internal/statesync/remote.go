@@ -30,7 +30,7 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 	return &RemoteElevatorState{
 		ID:           id,
 		CurrentFloor: -1,
-		Direction:    elevio.MDStop,
+		Direction:    elevio.MotorDirectionStop,
 		DoorState:    elevator.DoorClosed,
 		CabCalls:     make([]bool, numFloors),
 		Behavior:     elevator.BIdle,
@@ -56,9 +56,9 @@ func (res *RemoteElevatorState) AllowedToServe() bool {
 func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDirection) bool {
 	var direction elevio.MotorDirection
 	if hallCallDirection == HallCallDirectionUp {
-		direction = elevio.MDUp
+		direction = elevio.MotorDirectionUp
 	} else {
-		direction = elevio.MDDown
+		direction = elevio.MotorDirectionDown
 	}
 
 	return res.Direction != direction
@@ -71,5 +71,5 @@ func (res *RemoteElevatorState) IsOppositeMotorDirection(direction elevio.MotorD
 
 // UndefinedState checks if the elevator is out of bounds.
 func (res *RemoteElevatorState) UndefinedState() bool {
-	return res.CurrentFloor == UndefinedFloor && res.Direction != elevio.MDStop
+	return res.CurrentFloor == UndefinedFloor && res.Direction != elevio.MotorDirectionStop
 }

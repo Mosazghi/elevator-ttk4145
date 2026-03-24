@@ -161,9 +161,9 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 		}
 
 		if localElevator.CurrentFloor < floor {
-			motorDirection = elevio.MDUp
+			motorDirection = elevio.MotorDirectionUp
 		} else {
-			motorDirection = elevio.MDDown
+			motorDirection = elevio.MotorDirectionDown
 		}
 
 		if localElevator.CurrentFloor == floor {
@@ -205,9 +205,9 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 			}
 
 			if localElevator.CurrentFloor < floor {
-				motorDirection = elevio.MDUp
+				motorDirection = elevio.MotorDirectionUp
 			} else {
-				motorDirection = elevio.MDDown
+				motorDirection = elevio.MotorDirectionDown
 			}
 
 			if localElevator.CurrentFloor == floor {

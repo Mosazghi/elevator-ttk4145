@@ -149,7 +149,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	wv2.ElevatorStates[wv2ID] = &RemoteElevatorState{
 		ID:           wv2ID,
 		CurrentFloor: 2,
-		Direction:    elevio.MDUp,
+		Direction:    elevio.MotorDirectionUp,
 		DoorState:    elevator.DoorClosed,
 		CabCalls:     []bool{false, false, false, true},
 		Behavior:     elevator.BMoving,
@@ -164,7 +164,7 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 	// Verify floor transition fields were merged correctly
 	assert.Contains(t, wv1.ElevatorStates, wv2ID, "elevator should be in wv1")
 	assert.Equal(t, 2, wv1.ElevatorStates[wv2ID].CurrentFloor, "current floor should match")
-	assert.Equal(t, elevio.MDUp, wv1.ElevatorStates[wv2ID].Direction, "direction should match")
+	assert.Equal(t, elevio.MotorDirectionUp, wv1.ElevatorStates[wv2ID].Direction, "direction should match")
 	assert.True(t, wv1.ElevatorStates[wv2ID].CabCalls[3], "cab call for floor 3 should be set")
 }
 
@@ -289,7 +289,7 @@ func TestSetLocalElevator(t *testing.T) {
 	invalidState := RemoteElevatorState{
 		ID:           1,
 		CurrentFloor: 2,
-		Direction:    elevio.MDUp,
+		Direction:    elevio.MotorDirectionUp,
 		DoorState:    elevator.DoorOpen,
 		CabCalls:     []bool{false, false, false, false},
 		Behavior:     elevator.BMoving,

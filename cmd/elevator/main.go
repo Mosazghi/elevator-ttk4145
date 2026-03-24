@@ -69,8 +69,8 @@ func main() {
 	localElvevator := wv.GetRemoteElevatorStates()
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
-		elevatorService.SetMoveDirection(elevio.MDDown)
-		localElvevator.Direction = elevio.MDDown
+		elevatorService.SetMoveDirection(elevio.MotorDirectionDown)
+		localElvevator.Direction = elevio.MotorDirectionDown
 		localElvevator.Behavior = elevator.BMoving
 	}
 

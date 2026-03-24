@@ -8,9 +8,9 @@ type (
 )
 
 const (
-	MDUp   MotorDirection = 1
-	MDDown MotorDirection = -1
-	MDStop MotorDirection = 0
+	MotorDirectionUp   MotorDirection = 1
+	MotorDirectionDown MotorDirection = -1
+	MotorDirectionStop MotorDirection = 0
 
 	HallUp   ButtonType = 0
 	HallDown ButtonType = 1
@@ -18,13 +18,13 @@ const (
 )
 
 // String returns a readable direction name.
-func (md MotorDirection) String() string {
-	switch md {
-	case MDUp:
+func (motorDirection MotorDirection) String() string {
+	switch motorDirection {
+	case MotorDirectionUp:
 		return "up"
-	case MDDown:
+	case MotorDirectionDown:
 		return "down"
-	case MDStop:
+	case MotorDirectionStop:
 		return "stop"
 	default:
 		return "Unknown"
