@@ -42,8 +42,8 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 	}
 
 	for i := range wv.HallCalls {
-		wv.HallCalls[i][HDDown].AssignedBy = UnassignedID
-		wv.HallCalls[i][HDUp].AssignedBy = UnassignedID
+		wv.HallCalls[i][HallCallDirectionDown].AssignedBy = UnassignedID
+		wv.HallCalls[i][HallCallDirectionUp].AssignedBy = UnassignedID
 	}
 
 	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
@@ -233,7 +233,7 @@ func (wv *Worldview) isDisconnected() bool {
 
 // setHallCall changes the given floor's Up/Down state based on direction.
 // Includes acceptance tests for valid transitions and floor counts
-func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
+func (wv *Worldview) setHallCall(floor int, dir HallCallDirection, state HallCallState) error {
 	wv.mutex.Lock()
 	defer wv.mutex.Unlock()
 
@@ -269,7 +269,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 
 // CompleteHallCall marks the given hall call as completed,
 // but only if it is currently being processed by the local elevator.
-func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
+func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDirection) error {
 	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 // NewHallCall creates a new order in the system.
 // Performes acceptance tests for network connectivity,
 // keeping track of the number of active peers in the network.
-func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
+func (wv *Worldview) NewHallCall(floor int, dir HallCallDirection) error {
 	wv.mutex.RLock()
 
 	if wv.isDisconnected() {
@@ -321,7 +321,7 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 }
 
 // ProcessHallCall process the local elevators hall call.
-func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
+func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDirection) error {
 	return wv.setHallCall(floor, dir, HallCallStateProcessing)
 }
 
@@ -441,7 +441,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		for dir := range other.HallCalls[floor] {
 			otherHallCall := other.HallCalls[floor][dir]
 			ourHallCall := wv.HallCalls[floor][dir]
-			dir := HallCallDir(dir)
+			dir := HallCallDirection(dir)
 			switch otherHallCall.State {
 			case HallCallStateNone:
 				// We accept even if our is Confirmed because 'other' might have completed from the

@@ -3,8 +3,8 @@ package statesync
 import elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
 
 type (
-	HallCallState int
-	HallCallDir   int
+	HallCallState     int
+	HallCallDirection int
 )
 
 const (
@@ -30,15 +30,15 @@ func (hcs HallCallState) String() string {
 }
 
 const (
-	HDUp HallCallDir = iota
-	HDDown
+	HallCallDirectionUp HallCallDirection = iota
+	HallCallDirectionDown
 )
 
-func (hd HallCallDir) String() string {
-	switch hd {
-	case HDUp:
+func (hallCallDirection HallCallDirection) String() string {
+	switch hallCallDirection {
+	case HallCallDirectionUp:
 		return "Up"
-	case HDDown:
+	case HallCallDirectionDown:
 		return "Down"
 	default:
 		return "Unknown"

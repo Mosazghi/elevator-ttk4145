@@ -7,7 +7,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 )
 
-// IsValidFloor validates a given floor
+// IsValidFloor validates a given floor.
 func IsValidFloor(floor, maxFloors int) bool {
 	if floor >= maxFloors || floor < 0 {
 		return false
@@ -15,26 +15,26 @@ func IsValidFloor(floor, maxFloors int) bool {
 	return true
 }
 
-// IsValidDirTransition checks if a transition from currDir to newDir is valid
-func IsValidDirTransition(currState, newState HallCallState) error {
+// IsValidDirTransition checks if a transition from currentDir to newDir is valid.
+func IsValidDirTransition(currentState, newState HallCallState) error {
 	switch newState {
 	case HallCallStateNone:
-		if currState != HallCallStateProcessing {
-			return fmt.Errorf("cannot go to None from %+v", currState)
+		if currentState != HallCallStateProcessing {
+			return fmt.Errorf("cannot go to None from %+v", currentState)
 		}
 
 	case HallCallStateUnconfirmed:
-		if currState != HallCallStateNone {
-			return fmt.Errorf("cannot go to Unconfirmed from %+v", currState)
+		if currentState != HallCallStateNone {
+			return fmt.Errorf("cannot go to Unconfirmed from %+v", currentState)
 		}
 	case HallCallStateConfirmed:
-		if currState != HallCallStateUnconfirmed && currState != HallCallStateNone {
-			return fmt.Errorf("cannot go to Confirmed from %+v", currState)
+		if currentState != HallCallStateUnconfirmed && currentState != HallCallStateNone {
+			return fmt.Errorf("cannot go to Confirmed from %+v", currentState)
 		}
 
 	case HallCallStateProcessing:
-		if currState != HallCallStateConfirmed {
-			return fmt.Errorf("cannot go to Processing from %+v", currState)
+		if currentState != HallCallStateConfirmed {
+			return fmt.Errorf("cannot go to Processing from %+v", currentState)
 		}
 
 	default:
@@ -44,7 +44,7 @@ func IsValidDirTransition(currState, newState HallCallState) error {
 	return nil
 }
 
-// ValidateStateRemote does sanity check on a remote elevator state
+// ValidateStateRemote performs sanity checks on the remote elevator states.
 func ValidateStateRemote(res *RemoteElevatorState) error {
 	if res == nil {
 		return fmt.Errorf("remote elevator state cannot be nil")

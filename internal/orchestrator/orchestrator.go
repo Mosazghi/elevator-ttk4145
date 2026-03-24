@@ -172,9 +172,9 @@ func (sm *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
 	case elevio.Cab:
 		err = sm.wv.SetCabCall(order.Floor, true)
 	case elevio.HallUp:
-		err = sm.wv.NewHallCall(order.Floor, statesync.HDUp)
+		err = sm.wv.NewHallCall(order.Floor, statesync.HallCallDirectionUp)
 	case elevio.HallDown:
-		err = sm.wv.NewHallCall(order.Floor, statesync.HDDown)
+		err = sm.wv.NewHallCall(order.Floor, statesync.HallCallDirectionDown)
 	}
 
 	return err

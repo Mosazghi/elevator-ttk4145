@@ -51,11 +51,11 @@ func TestGetNextAction_HallCall(t *testing.T) {
 
 	err := wv.SetLocalElevatorStates(&localElevator)
 	require.NoError(t, err, "Failed to set initial position of elevator")
-	err = wv.NewHallCall(3, statesync.HDUp)
+	err = wv.NewHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to create new hall call")
 
 	// Assign the call to this elevator by transitioning to Processing
-	err = wv.ProcessHallCall(3, statesync.HDUp)
+	err = wv.ProcessHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to process hall call")
 
 	cs, err := checksum.CalculateChecksum(wv)
@@ -96,7 +96,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	wv, _, arriveAtFloor := newTestCtx(t)
 	elev := wv.GetRemoteElevatorStates()
 
-	err := wv.NewHallCall(3, statesync.HDUp)
+	err := wv.NewHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to create new hall call")
 
 	elev.CurrentFloor = 3
@@ -104,7 +104,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	require.NoError(t, err, "Failed to set local elevator")
 
 	// Assign the call to this elevator by transitioning to Processing
-	err = wv.ProcessHallCall(3, statesync.HDUp)
+	err = wv.ProcessHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to process hall call")
 
 	cs, err := checksum.CalculateChecksum(wv)
@@ -131,7 +131,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 			closestOrder.Complete(wv)
 		}
 		hallCalls := wv.GetAllHallCalls()
-		call := hallCalls[3][statesync.HDUp]
+		call := hallCalls[3][statesync.HallCallDirectionUp]
 		require.Equal(t, call.State, statesync.HallCallStateNone, "Hall call needs to be set to none, arrived at floor")
 
 	case action := <-actionChan:
@@ -299,15 +299,15 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	err = wv.SetOtherElevatorStates(other, 2)
 	require.NoError(t, err, "Failed to set other elevator")
 
-	err = wv.NewHallCall(3, statesync.HDUp)
+	err = wv.NewHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to create new hall call")
-	err = wv.NewHallCall(0, statesync.HDDown)
+	err = wv.NewHallCall(0, statesync.HallCallDirectionDown)
 	require.NoError(t, err, "Failed to create new hall call")
 
 	// Assign calls - floor 3 goes to elevator 2 (using external assignment for testing)
 	// floor 0 goes to elevator 1
-	wv.HallCalls[0][statesync.HDDown].State = statesync.HallCallStateConfirmed // Simulate assignment to elevator 1
-	err = wv.ProcessHallCall(0, statesync.HDDown)
+	wv.HallCalls[0][statesync.HallCallDirectionDown].State = statesync.HallCallStateConfirmed // Simulate assignment to elevator 1
+	err = wv.ProcessHallCall(0, statesync.HallCallDirectionDown)
 	require.NoError(t, err, "Failed to process hall call for elevator 1")
 
 	cs, err := checksum.CalculateChecksum(wv)
@@ -351,19 +351,19 @@ func TestCalculateNearestHallCall(t *testing.T) {
 	err := wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
-	err = wv.NewHallCall(3, statesync.HDUp)
+	err = wv.NewHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to create new hall call")
-	err = wv.NewHallCall(2, statesync.HDUp)
+	err = wv.NewHallCall(2, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to create new hall call")
-	err = wv.NewHallCall(1, statesync.HDDown)
+	err = wv.NewHallCall(1, statesync.HallCallDirectionDown)
 	require.NoError(t, err, "Failed to create new hall call")
 
 	// Assign calls to this elevator
-	err = wv.ProcessHallCall(3, statesync.HDUp)
+	err = wv.ProcessHallCall(3, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to process hall call")
-	err = wv.ProcessHallCall(2, statesync.HDUp)
+	err = wv.ProcessHallCall(2, statesync.HallCallDirectionUp)
 	require.NoError(t, err, "Failed to process hall call")
-	err = wv.ProcessHallCall(1, statesync.HDDown)
+	err = wv.ProcessHallCall(1, statesync.HallCallDirectionDown)
 	require.NoError(t, err, "Failed to process hall call")
 
 	cs, err := checksum.CalculateChecksum(wv)
@@ -374,7 +374,7 @@ func TestCalculateNearestHallCall(t *testing.T) {
 	order, _ := FindClosestHallCall(wv)
 
 	assert.Equal(t, 2, order.Floor, "Expected nearestCall to be on floor 2")
-	assert.Equal(t, statesync.HDUp, order.HallCallDirection, "Expected the nearestCall to be upwards")
+	assert.Equal(t, statesync.HallCallDirectionUp, order.HallCallDirection, "Expected the nearestCall to be upwards")
 }
 
 func TestCalculateNearestCabCall(t *testing.T) {
@@ -526,8 +526,8 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	require.NoError(t, wv.SetLocalElevatorStates(elev))
 
 	require.NoError(t, wv.SetCabCall(2, true))
-	require.NoError(t, wv.NewHallCall(2, statesync.HDUp))
-	require.NoError(t, wv.ProcessHallCall(2, statesync.HDUp))
+	require.NoError(t, wv.NewHallCall(2, statesync.HallCallDirectionUp))
+	require.NoError(t, wv.ProcessHallCall(2, statesync.HallCallDirectionUp))
 
 	ctrl := &Controller{
 		wv:              wv,
@@ -552,7 +552,7 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 		if closesOrder.Type == elevio.Cab {
 			assert.Equal(t, false, remoteElev.CabCalls[2], "cab call at floor 2 should be cleared")
 		} else {
-			assert.Equal(t, statesync.HallCallStateNone, hcs[2][statesync.HDUp].State, "hall call at floor 2 should be cleared")
+			assert.Equal(t, statesync.HallCallStateNone, hcs[2][statesync.HallCallDirectionUp].State, "hall call at floor 2 should be cleared")
 		}
 
 	}

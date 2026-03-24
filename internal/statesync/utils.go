@@ -6,7 +6,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-// BuildWvJSON constructs a json message from a Worldview
+// BuildWvJSON constructs a json message from a Worldview.
 func BuildWvJSON(wv *Worldview) ([]byte, error) {
 	checksum, err := checksum.CalculateChecksum(wv)
 	if err != nil {
@@ -23,8 +23,9 @@ func BuildWvJSON(wv *Worldview) ([]byte, error) {
 	return data, nil
 }
 
-func HallDirToButtonType(dir HallCallDir) elevio.ButtonType {
-	if dir == HDDown {
+// HallDirToButtonType returns the button type based on direction.
+func HallDirToButtonType(dir HallCallDirection) elevio.ButtonType {
+	if dir == HallCallDirectionDown {
 		return elevio.HallDown
 	}
 	return elevio.HallUp

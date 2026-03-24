@@ -1,3 +1,4 @@
+// Adds helper functions to the statesync package.
 package statesync
 
 import (
@@ -21,10 +22,10 @@ type RemoteElevatorState struct {
 	LastSeenAt   time.Time             `json:"last_seen_at"`
 	NumFloors    int                   `json:"num_floors"`
 	Alive        bool                  `json:"alive"`
-	TimedOutAt	 time.Time			   `json:"timed_out_at"`
+	TimedOutAt   time.Time             `json:"timed_out_at"`
 }
 
-// NewRemoteElevatorState creates a new instance of  RemoteElevatorState
+// NewRemoteElevatorState constructs a new instance of RemoteElevatorState.
 func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 	return &RemoteElevatorState{
 		ID:           id,
@@ -45,14 +46,16 @@ func (res *RemoteElevatorState) String() string {
 		res.ID, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
 }
 
+// AllowedToServe checks if an elevator is eligible to accept new hall calls.
 func (res *RemoteElevatorState) AllowedToServe() bool {
 	return (res.Alive && !res.IsObstructed) &&
-	time.Since(res.TimedOutAt) > BlockNewOrderDuration 
+		time.Since(res.TimedOutAt) > BlockNewOrderDuration
 }
 
-func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDir) bool {
+// IsOppositeHallCallDirection returns the direction opposite of travel.
+func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDirection) bool {
 	var direction elevio.MotorDirection
-	if hallCallDirection == HDUp {
+	if hallCallDirection == HallCallDirectionUp {
 		direction = elevio.MDUp
 	} else {
 		direction = elevio.MDDown
@@ -61,10 +64,12 @@ func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection Ha
 	return res.Direction != direction
 }
 
+// IsOppositeMotorDirection returns the direction opposite of the motor.
 func (res *RemoteElevatorState) IsOppositeMotorDirection(direction elevio.MotorDirection) bool {
 	return res.Direction != direction
 }
 
+// UndefinedState checks if the elevator is out of bounds.
 func (res *RemoteElevatorState) UndefinedState() bool {
 	return res.CurrentFloor == UndefinedFloor && res.Direction != elevio.MDStop
 }

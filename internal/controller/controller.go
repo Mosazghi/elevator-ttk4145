@@ -32,7 +32,6 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 	}
 }
 
-
 func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
 		return nil
@@ -162,7 +161,7 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 		if cost < bestCost {
 			bestCost = cost
-			closestOrder.Update(floor, elevio.Cab, motorDirection, statesync.HDDown) // TODO: use none direction to be clear
+			closestOrder.Update(floor, elevio.Cab, motorDirection, statesync.HallCallDirectionDown) // TODO: use none direction to be clear
 		}
 	}
 	return closestOrder, bestCost
@@ -171,7 +170,7 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
 	var orderType elevio.ButtonType
-	var hallCallDirection statesync.HallCallDir
+	var hallCallDirection statesync.HallCallDirection
 	localElevator := wv.GetRemoteElevatorStates()
 	closestOrder := NewOrder()
 	bestCost := math.MaxInt
@@ -198,11 +197,11 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 				cost += PenaltyOppositeMotorDirection
 			}
 
-			if localElevator.IsOppositeHallCallDirection(statesync.HallCallDir(direction)) {
+			if localElevator.IsOppositeHallCallDirection(statesync.HallCallDirection(direction)) {
 				cost += PenaltyOppositeHallCallDirection
 			}
 
-			hallCallDirection = statesync.HallCallDir(direction)
+			hallCallDirection = statesync.HallCallDirection(direction)
 
 			orderType = statesync.HallDirToButtonType(hallCallDirection)
 

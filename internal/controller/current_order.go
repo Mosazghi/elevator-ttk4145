@@ -37,7 +37,7 @@ func (order *CurrentOrder) AtFloor(floor int) bool {
 	return order.Floor == floor
 }
 
-func (order *CurrentOrder) Update(floor int, orderType elevio.ButtonType, Motordirection elevio.MotorDirection, hallCallDirection statesync.HallCallDir) {
+func (order *CurrentOrder) Update(floor int, orderType elevio.ButtonType, Motordirection elevio.MotorDirection, hallCallDirection statesync.HallCallDirection) {
 	order.Floor = floor
 	order.Type = orderType
 	order.MotorDirection = Motordirection
@@ -49,6 +49,6 @@ func NewOrder() CurrentOrder {
 		Floor:             -1,
 		Type:              elevio.Cab,
 		MotorDirection:    elevio.MDStop,
-		HallCallDirection: statesync.HDDown,
+		HallCallDirection: statesync.HallCallDirectionDown,
 	}
 }

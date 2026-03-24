@@ -32,7 +32,7 @@ type HallRequestAssignerOutput map[string][][2]bool
 
 // CalculateCost delegates hall-call assignment to the external assigner and
 // returns the winning elevator ID for a specific floor/direction.
-func CalculateCost(worldview *statesync.Worldview, floor int, direction statesync.HallCallDir) (int, error) {
+func CalculateCost(worldview *statesync.Worldview, floor int, direction statesync.HallCallDirection) (int, error) {
 	hrs := BuildHallRequestAssignerData(worldview)
 	winnerID := statesync.UnassignedID
 

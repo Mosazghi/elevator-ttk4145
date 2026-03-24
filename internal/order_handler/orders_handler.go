@@ -42,7 +42,7 @@ func (oh *OrderHandler) Run() {
 					continue
 				}
 
-				winnerID, err := CalculateCost(oh.worldview, floor, statesync.HallCallDir(dir))
+				winnerID, err := CalculateCost(oh.worldview, floor, statesync.HallCallDirection(dir))
 
 				if err != nil {
 					slog.Error("failed to calculate cost for hall call", "floor", floor, "dir", dir, "error", err)
@@ -50,7 +50,7 @@ func (oh *OrderHandler) Run() {
 				}
 
 				if winnerID == oh.worldview.LocalID {
-					err := oh.worldview.ProcessHallCall(floor, statesync.HallCallDir(dir))
+					err := oh.worldview.ProcessHallCall(floor, statesync.HallCallDirection(dir))
 					if err != nil {
 						slog.Error("failed to process hall call", "err", err)
 					}

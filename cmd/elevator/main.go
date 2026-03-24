@@ -90,8 +90,8 @@ func main() {
 		hallCalls := make([][2]bool, wv.NumFloors)
 		cabCalls := localElvevator.CabCalls
 		for floor, pair := range hallCallStates {
-			hallCalls[floor][0] = pair[statesync.HDDown].State != statesync.HallCallStateNone
-			hallCalls[floor][1] = pair[statesync.HDUp].State != statesync.HallCallStateNone
+			hallCalls[floor][0] = pair[statesync.HallCallDirectionDown].State != statesync.HallCallStateNone
+			hallCalls[floor][1] = pair[statesync.HallCallDirectionUp].State != statesync.HallCallStateNone
 		}
 		elevatorService.SetAllLights(wv.NumFloors, cabCalls, hallCalls)
 	}

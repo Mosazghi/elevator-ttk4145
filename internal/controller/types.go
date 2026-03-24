@@ -17,5 +17,5 @@ type CurrentOrder struct {
 	Floor             int
 	Type              elevio.ButtonType
 	MotorDirection    elevio.MotorDirection
-	HallCallDirection statesync.HallCallDir
+	HallCallDirection statesync.HallCallDirection
 }
