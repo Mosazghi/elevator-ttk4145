@@ -13,7 +13,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/orchestrator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/order_handler"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/lmittmann/tint"
 )
@@ -59,11 +59,11 @@ func main() {
 	recoveredCabCallChan := make(chan Empty, 5)
 
 	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
-	ctrller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
+	controller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
 	orderHandler := order_handler.NewOrderHandler(wv, triggerAction, actionChan)
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
-	go ctrller.Start()
+	go controller.StartHandlingRequests()
 	go orderHandler.Run()
 
 	localElvevator := wv.GetRemoteElevatorStates()

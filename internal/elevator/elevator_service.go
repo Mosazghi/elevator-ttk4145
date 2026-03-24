@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
 type (

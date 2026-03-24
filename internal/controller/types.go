@@ -2,7 +2,7 @@ package controller
 
 import (
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
 type ControllerTriggerSrc int

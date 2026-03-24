@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
 const UndefinedFloor = -1
