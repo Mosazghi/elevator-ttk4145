@@ -22,8 +22,8 @@ type Worldview struct {
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Empty
 	hasFetchedCabCalls   bool
+	mutex                *sync.RWMutex
 	lastNetworkError     time.Time
-	mu                   *sync.RWMutex
 }
 
 // NewWorldView creates a new instance
@@ -36,8 +36,8 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 		orderUpdateChan:      orderUpdateChan,
 		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
+		mutex:                &sync.RWMutex{},
 		lastNetworkError:     time.Time{},
-		mu:                   &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
@@ -98,9 +98,9 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 	for {
 		select {
 		case <-netErrChan:
-			wv.mu.Lock()
+			wv.mutex.Lock()
 			wv.lastNetworkError = time.Now()
-			wv.mu.Unlock()
+			wv.mutex.Unlock()
 		case peerData := <-rxChan:
 			message := Message{}
 			err := msgpack.Unmarshal(peerData, &message)
@@ -115,9 +115,9 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 				continue
 			}
 
-			wv.mu.Lock()
+			wv.mutex.Lock()
 			wv.checkifNodeReappeared(otherWv.LocalID)
-			wv.mu.Unlock()
+			wv.mutex.Unlock()
 
 			err = wv.Merge(&otherWv, message.Checksum)
 			if err != nil {
@@ -125,14 +125,14 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 			}
 
 		case <-ticker.C:
-			wv.mu.Lock()
+			wv.mutex.Lock()
 			wv.ElevatorStates[localID].LastSeenAt = time.Now()
 			wv.releaseAnyOrders()
-			wv.mu.Unlock()
+			wv.mutex.Unlock()
 
-			wv.mu.RLock()
+			wv.mutex.RLock()
 			wvSnapshot := wv.deepCopy()
-			wv.mu.RUnlock()
+			wv.mutex.RUnlock()
 
 			data, err := BuildWvJSON(&wvSnapshot)
 			if err != nil {
@@ -201,6 +201,10 @@ func (wv *Worldview) releaseAnyOrders() {
 				case isNodeLost:
 					reason = "node lost"
 				case hasOrderTimedout:
+					if hc.AssignedBy == localID {
+						wv.ElevatorStates[localID].TimedOutAt = time.Now()
+						slog.Warn("unable to complete order, temporarily blocked from new hall assignments.")
+					}
 					reason = "order timed out"
 				}
 
@@ -224,8 +228,8 @@ func (wv *Worldview) isDisconnected() bool {
 
 // setHallCall changes the given floor's Up/Down state based on dir
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
+	wv.mutex.Lock()
+	defer wv.mutex.Unlock()
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -268,10 +272,10 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
-	wv.mu.RLock()
+	wv.mutex.RLock()
 
 	if wv.isDisconnected() {
-		wv.mu.RUnlock()
+		wv.mutex.RUnlock()
 		return fmt.Errorf("cannot place new hall call when network is disconnected")
 	}
 
@@ -284,13 +288,13 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 
 	localElevator := wv.ElevatorStates[wv.LocalID]
 	if aliveCount <= 1 && localElevator.IsObstructed {
-		wv.mu.RUnlock()
+		wv.mutex.RUnlock()
 		return fmt.Errorf("cannot place new hall call when alone on network and local elevator is obstructed")
 	}
 
 	var targetState HallCallState
 
-	wv.mu.RUnlock()
+	wv.mutex.RUnlock()
 
 	// Alone on network , skip Unconfirmed, go straight to Confirmed
 	if aliveCount <= 1 {
@@ -315,8 +319,8 @@ func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
 // SetCabCall changes cab call state at floor
 func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	slog.Info("setting cab call", "floor", floor, "state", state)
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
+	wv.mutex.Lock()
+	defer wv.mutex.Unlock()
 
 	if !IsValidFloor(floor, wv.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
@@ -331,8 +335,8 @@ func (wv *Worldview) SetCabCall(floor int, state bool) error {
 
 // SetLocalElevator updates the local elevator state in the worldview
 func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
+	wv.mutex.Lock()
+	defer wv.mutex.Unlock()
 	if err := ValidateStateRemote(elev); err != nil {
 		return err
 	}
@@ -342,8 +346,8 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 }
 
 func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
+	wv.mutex.Lock()
+	defer wv.mutex.Unlock()
 	if err := ValidateStateRemote(elev); err != nil {
 		return err
 	}
@@ -354,15 +358,15 @@ func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
 
 // GetRemoteElevator returns the local elevator state from the worldview
 func (wv *Worldview) GetRemoteElevator() RemoteElevatorState {
-	wv.mu.RLock()
-	defer wv.mu.RUnlock()
+	wv.mutex.RLock()
+	defer wv.mutex.RUnlock()
 	return *wv.ElevatorStates[wv.LocalID]
 }
 
 // GetAllHallCalls returns a copy of the current hall calls in the worldview
 func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
-	wv.mu.RLock()
-	defer wv.mu.RUnlock()
+	wv.mutex.RLock()
+	defer wv.mutex.RUnlock()
 
 	result := make([][2]HallCallPairState, len(wv.HallCalls))
 	copy(result, wv.HallCalls)
@@ -372,8 +376,8 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 
 // Merge merges incoming Worldview into the current one
 func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
-	wv.mu.Lock()
-	defer wv.mu.Unlock()
+	wv.mutex.Lock()
+	defer wv.mutex.Unlock()
 
 	if other == nil {
 		return fmt.Errorf("cannot merge with nil worldview")
