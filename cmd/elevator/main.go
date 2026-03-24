@@ -9,12 +9,12 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orchestrator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/lmittmann/tint"
 )
 

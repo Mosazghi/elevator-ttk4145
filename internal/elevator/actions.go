@@ -1,6 +1,6 @@
 package elevator
 
-import elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
+import elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
 
 type MoveAction struct {
 	Behavior  Behavior

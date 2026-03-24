@@ -3,9 +3,9 @@ package orders
 import (
 	"testing"
 
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

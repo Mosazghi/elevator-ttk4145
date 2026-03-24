@@ -1,4 +1,4 @@
-package shared
+package controller
 
 const (
 	PenaltyDoorOpen                  = 30
