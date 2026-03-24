@@ -1,3 +1,4 @@
+// Package controller provides elevator actions and completing orders
 package controller
 
 import (
@@ -11,6 +12,10 @@ import (
 	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
 )
 
+// A Controller dictate which elevator action is needed to be performed for serving an order.
+//
+// Actions are strictly passed though actionChan, while the other channels (execpt doorTimerChan) are used
+// to dictate when to use the Controller
 type Controller struct {
 	wv              *statesync.Worldview
 	actionChan      chan any
@@ -20,19 +25,19 @@ type Controller struct {
 	doorDuration    time.Duration
 }
 
-// NewController constructs a new instance of the Controller struct.
-func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
+// NewController creates a new instance of a Controller
+func NewController(worldView *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, orderUpdateChan chan statesync.Order) *Controller {
 	return &Controller{
-		wv:              wv,
+		wv:              worldView,
 		actionChan:      actionChan,
 		triggerChan:     ctrlTrigger,
-		orderUpdateChan: hcLightChan,
+		orderUpdateChan: orderUpdateChan,
 		doorTimerChan:   nil,
 		doorDuration:    config.DoorOpenTime,
 	}
 }
 
-
+// OnFloorArrival starts the arrival sequence when completing an order
 func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
 		return nil
@@ -43,7 +48,7 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	return ctrl.clearOrderAtFloor(order)
 }
 
-// clearOrderAtFloor
+// clearOrderAtFloor completes the currently handled order
 func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
 	err := order.Complete(ctrl.wv)
 	if err != nil {
@@ -54,7 +59,12 @@ func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
 	return nil
 }
 
-func (ctrl *Controller) Start() {
+// StartHandlingRequests provides actions when requested though the following channels:
+// orderUpdateChan, doorDuration, triggerChan
+//
+// This function is designed as a goroutine which handles requests.
+// These requests typically occur when arriving at a new floor or creating a new order.
+func (ctrl *Controller) StartHandlingRequests() {
 	for {
 		select {
 		case order := <-ctrl.orderUpdateChan:
@@ -111,6 +121,10 @@ func (ctrl *Controller) Start() {
 	}
 }
 
+// FetchClosestOrder Finds the closest order to the local elevator.
+//
+// The function finds the closest cab call and hall call and decides
+// which is the closest order.
 func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	closestCabCall, cabCallCost := FindClosestCabCall(worldView)
 	closestHallCall, hallCallCost := FindClosestHallCall(worldView)
@@ -130,6 +144,10 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 	}
 }
 
+// FindClosestCabCall Searches for the closest cab call to the local elevator.
+//
+// This function calculates the cost of arriving at said cab call, by factoring in
+// the direction and distance of the order.
 func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
 	localElevator := wv.GetRemoteElevatorStates()
@@ -152,8 +170,6 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 			motorDirection = localElevator.Direction
 		}
 
-		// NOTE: ask about this
-		// Kinda the same as closestOrder.WrongDirection ?? But imo more clear
 		if localElevator.IsOppositeMotorDirection(motorDirection) {
 			cost += PenaltyOppositeMotorDirection
 		}
@@ -162,12 +178,16 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 		if cost < bestCost {
 			bestCost = cost
-			closestOrder.Update(floor, elevio.Cab, motorDirection, statesync.HDDown) // TODO: use none direction to be clear
+			closestOrder.Update(floor, elevio.Cab, motorDirection, statesync.HDDown) // choose arbritaty hall call direction
 		}
 	}
 	return closestOrder, bestCost
 }
 
+// FindClosestHallCall Searches for the closest hall call to the local elevator.
+//
+// This function uses the distance, relative direction and hall call direction
+// to determine the closest hall call.
 func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
 	var orderType elevio.ButtonType

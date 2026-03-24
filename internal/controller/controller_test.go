@@ -449,7 +449,7 @@ func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration, numFl
 		orderUpdateChan: hcLightChan,
 		doorDuration:    doorDuration,
 	}
-	go ctrl.Start()
+	go ctrl.StartHandlingRequests()
 	return ctrl, actionChan, triggerChan
 }
 
