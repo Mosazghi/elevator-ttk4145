@@ -29,7 +29,7 @@ func newTestCtx(t *testing.T) (wv *statesync.Worldview, wvChan chan statesync.Wo
 	arriveAtFloorChan = make(chan Empty, 10)
 	worldview := statesync.NewWorldView(1, 4, make(chan statesync.Order, 10), make(chan Empty, 1))
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
-	_ = worldview.SetLocalElevator(elev)
+	_ = worldview.SetLocalElevatorStates(elev)
 
 	return worldview, wvChan, arriveAtFloorChan
 }
@@ -46,10 +46,10 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, _ := newTestCtx(t)
 
-	localElevator := wv.GetRemoteElevator()
+	localElevator := wv.GetRemoteElevatorStates()
 	localElevator.CurrentFloor = 0
 
-	err := wv.SetLocalElevator(&localElevator)
+	err := wv.SetLocalElevatorStates(&localElevator)
 	require.NoError(t, err, "Failed to set initial position of elevator")
 	err = wv.NewHallCall(3, statesync.HDUp)
 	require.NoError(t, err, "Failed to create new hall call")
@@ -71,7 +71,7 @@ func TestGetNextAction_HallCall(t *testing.T) {
 	newOrder <- Empty{}
 	select {
 	case <-newOrder:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 		if closestOrder.Empty() {
 			t.Fatal("closestOrder was empty")
@@ -94,13 +94,13 @@ func TestGetNextAction_HallCall(t *testing.T) {
 func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, arriveAtFloor := newTestCtx(t)
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 
 	err := wv.NewHallCall(3, statesync.HDUp)
 	require.NoError(t, err, "Failed to create new hall call")
 
 	elev.CurrentFloor = 3
-	err = wv.SetLocalElevator(&elev)
+	err = wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
 	// Assign the call to this elevator by transitioning to Processing
@@ -120,7 +120,7 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 	arriveAtFloor <- Empty{}
 	select {
 	case <-arriveAtFloor:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 		if closestOrder.Empty() {
 			t.Fatal("No calls available")
@@ -146,10 +146,10 @@ func TestGetNextAction_HallCall_Complete(t *testing.T) {
 func TestGetNextAction_CabCall(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, arriveAtFloor := newTestCtx(t)
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 
 	elev.CurrentFloor = 1
-	err := wv.SetLocalElevator(&elev)
+	err := wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 	err = wv.SetCabCall(2, true)
 	require.NoError(t, err, "Failed to set cab call")
@@ -165,7 +165,7 @@ func TestGetNextAction_CabCall(t *testing.T) {
 	newOrder <- Empty{}
 	select {
 	case <-newOrder:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 
 		if closestOrder.Empty() {
@@ -199,10 +199,10 @@ func TestGetNextAction_CabCall(t *testing.T) {
 func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, arriveAtFloor := newTestCtx(t)
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 
 	elev.CurrentFloor = 2
-	_ = wv.SetLocalElevator(&elev)
+	_ = wv.SetLocalElevatorStates(&elev)
 	_ = wv.SetCabCall(2, true)
 	cs, err := checksum.CalculateChecksum(wv)
 	require.NoError(t, err, "Failed to calculate checksum")
@@ -216,7 +216,7 @@ func TestGetNextAction_CabCall_Complete(t *testing.T) {
 	arriveAtFloor <- Empty{}
 	select {
 	case <-arriveAtFloor:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 		slog.Info("[FetchClosestOrder] got closestOrder", "floor", closestOrder.Floor)
 
@@ -243,10 +243,10 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, arriveAtFloor := newTestCtx(t)
 
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 	elev.CurrentFloor = 2
 	elev.Behavior = elevator.BIdle
-	err := wv.SetLocalElevator(&elev)
+	err := wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
 	err = wv.SetCabCall(3, true)
@@ -263,7 +263,7 @@ func TestGetNextAction_CabCall_Direction(t *testing.T) {
 	newOrder <- Empty{}
 	select {
 	case <-newOrder:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 		if closestOrder.Empty() {
 			t.Fatal("closestOrder was empty")
@@ -289,14 +289,14 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	actionChan := make(chan any, 10)
 	wv, _, arriveAtFloor := newTestCtx(t)
 
-	local := wv.GetRemoteElevator()
+	local := wv.GetRemoteElevatorStates()
 	other := statesync.NewRemoteElevatorState(2, 4)
 	local.CurrentFloor = 2
 	other.CurrentFloor = 1
 
-	err := wv.SetLocalElevator(&local)
+	err := wv.SetLocalElevatorStates(&local)
 	require.NoError(t, err, "Failed to set local elevator")
-	err = wv.SetOtherElevator(other, 2)
+	err = wv.SetOtherElevatorStates(other, 2)
 	require.NoError(t, err, "Failed to set other elevator")
 
 	err = wv.NewHallCall(3, statesync.HDUp)
@@ -322,7 +322,7 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 	newOrder <- Empty{}
 	select {
 	case <-newOrder:
-		localElevator := wv.GetRemoteElevator()
+		localElevator := wv.GetRemoteElevatorStates()
 		closestOrder := FetchClosestOrder(wv)
 		if closestOrder.Empty() {
 			t.Fatal("closestOrder was empty")
@@ -344,11 +344,11 @@ func TestGetNextAction_multiElevator(t *testing.T) {
 func TestCalculateNearestHallCall(t *testing.T) {
 	wv, _, _ := newTestCtx(t)
 
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 	elev.CurrentFloor = 1
 	elev.Behavior = elevator.BMoving
 	elev.Direction = elevio.MDUp
-	err := wv.SetLocalElevator(&elev)
+	err := wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
 	err = wv.NewHallCall(3, statesync.HDUp)
@@ -380,11 +380,11 @@ func TestCalculateNearestHallCall(t *testing.T) {
 func TestCalculateNearestCabCall(t *testing.T) {
 	wv, _, _ := newTestCtx(t)
 
-	elev := wv.GetRemoteElevator()
+	elev := wv.GetRemoteElevatorStates()
 	elev.CurrentFloor = 1
 	elev.Behavior = elevator.BMoving
 	elev.Direction = elevio.MDUp
-	err := wv.SetLocalElevator(&elev)
+	err := wv.SetLocalElevatorStates(&elev)
 	require.NoError(t, err, "Failed to set local elevator")
 
 	err = wv.SetCabCall(3, true)
@@ -413,7 +413,7 @@ func newDoorTimerTestCtx(t *testing.T, floor int, numFloors int) (*Controller, c
 	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Empty))
 	elev := statesync.NewRemoteElevatorState(ID, numFloors)
 	elev.CurrentFloor = floor
-	require.NoError(t, wv.SetLocalElevator(elev))
+	require.NoError(t, wv.SetLocalElevatorStates(elev))
 
 	actionChan := make(chan any, 20)
 	triggerChan := make(chan ControllerTriggerSrc, 10)
@@ -436,7 +436,7 @@ func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration, numFl
 	wv := statesync.NewWorldView(ID, numFloors, orderChan, make(chan shared.Empty))
 	elev := statesync.NewRemoteElevatorState(ID, numFloors)
 	elev.CurrentFloor = floor
-	require.NoError(t, wv.SetLocalElevator(elev))
+	require.NoError(t, wv.SetLocalElevatorStates(elev))
 
 	actionChan := make(chan any, 20)
 	triggerChan := make(chan ControllerTriggerSrc, 10)
@@ -523,7 +523,7 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	elev := statesync.NewRemoteElevatorState(ID, NumFloors)
 	elev.CurrentFloor = 2
 	elev.Direction = elevio.MDUp
-	require.NoError(t, wv.SetLocalElevator(elev))
+	require.NoError(t, wv.SetLocalElevatorStates(elev))
 
 	require.NoError(t, wv.SetCabCall(2, true))
 	require.NoError(t, wv.NewHallCall(2, statesync.HDUp))
@@ -546,7 +546,7 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 		ctrl.clearOrderAtFloor(closesOrder)
 		time.Sleep(600 * time.Millisecond) // wait past the 500 ms sleep inside clearAllOrdersAtFloor
 
-		remoteElev := wv.GetRemoteElevator()
+		remoteElev := wv.GetRemoteElevatorStates()
 
 		hcs := wv.GetAllHallCalls()
 		if closesOrder.Type == elevio.Cab {

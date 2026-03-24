@@ -14,10 +14,10 @@ type DataPacket []byte
 
 // Network manages UDP socket communication with separate TX/RX/error channels.
 type Network struct {
-	errChan chan error
-	txChan  chan DataPacket
-	rxChan  chan DataPacket
-	conn    net.PacketConn
+	errorChan    chan error
+	transmitChan chan DataPacket
+	receiveChan  chan DataPacket
+	socket       net.PacketConn
 }
 
 // NewNetwork creates a new network
@@ -28,18 +28,18 @@ func NewNetwork() (*Network, error) {
 	}
 
 	return &Network{
-		conn:    conn,
-		rxChan:  make(chan DataPacket, NetChanBufferLen),
-		txChan:  make(chan DataPacket, NetChanBufferLen),
-		errChan: make(chan error, NetChanBufferLen),
+		socket:       conn,
+		receiveChan:  make(chan DataPacket, NetworkChannelBufferLength),
+		transmitChan: make(chan DataPacket, NetworkChannelBufferLength),
+		errorChan:    make(chan error, NetworkChannelBufferLength),
 	}, nil
 }
 
-// Close closes the TX channel and the network connection.
+// Close closes the transmit channel and terminates the network connection.
 func (n *Network) Close() error {
-	close(n.txChan)
-	if n.conn != nil {
-		return n.conn.Close()
+	close(n.transmitChan)
+	if n.socket != nil {
+		return n.socket.Close()
 	}
 
 	return nil
@@ -51,19 +51,16 @@ func (n *Network) Start() {
 	go n.broadcast()
 }
 
-// TxChan returns the transmit channel.
-func (n *Network) TxChan() chan<- DataPacket {
-	return n.txChan
+func (n *Network) GetTransmitChannel() chan<- DataPacket {
+	return n.transmitChan
 }
 
-// RxChan returns the receive channel.
-func (n *Network) RxChan() <-chan DataPacket {
-	return n.rxChan
+func (n *Network) GetReceiveChannel() <-chan DataPacket {
+	return n.receiveChan
 }
 
-// ErrChan returns the error channel.
-func (n *Network) ErrChan() <-chan error {
-	return n.errChan
+func (n *Network) GetErrorChannel() <-chan error {
+	return n.errorChan
 }
 
 // receive reads from socket and forwards packets to rxChan, filtering echoes in production.
@@ -78,9 +75,9 @@ func (n *Network) receive() {
 	}
 
 	for {
-		bytesRead, remoteAddress, err := n.conn.ReadFrom(buffer[0:])
+		bytesRead, remoteAddress, err := n.socket.ReadFrom(buffer[0:])
 		if err != nil {
-			n.errChan <- fmt.Errorf("receive error: %w", err)
+			n.errorChan <- fmt.Errorf("receive error: %w", err)
 			continue
 		}
 
@@ -94,7 +91,7 @@ func (n *Network) receive() {
 			}
 		}
 
-		n.rxChan <- data
+		n.receiveChan <- data
 	}
 }
 
@@ -105,10 +102,10 @@ func (n *Network) broadcast() {
 		Port: BroadcastPort,
 	}
 
-	for data := range n.txChan {
-		_, err := n.conn.WriteTo(data, addr)
+	for data := range n.transmitChan {
+		_, err := n.socket.WriteTo(data, addr)
 		if err != nil {
-			n.errChan <- fmt.Errorf("broadcast error: %w", err)
+			n.errorChan <- fmt.Errorf("broadcast error: %w", err)
 		}
 	}
 }

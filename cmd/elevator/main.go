@@ -49,9 +49,9 @@ func main() {
 
 	network.Start()
 
-	errChan := network.ErrChan()
-	txChan := network.TxChan()
-	rxChan := network.RxChan()
+	errChan := network.GetErrorChannel()
+	txChan := network.GetTransmitChannel()
+	rxChan := network.GetReceiveChannel()
 
 	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
 	orderUpdateChan := make(chan statesync.Order, 10)
@@ -66,17 +66,17 @@ func main() {
 	go ctrller.Start()
 	go orderHandler.Run()
 
-	localElvevator := wv.GetRemoteElevator()
+	localElvevator := wv.GetRemoteElevatorStates()
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
-		elevatorService.MoveDirection(elevio.MDDown)
+		elevatorService.SetMoveDirection(elevio.MDDown)
 		localElvevator.Direction = elevio.MDDown
 		localElvevator.Behavior = elevator.BMoving
 	}
 
 	elevatorService.ClearAllLights(localElvevator.NumFloors)
 
-	err = wv.SetLocalElevator(&localElvevator)
+	err = wv.SetLocalElevatorStates(&localElvevator)
 	if err != nil {
 		slog.Error("SetLocalElevator", "error", err)
 	}
@@ -85,7 +85,7 @@ func main() {
 	// main event loop, so the elevator server matches any persisted/recovered calls.
 	{
 		time.Sleep(1500 * time.Millisecond)
-		elevatorService.SetDoor(false)
+		elevatorService.SetDoorState(false)
 		hallCallStates := wv.GetAllHallCalls()
 		hallCalls := make([][2]bool, wv.NumFloors)
 		cabCalls := localElvevator.CabCalls

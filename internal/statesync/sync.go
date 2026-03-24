@@ -1,3 +1,4 @@
+// Package statesync provides mechanisms and helper functions to facilitate proper synchronization between peers.
 package statesync
 
 import (
@@ -26,7 +27,7 @@ type Worldview struct {
 	lastNetworkError     time.Time
 }
 
-// NewWorldView creates a new instance
+// NewWorldView constructs a new instance of the WorldView struct.
 func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Empty) *Worldview {
 	wv := &Worldview{
 		LocalID:              localID,
@@ -50,7 +51,7 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 	return wv
 }
 
-// deepCopy creates a deep copy of the worldview for safe concurrent marshaling
+// deepCopy creates a copy of the worldview for safe concurrent marshaling
 // Must be called with read lock (RLock) held
 // NOTE: when adding new fields, make sure to include them in the deep copy as well.
 func (wv *Worldview) deepCopy() Worldview {
@@ -83,13 +84,15 @@ func (wv *Worldview) deepCopy() Worldview {
 	return wvCopy
 }
 
-// String converts worldview into string format
+// String converts the worldview into a string format
 func (wv Worldview) String() string {
 	return fmt.Sprintf("Worldview{LocalID: %d, ElevatorStates: %v, HallCalls: %v, NumFloors: %d}",
 		wv.LocalID, wv.ElevatorStates, wv.HallCalls, wv.NumFloors)
 }
 
-// StartSyncing creates listeners and transmitters for synchroizations with other elevators
+// StartSyncing creates listeners and transmitters for synchroization with other elevators.
+// Incoming data from peers is synchronized and merged upon reception.
+// Current states are passed along after successful merging.
 func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
 	defer ticker.Stop()
@@ -159,6 +162,8 @@ func (wv *Worldview) fetchCabCallsOnReconnect(other *Worldview) {
 	slog.Debug("cab calls recovered from peer", "cabCalls", wv.ElevatorStates[wv.LocalID].CabCalls)
 }
 
+// checkifNodeReappeared checks it's alive status as registered
+// in the incoming worldview and updates it to true if applicable.
 func (wv *Worldview) checkifNodeReappeared(id int) {
 	other, exist := wv.ElevatorStates[id]
 	if exist && !other.Alive {
@@ -220,13 +225,14 @@ func (wv *Worldview) releaseAnyOrders() {
 	}
 }
 
-// isDisconnected returns true if the local node is considered disconnected from the network,
-// false otherwise
+// isDisconnected returns true if the local node is
+// considered disconnected from the network, false otherwise
 func (wv *Worldview) isDisconnected() bool {
 	return time.Since(wv.lastNetworkError) <= time.Duration(DisconnectedTimeout)
 }
 
-// setHallCall changes the given floor's Up/Down state based on dir
+// setHallCall changes the given floor's Up/Down state based on direction.
+// Includes acceptance tests for valid transitions and floor counts
 func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState) error {
 	wv.mutex.Lock()
 	defer wv.mutex.Unlock()
@@ -261,7 +267,8 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 	return nil
 }
 
-// CompleteHallCall marks the given hall call as completed, but only if it is currently being processed by the local elevator
+// CompleteHallCall marks the given hall call as completed,
+// but only if it is currently being processed by the local elevator.
 func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
 		return err
@@ -270,7 +277,9 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 	return nil
 }
 
-// NewHallCall creates a new order on the systems
+// NewHallCall creates a new order in the system.
+// Performes acceptance tests for network connectivity,
+// keeping track of the number of active peers in the network.
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 	wv.mutex.RLock()
 
@@ -311,12 +320,12 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 	return nil
 }
 
-// ProcessHallCall process the hall call by the local elevator
+// ProcessHallCall process the local elevators hall call.
 func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDir) error {
 	return wv.setHallCall(floor, dir, HallCallStateProcessing)
 }
 
-// SetCabCall changes cab call state at floor
+// SetCabCall sets the cab call state at given floor to match the argument.
 func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	slog.Info("setting cab call", "floor", floor, "state", state)
 	wv.mutex.Lock()
@@ -333,8 +342,8 @@ func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	return nil
 }
 
-// SetLocalElevator updates the local elevator state in the worldview
-func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
+// SetLocalElevatorStates updates states of the local elevator in the worldview.
+func (wv *Worldview) SetLocalElevatorStates(elev *RemoteElevatorState) error {
 	wv.mutex.Lock()
 	defer wv.mutex.Unlock()
 	if err := ValidateStateRemote(elev); err != nil {
@@ -345,7 +354,8 @@ func (wv *Worldview) SetLocalElevator(elev *RemoteElevatorState) error {
 	return nil
 }
 
-func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
+// SetOtherElevatorStates updates states of a given elevator in the worldview.
+func (wv *Worldview) SetOtherElevatorStates(elev *RemoteElevatorState, id int) error {
 	wv.mutex.Lock()
 	defer wv.mutex.Unlock()
 	if err := ValidateStateRemote(elev); err != nil {
@@ -356,14 +366,14 @@ func (wv *Worldview) SetOtherElevator(elev *RemoteElevatorState, id int) error {
 	return nil
 }
 
-// GetRemoteElevator returns the local elevator state from the worldview
-func (wv *Worldview) GetRemoteElevator() RemoteElevatorState {
+// GetRemoteElevatorStates returns the local elevator state from the worldview.
+func (wv *Worldview) GetRemoteElevatorStates() RemoteElevatorState {
 	wv.mutex.RLock()
 	defer wv.mutex.RUnlock()
 	return *wv.ElevatorStates[wv.LocalID]
 }
 
-// GetAllHallCalls returns a copy of the current hall calls in the worldview
+// GetAllHallCalls returns a copy of the current hall calls from the worldview.
 func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	wv.mutex.RLock()
 	defer wv.mutex.RUnlock()
@@ -374,7 +384,9 @@ func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
 	return result
 }
 
-// Merge merges incoming Worldview into the current one
+// Merge merges incoming Worldview with the current one.
+// Contains a number of acceptance tests that ensures no invalid
+// incoming states are merged with the local ones.
 func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 	wv.mutex.Lock()
 	defer wv.mutex.Unlock()

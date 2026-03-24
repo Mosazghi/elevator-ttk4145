@@ -20,6 +20,7 @@ type Controller struct {
 	doorDuration    time.Duration
 }
 
+// NewController constructs a new instance of the Controller struct.
 func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
 	return &Controller{
 		wv:              wv,
@@ -31,6 +32,7 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 	}
 }
 
+
 func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
 		return nil
@@ -41,6 +43,7 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	return ctrl.clearOrderAtFloor(order)
 }
 
+// clearOrderAtFloor
 func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
 	err := order.Complete(ctrl.wv)
 	if err != nil {
@@ -57,7 +60,7 @@ func (ctrl *Controller) Start() {
 		case order := <-ctrl.orderUpdateChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: order.Type, Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
-			elev := ctrl.wv.GetRemoteElevator()
+			elev := ctrl.wv.GetRemoteElevatorStates()
 
 			if elev.IsObstructed {
 				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
@@ -67,7 +70,7 @@ func (ctrl *Controller) Start() {
 				ctrl.actionChan <- elevator.DoorAction{Open: false}
 			}
 		case triggerSrc := <-ctrl.triggerChan:
-			elev := ctrl.wv.GetRemoteElevator()
+			elev := ctrl.wv.GetRemoteElevatorStates()
 			closestOrder := FetchClosestOrder(ctrl.wv)
 
 			switch elev.Behavior {
@@ -129,7 +132,7 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 
 func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
-	localElevator := wv.GetRemoteElevator()
+	localElevator := wv.GetRemoteElevatorStates()
 	closestOrder := NewOrder()
 	bestCost := math.MaxInt
 
@@ -169,7 +172,7 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
 	var orderType elevio.ButtonType
 	var hallCallDirection statesync.HallCallDir
-	localElevator := wv.GetRemoteElevator()
+	localElevator := wv.GetRemoteElevatorStates()
 	closestOrder := NewOrder()
 	bestCost := math.MaxInt
 
