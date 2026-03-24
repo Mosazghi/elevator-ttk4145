@@ -13,22 +13,22 @@ import (
 )
 
 type Controller struct {
-	wv            *statesync.Worldview
-	actionChan    chan any
-	triggerChan   chan ControllerTriggerSrc
-	hcLightChan   chan statesync.Order
-	doorTimerChan <-chan time.Time
-	doorDuration  time.Duration
+	wv              *statesync.Worldview
+	actionChan      chan any
+	triggerChan     chan ControllerTriggerSrc
+	orderUpdateChan chan statesync.Order
+	doorTimerChan   <-chan time.Time
+	doorDuration    time.Duration
 }
 
 func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, hcLightChan chan statesync.Order) *Controller {
 	return &Controller{
-		wv:            wv,
-		actionChan:    actionChan,
-		triggerChan:   ctrlTrigger,
-		hcLightChan:   hcLightChan,
-		doorTimerChan: nil,
-		doorDuration:  config.DoorOpenTime,
+		wv:              wv,
+		actionChan:      actionChan,
+		triggerChan:     ctrlTrigger,
+		orderUpdateChan: hcLightChan,
+		doorTimerChan:   nil,
+		doorDuration:    config.DoorOpenTime,
 	}
 }
 
@@ -42,7 +42,6 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	return ctrl.clearOrderAtFloor(order)
 }
 
-// clearOrderAtFloor completes all cab calls and hall calls at the given floor
 func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
 	err := order.Complete(ctrl.wv)
 	if err != nil {
@@ -56,7 +55,7 @@ func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
 func (ctrl *Controller) Start() {
 	for {
 		select {
-		case order := <-ctrl.hcLightChan:
+		case order := <-ctrl.orderUpdateChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: order.Type, Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
 			elev := ctrl.wv.GetRemoteElevator()
