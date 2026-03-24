@@ -1,46 +1,65 @@
 [![Go Tests](https://github.com/Mosazghi/elevator-ttk4145/actions/workflows/test.yml/badge.svg)](https://github.com/Mosazghi/elevator-ttk4145/actions/workflows/test.yml)
 
- TTK4145 Real-Time Programming - Distributed Systems Project
-Distributed elevator control system with network synchronization.
+# Distributed Elevator Controller
 
-## Quick Start
+Real-time distributed elevator control for TTK4145, with shared state sync and distributed hall-call assignment.
+
+## Run
 
 ```bash
-# Run single elevator
+# One elevator
 make run
 
-# Run multiple elevators
+# Three elevators (ports 12345-12347)
 make run-multi
+```
 
-# Run tests
+Manual run:
+
+```bash
+go run ./cmd/elevator --id=<id> --port=<port> --floors=<n> --loglevel=<level>
+```
+
+Flags:
+
+- `--id`: node ID (default `1`)
+- `--port`: elevator server port (default `30000`)
+- `--floors`: number of floors (default `4`)
+- `--loglevel`: slog level (`debug=-4`, `info=0`, `warn=4`, `error=8`). Default `debug`.
+
+## Environment
+
+- `ENV=production` or `ENV=prod`: production mode
+- Unset `ENV`: development mode
+
+This is used primarily for filtering echos in the network.
+
+Example:
+
+```bash
+ENV=production make run
+```
+
+## Test
+
+```bash
 make test
 make race
 ```
 
-## Environment Variables
-
-- `ENV=production` or `ENV=prod` - Enable production mode (filters UDP echo messages)
-- Default (unset) - Development mode (receives all messages including echoes)
-
-```bash
-# Production mode
-ENV=production make run
-```
-
-## Manual Run
-
-```bash
-go run ./cmd/elevator --id=<elevator_id> --port=<port>
-```
-
-## Manual Tests
-
-```bash
-go test <package_name> -v
-``` 
-
-For example, to test *only* the statesync package:
+Run one package:
 
 ```bash
 go test ./internal/statesync -v
 ```
+
+## Project Layout
+
+- `cmd/elevator`: application entrypoint
+- `internal/controller`: local elevator decision/state transitions
+- `internal/statesync`: distributed worldview sync and reconciliation
+- `internal/order_handler`: hall-call assignment integration
+- `internal/network`: message transport
+- `internal/orchestrator`: event loop wiring driver, controller, and sync
+- `pkg/elevio`: elevator driver abstraction and TCP-backed implementation
+- `executables/`: executable binaries and tools

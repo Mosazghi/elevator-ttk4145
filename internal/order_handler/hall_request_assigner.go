@@ -33,31 +33,35 @@ type HallRequestAssignerOutput map[string][][2]bool
 // CalculateCost delegates hall-call assignment to the external assigner and
 // returns the winning elevator ID for a specific floor/direction.
 func CalculateCost(worldview *statesync.Worldview, floor int, direction statesync.HallCallDirection) (int, error) {
-	hrs := BuildHallRequestAssignerData(worldview)
+	hallRequestAssingerInput := BuildHallRequestAssignerInput(worldview)
+
+	if len(hallRequestAssingerInput.States) == 0 {
+		return statesync.UnassignedID, fmt.Errorf("no elevators available to assign")
+	}
+
 	winnerID := statesync.UnassignedID
 
-	jsonData, err := json.Marshal(hrs)
+	inputJson, err := json.Marshal(hallRequestAssingerInput)
 	if err != nil {
 		return winnerID, fmt.Errorf("failed to marshal hall request assigner data: %w", err)
 	}
 
-	hraPath := getHallReqAssingerPath()
+	hallRequestAssignerPath := getHallReqAssingerPath()
 
-	execCmd := exec.Command(hraPath, "--input", string(jsonData))
-	output, err := execCmd.Output()
+	rawOuput, err := exec.Command(hallRequestAssignerPath, "--input", string(inputJson)).Output()
 	if err != nil {
 		return winnerID, fmt.Errorf("failed to execute hall request assigner: %w", err)
 	}
 
-	var result HallRequestAssignerOutput
+	var hallRequestAssignerOutput HallRequestAssignerOutput
 
-	err = json.Unmarshal(output, &result)
-	// the winner is who got true in the corresponding floor and direction
+	err = json.Unmarshal(rawOuput, &hallRequestAssignerOutput)
 	if err != nil {
 		return winnerID, fmt.Errorf("failed to unmarshal hall request assigner output: %w", err)
 	}
 
-	for idString, hallCallAssignments := range result {
+	// the winner is who got true in the corresponding floor and direction
+	for idString, hallCallAssignments := range hallRequestAssignerOutput {
 		if hallCallAssignments[floor][direction] {
 			idInt, err := strconv.Atoi(idString)
 
@@ -73,9 +77,9 @@ func CalculateCost(worldview *statesync.Worldview, floor int, direction statesyn
 	return winnerID, nil
 }
 
-// BuildHallRequestAssignerData converts worldview state to assigner input,
+// BuildHallRequestAssignerInput converts worldview state to assigner input,
 // excluding elevators that are currently not allowed to serve orders.
-func BuildHallRequestAssignerData(worldview *statesync.Worldview) *HallRequestAssignerInput {
+func BuildHallRequestAssignerInput(worldview *statesync.Worldview) *HallRequestAssignerInput {
 	hallCalls := worldview.GetAllHallCalls()
 	hallRequestAssignerInput := HallRequestAssignerInput{
 		HallRequests: make([][2]bool, worldview.NumFloors),
@@ -111,7 +115,7 @@ func BuildHallRequestAssignerData(worldview *statesync.Worldview) *HallRequestAs
 }
 
 // getHallReqAssingerPath resolves the assigner binary path, preferring a path
-// relative to this source file and falling back to simulator/ in cwd.
+// relative to this source file and falling back to executables/ in cwd.
 func getHallReqAssingerPath() string {
 	binaryName := "hall_request_assigner"
 	if runtime.GOOS == "windows" {
@@ -119,11 +123,11 @@ func getHallReqAssingerPath() string {
 	}
 
 	if _, currentFile, _, ok := runtime.Caller(0); ok {
-		resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "simulator", binaryName))
+		resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "executables", binaryName))
 		if _, err := os.Stat(resolvedPath); err == nil {
 			return resolvedPath
 		}
 	}
 
-	return filepath.Clean(filepath.Join("simulator", binaryName))
+	return filepath.Clean(filepath.Join("executables", binaryName))
 }
