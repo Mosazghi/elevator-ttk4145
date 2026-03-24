@@ -21,7 +21,6 @@ func TestCalculateChecksum_ValidInput(t *testing.T) {
 	cs, err := CalculateChecksum(data)
 	t.Logf("Calculated: %v", cs)
 	require.NoError(t, err)
-	// assert.Len(t, cs, 32, "SHA-256 produces 32 bytes")
 }
 
 // Determinism - same input produces same checksum
@@ -67,7 +66,6 @@ func TestCalculateChecksum_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := CalculateChecksum(tt.input)
 			require.NoError(t, err, "should handle %s", tt.name)
-			// assert.Len(t, cs, 32)
 		})
 	}
 }
@@ -90,7 +88,6 @@ func TestCalculateChecksum_NestedStructures(t *testing.T) {
 	cs, err := CalculateChecksum(data)
 	t.Logf("CS: %+v", cs)
 	require.NoError(t, err)
-	// assert.Len(t, cs, 32)
 }
 
 // Struct input
@@ -147,7 +144,6 @@ func TestCalculateChecksum_LargeInput(t *testing.T) {
 
 	_, err := CalculateChecksum(worldview)
 	require.NoError(t, err)
-	// assert.Len(t, cs, 32)
 }
 
 // JSON-unmarshalable types should error

@@ -64,21 +64,22 @@ func main() {
 
 	go wv.StartSyncing(txChan, rxChan, errChan)
 	go controller.StartHandlingRequests()
-	go orderHandler.Run()
+	go orderHandler.StartServing()
 
-	localElvevator := wv.GetRemoteElevatorStates()
+	localElvevator := wv.GetRemoteElevatorState()
 	initFloor := elevIoDriver.GetFloor()
 	if initFloor == -1 {
 		elevatorService.SetMoveDirection(elevio.MotorDirectionDown)
 		localElvevator.Direction = elevio.MotorDirectionDown
-		localElvevator.Behavior = elevator.BMoving
+		localElvevator.Behavior = elevator.BehaviorMoving
 	}
 
 	elevatorService.ClearAllLights(localElvevator.NumFloors)
 
 	err = wv.SetLocalElevatorStates(&localElvevator)
 	if err != nil {
-		slog.Error("SetLocalElevator", "error", err)
+		slog.Error("failed to set local elevator states", "error", err)
+		panic(err)
 	}
 
 	// Sync all button lights with the current worldview state before entering the
@@ -108,7 +109,7 @@ func main() {
 		wv,
 	)
 
-	orchestrator.Run()
+	orchestrator.Start()
 }
 
 func SetupLogger(level slog.Leveler) {

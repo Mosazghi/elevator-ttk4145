@@ -5,9 +5,30 @@ import (
 	"time"
 
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 )
+
+// A CurrentOrder encapsulate both hall calls and cab calls.
+//
+// The MotorDirection field is based on the positioning to the
+// elevator which captures the order.
+type CurrentOrder struct {
+	Floor             int
+	Type              elevio.ButtonType
+	MotorDirection    elevio.MotorDirection
+	HallCallDirection statesync.HallCallDirection
+}
+
+// NewOrder creates a new instance of a CurrentOrder
+func NewOrder() CurrentOrder {
+	return CurrentOrder{
+		Floor:             -1,
+		Type:              elevio.Cab,
+		MotorDirection:    elevio.MotorDirectionStop,
+		HallCallDirection: statesync.HallCallDirectionDown,
+	}
+}
 
 // Complete finishes an order.
 //
@@ -45,19 +66,9 @@ func (order *CurrentOrder) AtFloor(floor int) bool {
 }
 
 // Update overwrites the order with the given arguments
-func (order *CurrentOrder) Update(floor int, orderType elevio.ButtonType, Motordirection elevio.MotorDirection, hallCallDirection statesync.HallCallDir) {
+func (order *CurrentOrder) Update(floor int, orderType elevio.ButtonType, Motordirection elevio.MotorDirection, hallCallDirection statesync.HallCallDirection) {
 	order.Floor = floor
 	order.Type = orderType
 	order.MotorDirection = Motordirection
 	order.HallCallDirection = hallCallDirection
-}
-
-// NewOrder creates a new instance of a CurrentOrder
-func NewOrder() CurrentOrder {
-	return CurrentOrder{
-		Floor:             -1,
-		Type:              elevio.Cab,
-		MotorDirection:    elevio.MotorDirectionStop,
-		HallCallDirection: statesync.HallCallDirectionDown,
-	}
 }

@@ -22,13 +22,13 @@ type Network struct {
 
 // NewNetwork creates a new network
 func NewNetwork() (*Network, error) {
-	conn, err := CreateSocket(BroadcastPort)
+	socket, err := CreateSocket(BroadcastPort)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Network{
-		socket:       conn,
+		socket:       socket,
 		receiveChan:  make(chan DataPacket, NetworkChannelBufferLength),
 		transmitChan: make(chan DataPacket, NetworkChannelBufferLength),
 		errorChan:    make(chan error, NetworkChannelBufferLength),

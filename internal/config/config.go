@@ -12,6 +12,7 @@ const (
 	DoorOpenTime  = 3 * time.Second
 )
 
+// Config holds the configuration for the elevator node.
 type Config struct {
 	Id       int
 	Port     int

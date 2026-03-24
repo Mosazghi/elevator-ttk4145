@@ -36,11 +36,9 @@ type Orchestrator struct {
 	ctrlTriggerChan      chan controller.ControllerTriggerSrc
 	ctrlActionChan       chan any
 	recoveredCabCallChan chan shared.Empty
-
-	elev *elevator.ElevatorService
-	wv   *statesync.Worldview
-
-	watchdog *watchdog.WatchDog
+	elevatorService      *elevator.ElevatorService
+	worldview            *statesync.Worldview
+	watchdog             *watchdog.WatchDog
 }
 
 // NewOrchestrator creates a new instance of an initialized Orchestrator
@@ -63,13 +61,13 @@ func NewOrchestrator(
 		ctrlTriggerChan:      ctrlTriggerChan,
 		ctrlActionChan:       ctrlActionChan,
 		recoveredCabCallChan: recoveredCabCallChan,
-		elev:                 elev,
-		wv:                   wv,
+		elevatorService:      elev,
+		worldview:            wv,
 		watchdog:             watchdog.New(WatchdogTimeout),
 	}
 }
 
-// Run is the main loop for orchestrator operation.
+// Start is the main loop for orchestrator operation.
 //
 // It processes:
 //   - driver input events coming from hw channels,
@@ -77,127 +75,131 @@ func NewOrchestrator(
 //   - recovered cab call notifications,
 //   - watchdog pings/timeouts.
 //
-// On watchdog timeout, it calls reinit.Reinitialize().
-func (sm *Orchestrator) Run() {
-	go sm.watchdog.Start()
-	defer sm.watchdog.Stop()
+// On watchdog timeout, it reintializes the entire system.
+func (orchestrator *Orchestrator) Start() {
+	go orchestrator.watchdog.Start()
+	defer orchestrator.watchdog.Stop()
 
 	watchdogTicker := time.NewTicker(WatchdogInterval)
 	defer watchdogTicker.Stop()
 
 	for {
-		localElvevator := sm.wv.GetRemoteElevatorStates()
 
 		select {
 		case <-watchdogTicker.C:
-			sm.watchdog.Ping()
-		case <-sm.watchdog.Timeout:
+			orchestrator.watchdog.Ping()
+		case <-orchestrator.watchdog.TimeoutChan:
 			slog.Error("Watchdog timedout.. restarting")
 			reinit.Reinitialize()
-		case order := <-sm.drvButtons:
+		case order := <-orchestrator.drvButtons:
+			localElvevator := orchestrator.worldview.GetRemoteElevatorState()
 			if localElvevator.UndefinedState() {
 				continue
 			}
-			err := sm.makeNewOrder(order)
+			err := orchestrator.makeNewOrder(order)
 			if err != nil {
 				slog.Error("Failed to make new order", "error", err)
 				continue
 			}
 
 			if order.Button == elevio.Cab {
-				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+				orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 			}
 
-		case floor := <-sm.drvFloors:
+		case floor := <-orchestrator.drvFloors:
+			localElvevator := orchestrator.worldview.GetRemoteElevatorState()
 			localElvevator.CurrentFloor = floor
-			err := sm.wv.SetLocalElevatorStates(&localElvevator)
+			err := orchestrator.worldview.SetLocalElevatorStates(&localElvevator)
 			if err != nil {
 				slog.Error("SetLocalElevator", "error", err)
 			}
-			sm.elev.SetCurrentFloorLight(floor)
-			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
+			orchestrator.elevatorService.SetCurrentFloorLight(floor)
+			orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcArrivalFloor
 
-		case <-sm.recoveredCabCallChan:
-			localElev := sm.wv.GetRemoteElevatorStates()
-			sm.elev.SetCabCallLights(sm.wv.NumFloors, localElev.CabCalls)
+		case <-orchestrator.recoveredCabCallChan:
+			localElev := orchestrator.worldview.GetRemoteElevatorState()
+			orchestrator.elevatorService.SetCabCallLights(orchestrator.worldview.NumFloors, localElev.CabCalls)
 
-			sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+			orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 
-		case action := <-sm.ctrlActionChan:
+		case action := <-orchestrator.ctrlActionChan:
 			switch action := action.(type) {
 			case elevator.MoveAction:
-				err := sm.elev.SetMoveDirection(action.Direction)
+				err := orchestrator.elevatorService.SetMoveDirection(action.Direction)
 				if err != nil {
 					slog.Error("failed to set action", "err", err)
 				}
 
+				localElvevator := orchestrator.worldview.GetRemoteElevatorState()
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
 
-				sm.wv.SetLocalElevatorStates(&localElvevator)
+				orchestrator.worldview.SetLocalElevatorStates(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
 				}
 
 			case elevator.StopAction:
-				sm.elev.StopMotor()
+				orchestrator.elevatorService.StopMotor()
 
+				localElvevator := orchestrator.worldview.GetRemoteElevatorState()
 				localElvevator.Behavior = action.Behavior
-				err := sm.wv.SetLocalElevatorStates(&localElvevator)
+				err := orchestrator.worldview.SetLocalElevatorStates(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
 				}
-				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+				orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 
 			case elevator.LightAction:
-				sm.elev.SetCallLight(action.ButtonType, action.Floor, action.State)
+				orchestrator.elevatorService.SetCallLight(action.ButtonType, action.Floor, action.State)
 
 			case elevator.DoorAction:
 				if !action.Open {
-					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+					orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 				}
-				sm.elev.SetDoorState(action.Open)
+				orchestrator.elevatorService.SetDoorState(action.Open)
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
 			}
 
-		case isObstructed := <-sm.drvObst:
+		case isObstructed := <-orchestrator.drvObst:
+			localElvevator := orchestrator.worldview.GetRemoteElevatorState()
 			localElvevator.IsObstructed = isObstructed
 
-			err := sm.wv.SetLocalElevatorStates(&localElvevator)
+			err := orchestrator.worldview.SetLocalElevatorStates(&localElvevator)
 			if err != nil {
 				slog.Error("SetLocalElevator", "error", err)
 			}
 
-			if isObstructed && localElvevator.Behavior == elevator.BDoorOpen {
-				sm.elev.StopMotor()
+			if isObstructed && localElvevator.Behavior == elevator.BehaviorDoorOpen {
+				orchestrator.elevatorService.StopMotor()
 			} else {
-				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+				orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 			}
 
-		case shouldStop := <-sm.drvStop:
+		case shouldStop := <-orchestrator.drvStop:
 			if shouldStop {
-				sm.elev.StopMotor()
-				sm.elev.SetStopLight(elevator.LightOn)
+				orchestrator.elevatorService.StopMotor()
+				orchestrator.elevatorService.SetStopLight(true)
 			} else {
-				sm.elev.SetStopLight(elevator.LightOff)
-				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
+				orchestrator.elevatorService.SetStopLight(false)
+				orchestrator.ctrlTriggerChan <- controller.ControllerTriggerSrcOrderUpdate
 			}
 
 		}
 	}
 }
 
-// makeNewOrder creates a new order and updates the world view
-func (sm *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
+// makeNewOrder tries to creates a new order and updates the world view
+func (orchestrator *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
 	var err error
 	switch order.Button {
 	case elevio.Cab:
-		err = sm.wv.SetCabCall(order.Floor, true)
+		err = orchestrator.worldview.SetCabCall(order.Floor, true)
 	case elevio.HallUp:
-		err = sm.wv.NewHallCall(order.Floor, statesync.HallCallDirectionUp)
+		err = orchestrator.worldview.NewHallCall(order.Floor, statesync.HallCallDirectionUp)
 	case elevio.HallDown:
-		err = sm.wv.NewHallCall(order.Floor, statesync.HallCallDirectionDown)
+		err = orchestrator.worldview.NewHallCall(order.Floor, statesync.HallCallDirectionDown)
 	}
 
 	return err

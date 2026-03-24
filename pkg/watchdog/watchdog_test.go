@@ -12,7 +12,7 @@ func TestWatchdogTimeout(t *testing.T) {
 	go wd.Start()
 
 	select {
-	case <-wd.Timeout:
+	case <-wd.TimeoutChan:
 		// Expected timeout
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Watchdog did not timeout")
@@ -36,7 +36,7 @@ func TestWatchdogPing(t *testing.T) {
 	}()
 
 	select {
-	case <-wd.Timeout:
+	case <-wd.TimeoutChan:
 		t.Fatal("Watchdog timed out despite pinging")
 	case <-done:
 	}
@@ -64,7 +64,7 @@ func TestWatchdogTimeoutAfterPings(t *testing.T) {
 	wd.Ping()
 
 	select {
-	case <-wd.Timeout:
+	case <-wd.TimeoutChan:
 	case <-time.After(300 * time.Millisecond):
 		t.Fatal("Watchdog did not timeout after pings stopped")
 	}

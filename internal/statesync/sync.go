@@ -15,11 +15,14 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+// Worldview represents the local elevator's view of the system, including its own state and the states of other elevators.
 type Worldview struct {
-	LocalID              int                          `json:"local_id"`
-	ElevatorStates       map[int]*RemoteElevatorState `json:"elevator_states"`
-	HallCalls            [][2]HallCallPairState       `json:"hall_calls"`
-	NumFloors            int                          `json:"num_floors"`
+	// Shared state
+	LocalID        int                          `json:"local_id"`
+	ElevatorStates map[int]*RemoteElevatorState `json:"elevator_states"`
+	HallCalls      [][2]HallCallPairState       `json:"hall_calls"`
+	NumFloors      int                          `json:"num_floors"`
+	// Internal state
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Empty
 	hasFetchedCabCalls   bool
@@ -29,7 +32,7 @@ type Worldview struct {
 
 // NewWorldView constructs a new instance of the WorldView struct.
 func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredCabCallChan chan Empty) *Worldview {
-	wv := &Worldview{
+	worldview := &Worldview{
 		LocalID:              localID,
 		ElevatorStates:       make(map[int]*RemoteElevatorState),
 		HallCalls:            make([][2]HallCallPairState, numFloors),
@@ -41,28 +44,28 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 		lastNetworkError:     time.Time{},
 	}
 
-	for i := range wv.HallCalls {
-		wv.HallCalls[i][HallCallDirectionDown].AssignedBy = UnassignedID
-		wv.HallCalls[i][HallCallDirectionUp].AssignedBy = UnassignedID
+	for i := range worldview.HallCalls {
+		worldview.HallCalls[i][HallCallDirectionDown].AssignedBy = UnassignedID
+		worldview.HallCalls[i][HallCallDirectionUp].AssignedBy = UnassignedID
 	}
 
-	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
+	worldview.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
 
-	return wv
+	return worldview
 }
 
 // deepCopy creates a copy of the worldview for safe concurrent marshaling
 // Must be called with read lock (RLock) held
 // NOTE: when adding new fields, make sure to include them in the deep copy as well.
-func (wv *Worldview) deepCopy() Worldview {
+func (worldview *Worldview) deepCopy() Worldview {
 	wvCopy := Worldview{
-		LocalID:   wv.LocalID,
-		NumFloors: wv.NumFloors,
+		LocalID:   worldview.LocalID,
+		NumFloors: worldview.NumFloors,
 	}
 
 	// Deep copy ElevatorStates map
-	wvCopy.ElevatorStates = make(map[int]*RemoteElevatorState, len(wv.ElevatorStates))
-	for id, state := range wv.ElevatorStates {
+	wvCopy.ElevatorStates = make(map[int]*RemoteElevatorState, len(worldview.ElevatorStates))
+	for id, state := range worldview.ElevatorStates {
 		stateCopy := *state
 		stateCopy.CabCalls = make([]bool, len(state.CabCalls))
 		copy(stateCopy.CabCalls, state.CabCalls)
@@ -70,8 +73,8 @@ func (wv *Worldview) deepCopy() Worldview {
 	}
 
 	// Deep copy HallCalls
-	wvCopy.HallCalls = make([][2]HallCallPairState, len(wv.HallCalls))
-	for i, floorCalls := range wv.HallCalls {
+	wvCopy.HallCalls = make([][2]HallCallPairState, len(worldview.HallCalls))
+	for i, floorCalls := range worldview.HallCalls {
 		for j, call := range floorCalls {
 			wvCopy.HallCalls[i][j] = HallCallPairState{
 				State:      call.State,
@@ -85,25 +88,25 @@ func (wv *Worldview) deepCopy() Worldview {
 }
 
 // String converts the worldview into a string format
-func (wv Worldview) String() string {
+func (worldview Worldview) String() string {
 	return fmt.Sprintf("Worldview{LocalID: %d, ElevatorStates: %v, HallCalls: %v, NumFloors: %d}",
-		wv.LocalID, wv.ElevatorStates, wv.HallCalls, wv.NumFloors)
+		worldview.LocalID, worldview.ElevatorStates, worldview.HallCalls, worldview.NumFloors)
 }
 
 // StartSyncing creates listeners and transmitters for synchroization with other elevators.
 // Incoming data from peers is synchronized and merged upon reception.
 // Current states are passed along after successful merging.
-func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
+func (worldview *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
 	defer ticker.Stop()
-	localID := wv.LocalID
+	localID := worldview.LocalID
 
 	for {
 		select {
 		case <-netErrChan:
-			wv.mutex.Lock()
-			wv.lastNetworkError = time.Now()
-			wv.mutex.Unlock()
+			worldview.mutex.Lock()
+			worldview.lastNetworkError = time.Now()
+			worldview.mutex.Unlock()
 		case peerData := <-rxChan:
 			message := Message{}
 			err := msgpack.Unmarshal(peerData, &message)
@@ -112,30 +115,30 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 				continue
 			}
 
-			otherWv := message.Worldview
+			otherWorldview := message.Worldview
 
-			if otherWv.LocalID == localID {
+			if otherWorldview.LocalID == localID {
 				continue
 			}
 
-			wv.mutex.Lock()
-			wv.checkifNodeReappeared(otherWv.LocalID)
-			wv.mutex.Unlock()
+			worldview.mutex.Lock()
+			worldview.checkifNodeReappeared(otherWorldview.LocalID)
+			worldview.mutex.Unlock()
 
-			err = wv.Merge(&otherWv, message.Checksum)
+			err = worldview.Merge(&otherWorldview, message.Checksum)
 			if err != nil {
 				slog.Error("Failed to merge worldview", "error", err)
 			}
 
 		case <-ticker.C:
-			wv.mutex.Lock()
-			wv.ElevatorStates[localID].LastSeenAt = time.Now()
-			wv.releaseAnyOrders()
-			wv.mutex.Unlock()
+			worldview.mutex.Lock()
+			worldview.ElevatorStates[localID].LastSeenAt = time.Now()
+			worldview.releaseAnyOrders()
+			worldview.mutex.Unlock()
 
-			wv.mutex.RLock()
-			wvSnapshot := wv.deepCopy()
-			wv.mutex.RUnlock()
+			worldview.mutex.RLock()
+			wvSnapshot := worldview.deepCopy()
+			worldview.mutex.RUnlock()
 
 			data, err := BuildWvJSON(&wvSnapshot)
 			if err != nil {
@@ -151,54 +154,53 @@ func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-cha
 // fetchCabCallsOnReconnect ORs the local Cab Calls with those of the peer
 // and signals cab lights to be turned back on when applicable.
 // Must be called with lock held.
-func (wv *Worldview) fetchCabCallsOnReconnect(other *Worldview) {
-	peerView := other.ElevatorStates[wv.LocalID]
+func (worldview *Worldview) fetchCabCallsOnReconnect(other *Worldview) {
+	peerView := other.ElevatorStates[worldview.LocalID]
 
 	for floor, peerCabCallValue := range peerView.CabCalls {
-		existingCabCallValue := wv.ElevatorStates[wv.LocalID].CabCalls[floor]
-		wv.ElevatorStates[wv.LocalID].CabCalls[floor] = existingCabCallValue || peerCabCallValue
+		existingCabCallValue := worldview.ElevatorStates[worldview.LocalID].CabCalls[floor]
+		worldview.ElevatorStates[worldview.LocalID].CabCalls[floor] = existingCabCallValue || peerCabCallValue
 	}
-	wv.recoveredCabCallChan <- Empty{}
-	slog.Debug("cab calls recovered from peer", "cabCalls", wv.ElevatorStates[wv.LocalID].CabCalls)
+
+	worldview.recoveredCabCallChan <- Empty{}
 }
 
 // checkifNodeReappeared checks it's alive status as registered
 // in the incoming worldview and updates it to true if applicable.
-func (wv *Worldview) checkifNodeReappeared(id int) {
-	other, exist := wv.ElevatorStates[id]
+func (worldview *Worldview) checkifNodeReappeared(id int) {
+	other, exist := worldview.ElevatorStates[id]
 	if exist && !other.Alive {
 		slog.Info("Node has reappeared", "id", id)
-		wv.ElevatorStates[id].Alive = true
+		worldview.ElevatorStates[id].Alive = true
 	}
 }
 
-// releaseAnyOrders releases orders that are assigned to lost
-// or obstructed nodes,
-// or orders that have been processing for too long without completion.
-// At release, it immediately signs off its id for confirmation
-func (wv *Worldview) releaseAnyOrders() {
-	localID := wv.LocalID
+// releaseAnyOrders releases orders that are assigned to lost nodes
+// obstructed nodes, or orders timed out (took too long to complete).
+// Must be called with lock held.
+func (worldview *Worldview) releaseAnyOrders() {
+	localID := worldview.LocalID
 
-	for id, state := range wv.ElevatorStates {
+	for id, state := range worldview.ElevatorStates {
 		if id == localID {
 			continue
 		}
 
-		if time.Since(state.LastSeenAt) > NodeLostTimeout && wv.ElevatorStates[id].Alive {
+		if time.Since(state.LastSeenAt) > NodeLostTimeout && worldview.ElevatorStates[id].Alive {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
-			wv.ElevatorStates[id].Alive = false
+			worldview.ElevatorStates[id].Alive = false
 		}
 	}
 
-	for floor := range wv.HallCalls {
-		for dir := range wv.HallCalls[floor] {
-			hc := wv.HallCalls[floor][dir]
+	for floor := range worldview.HallCalls {
+		for direction := range worldview.HallCalls[floor] {
+			hallCall := worldview.HallCalls[floor][direction]
 
-			assignedNode, exist := wv.ElevatorStates[hc.AssignedBy]
+			assignedNode, exist := worldview.ElevatorStates[hallCall.AssignedBy]
 			isNodeLost := exist && !assignedNode.Alive
 
-			hasOrderTimedout := hc.State == HallCallStateProcessing && hc.Timestamp != 0 &&
-				time.Since(time.UnixMilli(hc.Timestamp)) > OrderProcessingTimeout
+			hasOrderTimedout := hallCall.State == HallCallStateProcessing && hallCall.Timestamp != 0 &&
+				time.Since(time.UnixMilli(hallCall.Timestamp)) > OrderProcessingTimeout
 
 			if isNodeLost || hasOrderTimedout {
 				reason := "unknown"
@@ -206,15 +208,15 @@ func (wv *Worldview) releaseAnyOrders() {
 				case isNodeLost:
 					reason = "node lost"
 				case hasOrderTimedout:
-					if hc.AssignedBy == localID {
-						wv.ElevatorStates[localID].TimedOutAt = time.Now()
+					if hallCall.AssignedBy == localID {
+						worldview.ElevatorStates[localID].TimedOutAt = time.Now()
 						slog.Warn("unable to complete order, temporarily blocked from new hall assignments.")
 					}
 					reason = "order timed out"
 				}
 
-				slog.Warn("releasing order", "by", hc.AssignedBy, "floor", floor, "dir", dir, "reason", reason)
-				wv.HallCalls[floor][dir] = HallCallPairState{
+				slog.Warn("releasing order", "by", hallCall.AssignedBy, "floor", floor, "dir", direction, "reason", reason)
+				worldview.HallCalls[floor][direction] = HallCallPairState{
 					State:      HallCallStateConfirmed,
 					AssignedBy: UnassignedID,
 					Timestamp:  0,
@@ -227,20 +229,19 @@ func (wv *Worldview) releaseAnyOrders() {
 
 // isDisconnected returns true if the local node is
 // considered disconnected from the network, false otherwise
-func (wv *Worldview) isDisconnected() bool {
-	return time.Since(wv.lastNetworkError) <= time.Duration(DisconnectedTimeout)
+func (worldview *Worldview) isDisconnected() bool {
+	return time.Since(worldview.lastNetworkError) <= time.Duration(DisconnectedTimeout)
 }
 
-// setHallCall changes the given floor's Up/Down state based on direction.
-// Includes acceptance tests for valid transitions and floor counts
-func (wv *Worldview) setHallCall(floor int, dir HallCallDirection, state HallCallState) error {
-	wv.mutex.Lock()
-	defer wv.mutex.Unlock()
+// setHallCall tries to change the given floor's Up/Down state based on direction.
+func (worldview *Worldview) setHallCall(floor int, dir HallCallDirection, state HallCallState) error {
+	worldview.mutex.Lock()
+	defer worldview.mutex.Unlock()
 
-	if !IsValidFloor(floor, wv.NumFloors) {
+	if !IsValidFloor(floor, worldview.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
-	existingHallCall := wv.HallCalls[floor][dir]
+	existingHallCall := worldview.HallCalls[floor][dir]
 
 	if err := IsValidDirTransition(existingHallCall.State, state); err != nil {
 		return fmt.Errorf("invalid state transition for floor %d dir %d: %w", floor, dir, err)
@@ -250,7 +251,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDirection, state HallCal
 	resultHallCall.State = state
 
 	if state == HallCallStateProcessing {
-		resultHallCall.AssignedBy = wv.LocalID
+		resultHallCall.AssignedBy = worldview.LocalID
 		resultHallCall.Timestamp = time.Now().UnixMilli()
 	} else {
 		resultHallCall.AssignedBy = UnassignedID
@@ -258,52 +259,49 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDirection, state HallCal
 	}
 
 	if state == HallCallStateNone && existingHallCall.State == HallCallStateProcessing {
-		if existingHallCall.AssignedBy != wv.LocalID {
+		if existingHallCall.AssignedBy != worldview.LocalID {
 			return fmt.Errorf("cannot complete hall call that is being processed by another elevator")
 		}
 	}
 
-	wv.HallCalls[floor][dir] = resultHallCall
+	worldview.HallCalls[floor][dir] = resultHallCall
 	return nil
 }
 
-// CompleteHallCall marks the given hall call as completed,
-// but only if it is currently being processed by the local elevator.
-func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDirection) error {
-	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
+// CompleteHallCall tries to mark the given hall call as completed.
+func (worldview *Worldview) CompleteHallCall(floor int, dir HallCallDirection) error {
+	if err := worldview.setHallCall(floor, dir, HallCallStateNone); err != nil {
 		return err
 	}
-	wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
+	worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
 	return nil
 }
 
-// NewHallCall creates a new order in the system.
-// Performes acceptance tests for network connectivity,
-// keeping track of the number of active peers in the network.
-func (wv *Worldview) NewHallCall(floor int, dir HallCallDirection) error {
-	wv.mutex.RLock()
+// NewHallCall tries to create a new order in the system.
+func (worldview *Worldview) NewHallCall(floor int, dir HallCallDirection) error {
+	worldview.mutex.RLock()
 
-	if wv.isDisconnected() {
-		wv.mutex.RUnlock()
+	if worldview.isDisconnected() {
+		worldview.mutex.RUnlock()
 		return fmt.Errorf("cannot place new hall call when network is disconnected")
 	}
 
 	aliveCount := 0
-	for _, state := range wv.ElevatorStates {
+	for _, state := range worldview.ElevatorStates {
 		if state.Alive {
 			aliveCount++
 		}
 	}
 
-	localElevator := wv.ElevatorStates[wv.LocalID]
+	localElevator := worldview.ElevatorStates[worldview.LocalID]
 	if aliveCount <= 1 && localElevator.IsObstructed {
-		wv.mutex.RUnlock()
+		worldview.mutex.RUnlock()
 		return fmt.Errorf("cannot place new hall call when alone on network and local elevator is obstructed")
 	}
 
 	var targetState HallCallState
 
-	wv.mutex.RUnlock()
+	worldview.mutex.RUnlock()
 
 	// Alone on network , skip Unconfirmed, go straight to Confirmed
 	if aliveCount <= 1 {
@@ -312,97 +310,80 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDirection) error {
 		targetState = HallCallStateUnconfirmed
 	}
 
-	if err := wv.setHallCall(floor, dir, targetState); err != nil {
+	if err := worldview.setHallCall(floor, dir, targetState); err != nil {
 		return err
 	}
 
-	wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
+	worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 	return nil
 }
 
-// ProcessHallCall process the local elevators hall call.
-func (wv *Worldview) ProcessHallCall(floor int, dir HallCallDirection) error {
-	return wv.setHallCall(floor, dir, HallCallStateProcessing)
+// ProcessHallCall tries to process the give hall call.
+func (worldview *Worldview) ProcessHallCall(floor int, dir HallCallDirection) error {
+	return worldview.setHallCall(floor, dir, HallCallStateProcessing)
 }
 
-// SetCabCall sets the cab call state at given floor to match the argument.
-func (wv *Worldview) SetCabCall(floor int, state bool) error {
-	slog.Info("setting cab call", "floor", floor, "state", state)
-	wv.mutex.Lock()
-	defer wv.mutex.Unlock()
+// SetCabCall tries to set the cab call state at given floor.
+func (worldview *Worldview) SetCabCall(floor int, state bool) error {
+	worldview.mutex.Lock()
+	defer worldview.mutex.Unlock()
 
-	if !IsValidFloor(floor, wv.NumFloors) {
+	if !IsValidFloor(floor, worldview.NumFloors) {
 		return fmt.Errorf("%v is not valid floor", floor)
 	}
 
-	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
+	worldview.ElevatorStates[worldview.LocalID].CabCalls[floor] = state
 
-	wv.orderUpdateChan <- Order{Type: elevio.Cab, Floor: floor, Completed: !state}
+	worldview.orderUpdateChan <- Order{Type: elevio.Cab, Floor: floor, Completed: !state}
 
 	return nil
 }
 
-// SetLocalElevatorStates updates states of the local elevator in the worldview.
-func (wv *Worldview) SetLocalElevatorStates(elev *RemoteElevatorState) error {
-	wv.mutex.Lock()
-	defer wv.mutex.Unlock()
+// SetLocalElevatorStates tries to update state of the local elevator in the worldview.
+func (worldview *Worldview) SetLocalElevatorStates(elev *RemoteElevatorState) error {
+	worldview.mutex.Lock()
+	defer worldview.mutex.Unlock()
 	if err := ValidateStateRemote(elev); err != nil {
 		return err
 	}
 
-	wv.ElevatorStates[wv.LocalID] = elev
+	worldview.ElevatorStates[worldview.LocalID] = elev
 	return nil
 }
 
-// SetOtherElevatorStates updates states of a given elevator in the worldview.
-func (wv *Worldview) SetOtherElevatorStates(elev *RemoteElevatorState, id int) error {
-	wv.mutex.Lock()
-	defer wv.mutex.Unlock()
-	if err := ValidateStateRemote(elev); err != nil {
-		return err
-	}
-
-	wv.ElevatorStates[id] = elev
-	return nil
-}
-
-// GetRemoteElevatorStates returns the local elevator state from the worldview.
-func (wv *Worldview) GetRemoteElevatorStates() RemoteElevatorState {
-	wv.mutex.RLock()
-	defer wv.mutex.RUnlock()
-	return *wv.ElevatorStates[wv.LocalID]
+// GetRemoteElevatorState returns the local elevator state from the worldview.
+func (worldview *Worldview) GetRemoteElevatorState() RemoteElevatorState {
+	worldview.mutex.RLock()
+	defer worldview.mutex.RUnlock()
+	return *worldview.ElevatorStates[worldview.LocalID]
 }
 
 // GetAllHallCalls returns a copy of the current hall calls from the worldview.
-func (wv *Worldview) GetAllHallCalls() [][2]HallCallPairState {
-	wv.mutex.RLock()
-	defer wv.mutex.RUnlock()
+func (worldview *Worldview) GetAllHallCalls() [][2]HallCallPairState {
+	worldview.mutex.RLock()
+	defer worldview.mutex.RUnlock()
 
-	result := make([][2]HallCallPairState, len(wv.HallCalls))
-	copy(result, wv.HallCalls)
+	result := make([][2]HallCallPairState, len(worldview.HallCalls))
+	copy(result, worldview.HallCalls)
 
 	return result
 }
 
-// Merge merges incoming Worldview with the current one.
-// Contains a number of acceptance tests that ensures no invalid
-// incoming states are merged with the local ones.
-func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
-	wv.mutex.Lock()
-	defer wv.mutex.Unlock()
+// Merge tries to merge incoming Worldview with ours.
+// If successful, merges shared state only.
+func (worldview *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
+	worldview.mutex.Lock()
+	defer worldview.mutex.Unlock()
 
 	if other == nil {
 		return fmt.Errorf("cannot merge with nil worldview")
 	}
 
-	otherHCLen := len(other.HallCalls)
-	ourHCLen := len(wv.HallCalls)
-
-	if otherHCLen != ourHCLen {
+	if len(other.HallCalls) != len(worldview.HallCalls) {
 		return fmt.Errorf("length of hall calls doesnt match")
 	}
 
-	if other.NumFloors != wv.NumFloors {
+	if other.NumFloors != worldview.NumFloors {
 		return fmt.Errorf("number of floors doesnt match")
 	}
 
@@ -415,72 +396,70 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		return fmt.Errorf("data integrity check failed: checksum mismatch")
 	}
 
-	// -- Validate Elevator State --
 	otherLocalState := other.ElevatorStates[other.LocalID]
 	if err = ValidateStateRemote(otherLocalState); err != nil {
 		return fmt.Errorf("%v's local state is invalid: %w", other.LocalID, err)
 	}
 
-	_, weExist := other.ElevatorStates[wv.LocalID]
+	_, weExist := other.ElevatorStates[worldview.LocalID]
 
-	wv.ElevatorStates[other.LocalID] = otherLocalState
+	worldview.ElevatorStates[other.LocalID] = otherLocalState
 
 	fetchCabCalls := false
 
-	if !wv.hasFetchedCabCalls && weExist {
-		fetchCabCalls = !slices.Equal(wv.ElevatorStates[wv.LocalID].CabCalls, other.ElevatorStates[wv.LocalID].CabCalls)
+	if !worldview.hasFetchedCabCalls && weExist {
+		fetchCabCalls = !slices.Equal(worldview.ElevatorStates[worldview.LocalID].CabCalls, other.ElevatorStates[worldview.LocalID].CabCalls)
 	}
 
 	if fetchCabCalls {
-		wv.fetchCabCallsOnReconnect(other)
-		wv.hasFetchedCabCalls = true
+		worldview.fetchCabCallsOnReconnect(other)
+		worldview.hasFetchedCabCalls = true
 	}
 
-	// -- Validate Hall Calls --
+	// Merge hall calls
 	for floor := range other.HallCalls {
 		for dir := range other.HallCalls[floor] {
 			otherHallCall := other.HallCalls[floor][dir]
-			ourHallCall := wv.HallCalls[floor][dir]
+			ourHallCall := worldview.HallCalls[floor][dir]
 			dir := HallCallDirection(dir)
 			switch otherHallCall.State {
 			case HallCallStateNone:
-				// We accept even if our is Confirmed because 'other' might have completed from the
-				// same floor as the order floor, thus bypassing Processing sequence
-				if (ourHallCall.State == HallCallStateProcessing || ourHallCall.State == HallCallStateConfirmed) && ourHallCall.AssignedBy == other.LocalID {
+				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
 					slog.Info("order completed", "by", ourHallCall.AssignedBy, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
 
-					wv.HallCalls[floor][dir] = HallCallPairState{
+					worldview.HallCalls[floor][dir] = HallCallPairState{
 						State:      HallCallStateNone,
 						AssignedBy: UnassignedID,
 						Timestamp:  time.Now().UnixMilli(), // keep timestamp on None to mark "just completed"
 					}
-					wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
+
+					worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
 				}
 			case HallCallStateUnconfirmed:
 				if ourHallCall.State == HallCallStateNone {
 					slog.Info("new uncofirmed order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
-					wv.HallCalls[floor][dir].State = HallCallStateUnconfirmed
+					worldview.HallCalls[floor][dir].State = HallCallStateUnconfirmed
 
-					wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
+					worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 				}
 
 				if ourHallCall.State == HallCallStateUnconfirmed {
 					slog.Info("order confirmed, promoting to CONFRIMED", "floor", floor, "dir", dir)
-					wv.HallCalls[floor][dir].State = HallCallStateConfirmed
+					worldview.HallCalls[floor][dir].State = HallCallStateConfirmed
 				}
 			case HallCallStateConfirmed:
 				if ourHallCall.State == HallCallStateNone || ourHallCall.State == HallCallStateUnconfirmed {
-					// Peer already promoted → accept it
-					wv.HallCalls[floor][dir].State = HallCallStateConfirmed
+					// Peer already promoted,  accept it
+					worldview.HallCalls[floor][dir].State = HallCallStateConfirmed
 
 					if ourHallCall.State == HallCallStateNone {
-						wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
+						worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 					}
 				}
 
 				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
 					slog.Warn("order has been released", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
-					wv.HallCalls[floor][dir] = HallCallPairState{
+					worldview.HallCalls[floor][dir] = HallCallPairState{
 						State:      HallCallStateConfirmed,
 						AssignedBy: UnassignedID,
 						Timestamp:  0,
@@ -488,13 +467,13 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 				}
 
 			case HallCallStateProcessing:
-				// We can accept if our is none because we might be on startup
+				// We can accept if our is 'None' because we might be coming from an initial startup state
 				if ourHallCall.State == HallCallStateConfirmed || ourHallCall.State == HallCallStateNone {
 					if otherHallCall.AssignedBy == other.LocalID {
 						slog.Info("processing order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir, "timestamp", otherHallCall.Timestamp)
-						wv.HallCalls[floor][dir].AssignedBy = otherHallCall.AssignedBy
-						wv.HallCalls[floor][dir].State = HallCallStateProcessing
-						wv.HallCalls[floor][dir].Timestamp = otherHallCall.Timestamp
+						worldview.HallCalls[floor][dir].AssignedBy = otherHallCall.AssignedBy
+						worldview.HallCalls[floor][dir].State = HallCallStateProcessing
+						worldview.HallCalls[floor][dir].Timestamp = otherHallCall.Timestamp
 					}
 				}
 			}

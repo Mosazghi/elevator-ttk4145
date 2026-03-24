@@ -1,4 +1,3 @@
-// Package validate is used for validation of states related to worldview, floors, elevators etc.
 package statesync
 
 import (
@@ -50,8 +49,8 @@ func ValidateStateRemote(res *RemoteElevatorState) error {
 		return fmt.Errorf("remote elevator state cannot be nil")
 	}
 
-	isMoving := res.Behavior == elevator.BMoving
-	isDoorOpen := res.DoorState == elevator.DoorOpen
+	isMoving := res.Behavior == elevator.BehaviorMoving
+	isDoorOpen := res.Behavior == elevator.BehaviorDoorOpen
 
 	if isMoving && isDoorOpen {
 		return fmt.Errorf("cannot move with door open")

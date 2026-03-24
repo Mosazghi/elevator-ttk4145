@@ -45,10 +45,14 @@ func (hallCallDirection HallCallDirection) String() string {
 	}
 }
 
+// HallCallPairState represents the state of a hall call.
 type HallCallPairState struct {
-	State      HallCallState // the state of the hall call (available, processing, none)
-	AssignedBy int           // the id of the elevator that has taken the order
-	Timestamp  int64         // the timestamp of when the order was being processed
+	// State represents the current state of the hall call (None, Unconfirmed, Confirmed, Processing).
+	State HallCallState
+	// AssignedBy is the ID of the elevator that has accepted to serve this hall call. Only relevant when State is Processing.
+	AssignedBy int
+	// Timestamp is the time when the hall call was accepted by an elevator. Only relevant when State is Processing.
+	Timestamp int64
 }
 
 type Order struct {
@@ -57,6 +61,7 @@ type Order struct {
 	Completed bool
 }
 
+// Message is whats sent over the network.
 type Message struct {
 	Worldview Worldview
 	Checksum  uint64
