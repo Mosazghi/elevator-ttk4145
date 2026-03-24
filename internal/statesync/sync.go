@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
 	. "github.com/Mosazghi/elevator-ttk4145/shared"
 	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
@@ -21,6 +22,7 @@ type Worldview struct {
 	orderUpdateChan      chan Order
 	recoveredCabCallChan chan Empty
 	hasFetchedCabCalls   bool
+	lastNetworkError     time.Time
 	mu                   *sync.RWMutex
 }
 
@@ -34,12 +36,13 @@ func NewWorldView(localID, numFloors int, orderUpdateChan chan Order, recoveredC
 		orderUpdateChan:      orderUpdateChan,
 		hasFetchedCabCalls:   false,
 		recoveredCabCallChan: recoveredCabCallChan,
+		lastNetworkError:     time.Time{},
 		mu:                   &sync.RWMutex{},
 	}
 
 	for i := range wv.HallCalls {
-		wv.HallCalls[i][HDDown].AssignedBy = -1
-		wv.HallCalls[i][HDUp].AssignedBy = -1
+		wv.HallCalls[i][HDDown].AssignedBy = UnassignedID
+		wv.HallCalls[i][HDUp].AssignedBy = UnassignedID
 	}
 
 	wv.ElevatorStates[localID] = NewRemoteElevatorState(localID, numFloors)
@@ -87,14 +90,17 @@ func (wv Worldview) String() string {
 }
 
 // StartSyncing creates listeners and transmitters for synchroizations with other elevators
-func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, errChan <-chan error) {
+func (wv *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
 	ticker := time.NewTicker(BroadcastInterval)
 	defer ticker.Stop()
 	localID := wv.LocalID
+
 	for {
 		select {
-		case err := <-errChan:
-			slog.Error("Network error", "error", err)
+		case <-netErrChan:
+			wv.mu.Lock()
+			wv.lastNetworkError = time.Now()
+			wv.mu.Unlock()
 		case peerData := <-rxChan:
 			message := Message{}
 			err := msgpack.Unmarshal(peerData, &message)
@@ -201,13 +207,19 @@ func (wv *Worldview) releaseAnyOrders() {
 				slog.Warn("releasing order", "by", hc.AssignedBy, "floor", floor, "dir", dir, "reason", reason)
 				wv.HallCalls[floor][dir] = HallCallPairState{
 					State:      HallCallStateConfirmed,
-					AssignedBy: -1,
+					AssignedBy: UnassignedID,
 					Timestamp:  0,
 				}
 			}
 
 		}
 	}
+}
+
+// isDisconnected returns true if the local node is considered disconnected from the network,
+// false otherwise
+func (wv *Worldview) isDisconnected() bool {
+	return time.Since(wv.lastNetworkError) <= time.Duration(DisconnectedTimeout)
 }
 
 // setHallCall changes the given floor's Up/Down state based on dir
@@ -231,7 +243,7 @@ func (wv *Worldview) setHallCall(floor int, dir HallCallDir, state HallCallState
 		resultHallCall.AssignedBy = wv.LocalID
 		resultHallCall.Timestamp = time.Now().UnixMilli()
 	} else {
-		resultHallCall.AssignedBy = -1
+		resultHallCall.AssignedBy = UnassignedID
 		resultHallCall.Timestamp = 0
 	}
 
@@ -250,13 +262,18 @@ func (wv *Worldview) CompleteHallCall(floor int, dir HallCallDir) error {
 	if err := wv.setHallCall(floor, dir, HallCallStateNone); err != nil {
 		return err
 	}
-	wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: true}
+	wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
 	return nil
 }
 
 // NewHallCall creates a new order on the systems
 func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 	wv.mu.RLock()
+
+	if wv.isDisconnected() {
+		wv.mu.RUnlock()
+		return fmt.Errorf("cannot place new hall call when network is disconnected")
+	}
 
 	aliveCount := 0
 	for _, state := range wv.ElevatorStates {
@@ -286,7 +303,7 @@ func (wv *Worldview) NewHallCall(floor int, dir HallCallDir) error {
 		return err
 	}
 
-	wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
+	wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 	return nil
 }
 
@@ -306,6 +323,8 @@ func (wv *Worldview) SetCabCall(floor int, state bool) error {
 	}
 
 	wv.ElevatorStates[wv.LocalID].CabCalls[floor] = state
+
+	wv.orderUpdateChan <- Order{Type: elevio.Cab, Floor: floor, Completed: !state}
 
 	return nil
 }
@@ -406,24 +425,27 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 		for dir := range other.HallCalls[floor] {
 			otherHallCall := other.HallCalls[floor][dir]
 			ourHallCall := wv.HallCalls[floor][dir]
+			dir := HallCallDir(dir)
 			switch otherHallCall.State {
 			case HallCallStateNone:
-				if ourHallCall.State == HallCallStateProcessing && ourHallCall.AssignedBy == other.LocalID {
+				// We accept even if our is Confirmed because 'other' might have completed from the
+				// same floor as the order floor, thus bypassing Processing sequence
+				if (ourHallCall.State == HallCallStateProcessing || ourHallCall.State == HallCallStateConfirmed) && ourHallCall.AssignedBy == other.LocalID {
 					slog.Info("order completed", "by", ourHallCall.AssignedBy, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
 
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:      HallCallStateNone,
-						AssignedBy: -1,
+						AssignedBy: UnassignedID,
 						Timestamp:  time.Now().UnixMilli(), // keep timestamp on None to mark "just completed"
 					}
-					wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: true}
+					wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
 				}
 			case HallCallStateUnconfirmed:
 				if ourHallCall.State == HallCallStateNone {
 					slog.Info("new uncofirmed order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir].State = HallCallStateUnconfirmed
 
-					wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
+					wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 				}
 
 				if ourHallCall.State == HallCallStateUnconfirmed {
@@ -436,7 +458,7 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					wv.HallCalls[floor][dir].State = HallCallStateConfirmed
 
 					if ourHallCall.State == HallCallStateNone {
-						wv.orderUpdateChan <- Order{Floor: floor, Direction: HallCallDir(dir), Completed: false}
+						wv.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: false}
 					}
 				}
 
@@ -444,15 +466,14 @@ func (wv *Worldview) Merge(other *Worldview, otherChecksum uint64) error {
 					slog.Warn("order has been released", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
 					wv.HallCalls[floor][dir] = HallCallPairState{
 						State:      HallCallStateConfirmed,
-						AssignedBy: -1,
+						AssignedBy: UnassignedID,
 						Timestamp:  0,
 					}
 				}
 
 			case HallCallStateProcessing:
 				// We can accept if our is none because we might be on startup
-				if ourHallCall.State == HallCallStateConfirmed ||
-					(ourHallCall.State == HallCallStateNone && ourHallCall.Timestamp == 0) { // only accept if NOT just completed
+				if ourHallCall.State == HallCallStateConfirmed || ourHallCall.State == HallCallStateNone {
 					if otherHallCall.AssignedBy == other.LocalID {
 						slog.Info("processing order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir, "timestamp", otherHallCall.Timestamp)
 						wv.HallCalls[floor][dir].AssignedBy = otherHallCall.AssignedBy

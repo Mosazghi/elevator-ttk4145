@@ -9,9 +9,9 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	"github.com/Mosazghi/elevator-ttk4145/internal/fsm"
 	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/network"
+	"github.com/Mosazghi/elevator-ttk4145/internal/orchestrator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/orders"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	. "github.com/Mosazghi/elevator-ttk4145/shared"
@@ -96,7 +96,7 @@ func main() {
 		elevatorService.SetAllLights(wv.NumFloors, cabCalls, hallCalls)
 	}
 
-	fsm := fsm.NewStateMachine(
+	orchestrator := orchestrator.NewOrchestrator(
 		drvButtons,
 		drvFloors,
 		drvObstr,
@@ -108,7 +108,7 @@ func main() {
 		wv,
 	)
 
-	fsm.Run()
+	orchestrator.Run()
 }
 
 func SetupLogger(level slog.Leveler) {

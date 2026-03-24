@@ -27,9 +27,6 @@ func New(duration time.Duration) *WatchDog {
 
 // Start new Watchdog timer with a given interval in seconds. Returns the WatchDog struct
 func (wd *WatchDog) Start() {
-	slog.Info("[Watchdog] Starting...")
-
-	slog.Info("[Watchdog] Started")
 	timer := time.NewTimer(wd.duration)
 	defer timer.Stop()
 	defer close(wd.done)

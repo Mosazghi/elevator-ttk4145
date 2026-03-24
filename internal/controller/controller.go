@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"log/slog"
 	"math"
 	"time"
 
@@ -31,38 +32,32 @@ func NewController(wv *statesync.Worldview, actionChan chan any, ctrlTrigger cha
 	}
 }
 
-func (ctrl *Controller) OnFloorArrival(order CurrentOrder) {
+func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
-		return
+		return nil
 	}
 	ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BDoorOpen}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
-	ctrl.clearAllOrdersAtFloor(order)
+	return ctrl.clearOrderAtFloor(order)
 }
 
-// clearAllOrdersAtFloor completes all cab calls and hall calls at the given floor
-func (ctrl *Controller) clearAllOrdersAtFloor(order CurrentOrder) {
-	elev := ctrl.wv.GetRemoteElevator()
-	floor := order.Floor
-
-	if elev.CabCalls[floor] {
-		// NOTE: Have to set cab call to false here as well if the elevator is on the same floor,
-		// and just reconnected
-		ctrl.wv.SetCabCall(floor, false)
-		ctrl.actionChan <- elevator.LightAction{ButtonType: elevio.Cab, Floor: floor, State: false}
+// clearOrderAtFloor completes all cab calls and hall calls at the given floor
+func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
+	err := order.Complete(ctrl.wv)
+	if err != nil {
+		return err
 	}
 
-	time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
-	order.Complete(ctrl.wv)
 	ctrl.doorTimerChan = time.After(ctrl.doorDuration)
+	return nil
 }
 
 func (ctrl *Controller) Start() {
 	for {
 		select {
 		case order := <-ctrl.hcLightChan:
-			ctrl.actionChan <- elevator.LightAction{ButtonType: HallDirToButtonType(order.Direction), Floor: order.Floor, State: !order.Completed}
+			ctrl.actionChan <- elevator.LightAction{ButtonType: order.Type, Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
 			elev := ctrl.wv.GetRemoteElevator()
 
@@ -81,7 +76,10 @@ func (ctrl *Controller) Start() {
 
 			case elevator.BDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
-					ctrl.clearAllOrdersAtFloor(closestOrder)
+					err := ctrl.clearOrderAtFloor(closestOrder)
+					if err != nil {
+						slog.Error("error clearing at floor", "err", err)
+					}
 				}
 			case elevator.BMoving:
 				if closestOrder.Empty() || closestOrder.OppositeDirection(elev.Direction) {
@@ -204,7 +202,8 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 			}
 
 			hallCallDirection = statesync.HallCallDir(direction)
-			orderType = HallDirToButtonType(hallCallDirection)
+
+			orderType = statesync.HallDirToButtonType(hallCallDirection)
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
