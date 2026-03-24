@@ -420,11 +420,11 @@ func newDoorTimerTestCtx(t *testing.T, floor int, numFloors int) (*Controller, c
 	hcLightChan := make(chan statesync.Order, 10)
 
 	ctrl := &Controller{
-		wv:           wv,
-		actionChan:   actionChan,
-		triggerChan:  triggerChan,
-		hcLightChan:  hcLightChan,
-		doorDuration: 3 * time.Second,
+		wv:              wv,
+		actionChan:      actionChan,
+		triggerChan:     triggerChan,
+		orderUpdateChan: hcLightChan,
+		doorDuration:    3 * time.Second,
 	}
 	return ctrl, actionChan, triggerChan
 }
@@ -443,11 +443,11 @@ func newCtrlWithStart(t *testing.T, floor int, doorDuration time.Duration, numFl
 	hcLightChan := make(chan statesync.Order, 10)
 
 	ctrl := &Controller{
-		wv:           wv,
-		actionChan:   actionChan,
-		triggerChan:  triggerChan,
-		hcLightChan:  hcLightChan,
-		doorDuration: doorDuration,
+		wv:              wv,
+		actionChan:      actionChan,
+		triggerChan:     triggerChan,
+		orderUpdateChan: hcLightChan,
+		doorDuration:    doorDuration,
 	}
 	go ctrl.Start()
 	return ctrl, actionChan, triggerChan
@@ -530,11 +530,11 @@ func TestDoorTimer_ClearsAllOrdersAtFloor(t *testing.T) {
 	require.NoError(t, wv.ProcessHallCall(2, statesync.HDUp))
 
 	ctrl := &Controller{
-		wv:           wv,
-		actionChan:   make(chan any, 20),
-		triggerChan:  make(chan ControllerTriggerSrc, 10),
-		hcLightChan:  make(chan statesync.Order, 10),
-		doorDuration: 3 * time.Second,
+		wv:              wv,
+		actionChan:      make(chan any, 20),
+		triggerChan:     make(chan ControllerTriggerSrc, 10),
+		orderUpdateChan: make(chan statesync.Order, 10),
+		doorDuration:    3 * time.Second,
 	}
 	ticker := time.NewTicker(200 * time.Millisecond)
 	select {
