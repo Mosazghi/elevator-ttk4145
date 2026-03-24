@@ -21,6 +21,7 @@ type RemoteElevatorState struct {
 	LastSeenAt   time.Time             `json:"last_seen_at"`
 	NumFloors    int                   `json:"num_floors"`
 	Alive        bool                  `json:"alive"`
+	TimedOutAt	 time.Time			   `json:"timed_out_at"`
 }
 
 // NewRemoteElevatorState creates a new instance of  RemoteElevatorState
@@ -35,6 +36,7 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		LastSeenAt:   time.Now(),
 		NumFloors:    numFloors,
 		Alive:        true,
+		TimedOutAt:   time.Time{},
 	}
 }
 
@@ -44,7 +46,8 @@ func (res *RemoteElevatorState) String() string {
 }
 
 func (res *RemoteElevatorState) AllowedToServe() bool {
-	return res.Behavior == elevator.BIdle || res.Behavior == elevator.BDoorOpen
+	return (res.Alive && !res.IsObstructed) &&
+	time.Since(res.TimedOutAt) > BlockNewOrderDuration 
 }
 
 func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDir) bool {

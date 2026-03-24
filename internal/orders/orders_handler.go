@@ -43,6 +43,7 @@ func (o *OrderHandler) Run() {
 				}
 				slog.Debug("Calcing cost function", "floor", floor, "dir", dir)
 
+				
 				winner := CalculateCost(o.wv, floor, statesync.HallCallDir(dir))
 				if winner.id == o.wv.LocalID {
 					err := o.wv.ProcessHallCall(floor, statesync.HallCallDir(dir))

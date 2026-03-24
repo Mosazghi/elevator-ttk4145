@@ -354,10 +354,10 @@ func TestStartSyncing_ReceivesAndMergesPeerData(t *testing.T) {
 	// Wait for merge to complete and verify
 	time.Sleep(100 * time.Millisecond)
 
-	wv1.mu.Lock()
+	wv1.mutex.Lock()
 	assert.Equal(t, HallCallStateUnconfirmed, wv1.HallCalls[2][HDUp].State, "hall call from wv2 should be merged")
 	assert.Contains(t, wv1.ElevatorStates, 2, "wv2's elevator state should be merged")
-	wv1.mu.Unlock()
+	wv1.mutex.Unlock()
 }
 
 // TestStartSyncing_HandlesInvalidJSON verifies graceful handling of malformed messages
@@ -385,9 +385,9 @@ func TestStartSyncing_HandlesInvalidJSON(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify valid message was processed
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	assert.Contains(t, wv.ElevatorStates, 2, "should still process valid messages after invalid one")
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 }
 
 // TestStartSyncing_DetectsLostPeers verifies timeout detection for lost peers
@@ -409,12 +409,12 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify peer exists
-	wv1.mu.Lock()
+	wv1.mutex.Lock()
 	peer, exists := wv1.ElevatorStates[2]
 	if exists {
 		peer.LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
 	}
-	wv1.mu.Unlock()
+	wv1.mutex.Unlock()
 
 	assert.True(t, exists, "peer should be added")
 
@@ -422,14 +422,14 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	time.Sleep(BroadcastInterval + 200*time.Millisecond)
 
 	// Copy state safely
-	wv1.mu.RLock()
+	wv1.mutex.RLock()
 	elev, exists := wv1.ElevatorStates[2]
 
 	var elevCopy RemoteElevatorState
 	if exists {
 		elevCopy = *elev
 	}
-	wv1.mu.RUnlock()
+	wv1.mutex.RUnlock()
 
 	assert.True(t, exists, "peer should still exist in ElevatorStates")
 	assert.False(t, elevCopy.Alive, "peer should be marked as not alive (timed out)")
@@ -450,16 +450,16 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 	// Add wv2 to wv1 as a "dead" peer — use a copy so wv2's own state stays
 	// Alive=true, which means the serialized message from wv2 will also carry
 	// Alive=true and Merge won't undo checkifNodeReappeared.
-	wv1.mu.Lock()
+	wv1.mutex.Lock()
 	stateCopy := *wv2.ElevatorStates[wv2.LocalID]
 	stateCopy.Alive = false
 	wv1.ElevatorStates[wv2.LocalID] = &stateCopy
-	wv1.mu.Unlock()
+	wv1.mutex.Unlock()
 
 	// Ensure peer is initially marked dead
-	wv1.mu.RLock()
+	wv1.mutex.RLock()
 	initialAlive := wv1.ElevatorStates[wv2.LocalID].Alive
-	wv1.mu.RUnlock()
+	wv1.mutex.RUnlock()
 	assert.False(t, initialAlive, "peer should start as dead")
 
 	// Simulate message from the "reappeared" peer
@@ -472,9 +472,9 @@ func TestStartSyncing_ReappearedPeers(t *testing.T) {
 
 	// Read the peer state under the lock and copy it so we don't race on the
 	// pointer's fields after releasing the lock.
-	wv1.mu.RLock()
+	wv1.mutex.RLock()
 	peer, exists := wv1.ElevatorStates[wv2.LocalID]
-	wv1.mu.RUnlock()
+	wv1.mutex.RUnlock()
 
 	log.Println("Peer state after reappearing:", peer)
 	require.True(t, exists, "peer should exist in active elevators map")
@@ -556,9 +556,9 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 		Timestamp:  time.Now().UnixMilli(),
 	}
 
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	wv.releaseAnyOrders()
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 
 	hc := wv.HallCalls[1][HDUp]
 	assert.Equal(t, HallCallStateConfirmed, hc.State, "order should be released when node is lost")
@@ -574,9 +574,9 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 		Timestamp:  time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli(),
 	}
 
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	wv.releaseAnyOrders()
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 
 	hc = wv.HallCalls[3][HDUp]
 	assert.Equal(t, HallCallStateConfirmed, hc.State, "order should be released when processing timeout is exceeded")
@@ -607,9 +607,9 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify system still processes messages
-	wv.mu.Lock()
+	wv.mutex.Lock()
 	_, exists := wv.ElevatorStates[2]
-	wv.mu.Unlock()
+	wv.mutex.Unlock()
 
 	assert.True(t, exists, "should continue operating after network error")
 }
@@ -644,10 +644,10 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	rxChan <- jsonData
 	time.Sleep(100 * time.Millisecond)
 
-	wv1.mu.Lock()
+	wv1.mutex.Lock()
 	assert.Equal(t, HallCallStateConfirmed, wv1.HallCalls[1][HDUp].State, "state should be Confirmed")
 	wv1.ElevatorStates[4] = NewRemoteElevatorState(4, 4) // Add another elevator to wv1 to test merging new confirmation
-	wv1.mu.Unlock()
+	wv1.mutex.Unlock()
 
 	// Now send wv3's state with more confirmations
 	wv3.HallCalls[1][HDUp] = HallCallPairState{
