@@ -4,17 +4,13 @@
 
 Real-time distributed elevator control for TTK4145, with shared state sync and distributed hall-call assignment.
 
+## Requirements
+
+- Go 1.20+
+- Make
+
 ## Run
 
-```bash
-# One elevator
-make run
-
-# Three elevators (ports 12345-12347)
-make run-multi
-```
-
-Manual run:
 
 ```bash
 go run ./cmd/elevator --id=<id> --port=<port> --floors=<n> --loglevel=<level>
@@ -22,10 +18,10 @@ go run ./cmd/elevator --id=<id> --port=<port> --floors=<n> --loglevel=<level>
 
 Flags:
 
-- `--id`: node ID (default `1`)
-- `--port`: elevator server port (default `30000`)
-- `--floors`: number of floors (default `4`)
-- `--loglevel`: slog level (`debug=-4`, `info=0`, `warn=4`, `error=8`). Default `debug`.
+- `-id`: node ID (default `1`)
+- `-port`: elevator server port (default `30000`)
+- `-floors`: number of floors (default `4`)
+- `-loglevel`: slog level (`debug=-4`, `info=0`, `warn=4`, `error=8`). Default `debug`.
 
 ## Environment
 
@@ -51,6 +47,16 @@ Run one package:
 
 ```bash
 go test ./internal/statesync -v
+```
+
+## Documentation
+
+For a more interactive experience, you can use `pkgsite` to serve documentation locally:
+
+```bash
+go install golang.org/x/pkgsite/cmd/pkgsite@latest
+
+pkgsite
 ```
 
 ## Project Layout

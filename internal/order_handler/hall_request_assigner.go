@@ -99,7 +99,7 @@ func BuildHallRequestAssignerInput(worldview *statesync.Worldview) *HallRequestA
 
 	// Build elevator states
 	for id, elevator := range worldview.ElevatorStates {
-		if !elevator.AllowedToServe() {
+		if !elevator.IsAllowedToServe() {
 			continue
 		}
 

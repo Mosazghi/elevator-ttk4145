@@ -9,7 +9,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 )
 
-// OrderHandler periodically evaluates confirmed hall calls and claims the ones
+// OrderHandler periodically (every 100ms) evaluates confirmed hall calls and claims the ones
 // assigned to the local elevator.
 type OrderHandler struct {
 	worldview         *statesync.Worldview
@@ -18,21 +18,21 @@ type OrderHandler struct {
 }
 
 // NewOrderHandler constructs the order handler loop dependencies.
-func NewOrderHandler(wv *statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
+func NewOrderHandler(worldView *statesync.Worldview, trigger chan controller.ControllerTriggerSrc, actionChan chan any) *OrderHandler {
 	return &OrderHandler{
-		worldview:         wv,
+		worldview:         worldView,
 		controllerTrigger: trigger,
 		actionChan:        actionChan,
 	}
 }
 
-// Run polls hall calls and transitions locally won confirmed calls to
+// StartServing polls hall calls and transitions locally won confirmed calls to
 // processing, then notifies the controller.
-func (oh *OrderHandler) Run() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+func (orderHandler *OrderHandler) StartServing() {
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		hallCalls := oh.worldview.GetAllHallCalls()
+		hallCalls := orderHandler.worldview.GetAllHallCalls()
 
 		for floor, hallCall := range hallCalls {
 			for dir := range hallCalls[floor] {
@@ -42,21 +42,21 @@ func (oh *OrderHandler) Run() {
 					continue
 				}
 
-				winnerID, err := CalculateCost(oh.worldview, floor, statesync.HallCallDirection(dir))
+				winnerID, err := CalculateCost(orderHandler.worldview, floor, statesync.HallCallDirection(dir))
 
 				if err != nil {
 					slog.Error("failed to calculate cost for hall call", "floor", floor, "dir", dir, "error", err)
 					continue
 				}
 
-				if winnerID == oh.worldview.LocalID {
-					err := oh.worldview.ProcessHallCall(floor, statesync.HallCallDirection(dir))
+				if winnerID == orderHandler.worldview.LocalID {
+					err := orderHandler.worldview.ProcessHallCall(floor, statesync.HallCallDirection(dir))
 					if err != nil {
 						slog.Error("failed to process hall call", "err", err)
 					}
 					slog.Info("won, set to processing", "floor", floor, "dir", dir, "id", winnerID)
 
-					oh.controllerTrigger <- controller.CTSOrderUpdate
+					orderHandler.controllerTrigger <- controller.ControllerTriggerSrcOrderUpdate
 				}
 				slog.Info("order picked up", "floor", floor, "dir", dir, "by", winnerID)
 			}

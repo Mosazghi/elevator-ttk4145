@@ -1,4 +1,3 @@
-// Adds helper functions to the statesync package.
 package statesync
 
 import (
@@ -6,10 +5,11 @@ import (
 	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 )
 
+// RemoteElevatorState represents the state of a remote elevator (node) in the system.
 type RemoteElevatorState struct {
 	ID           int                   `json:"id"`
 	CurrentFloor int                   `json:"current_floor"`
@@ -30,9 +30,8 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 		ID:           id,
 		CurrentFloor: -1,
 		Direction:    elevio.MotorDirectionStop,
-		DoorState:    elevator.DoorClosed,
 		CabCalls:     make([]bool, numFloors),
-		Behavior:     elevator.BIdle,
+		Behavior:     elevator.BehaviorIdle,
 		LastSeenAt:   time.Now(),
 		NumFloors:    numFloors,
 		Alive:        true,
@@ -40,13 +39,14 @@ func NewRemoteElevatorState(id, numFloors int) *RemoteElevatorState {
 	}
 }
 
+// String returns a string representation of the RemoteElevatorState.
 func (res *RemoteElevatorState) String() string {
 	return fmt.Sprintf("RemoteElevatorState{ID: %d, CurrentFloor: %d, Direction: %v, DoorState: %v, CabCalls: %v, Behavior: %v, LastSeenAt: %v}",
 		res.ID, res.CurrentFloor, res.Direction, res.DoorState, res.CabCalls, res.Behavior, res.LastSeenAt.Format(time.DateTime))
 }
 
-// AllowedToServe checks if an elevator is eligible to accept new hall calls.
-func (res *RemoteElevatorState) AllowedToServe() bool {
+// IsAllowedToServe checks if an elevator is eligible to accept new hall calls.
+func (res *RemoteElevatorState) IsAllowedToServe() bool {
 	return (res.Alive && !res.IsObstructed) &&
 		time.Since(res.TimedOutAt) > BlockNewOrderDuration
 }
@@ -70,5 +70,5 @@ func (res *RemoteElevatorState) IsOppositeMotorDirection(direction elevio.MotorD
 
 // UndefinedState checks if the elevator is out of bounds.
 func (res *RemoteElevatorState) UndefinedState() bool {
-	return res.CurrentFloor == shared.UndefinedFloor && res.Direction != elevio.MDStop
+	return res.CurrentFloor == shared.UndefinedFloor && res.Direction != elevio.MotorDirectionStop
 }

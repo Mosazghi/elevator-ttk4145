@@ -1,4 +1,4 @@
-// checksum - utils
+// Package checksum provides functionality to calculate a checksum for a given data structure.
 package checksum
 
 import (

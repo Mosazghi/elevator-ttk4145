@@ -8,61 +8,6 @@ import (
 	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
-type (
-	Behavior   int
-	DoorState  int
-	LightState int
-)
-
-const (
-	BIdle Behavior = iota
-	BMoving
-	BDoorOpen
-)
-
-const (
-	DoorClosed DoorState = iota
-	DoorOpen
-)
-
-const (
-	LightOff LightState = iota
-	LightOn
-)
-
-func (behavior Behavior) String() string {
-	switch behavior {
-	case BIdle:
-		return "idle"
-	case BMoving:
-		return "moving"
-	case BDoorOpen:
-		return "doorOpen"
-	default:
-		return "idle"
-	}
-}
-
-func (doorState DoorState) String() string {
-	switch doorState {
-	case DoorClosed:
-		return "closed"
-	case DoorOpen:
-		return "open"
-	}
-	return "unknown"
-}
-
-func (lightState LightState) String() string {
-	switch lightState {
-	case LightOff:
-		return "off"
-	case LightOn:
-		return "on"
-	}
-	return "unknown"
-}
-
 type ElevatorService struct {
 	io elevio.ElevatorDriver
 }
@@ -106,12 +51,8 @@ func (es *ElevatorService) ClearAllLights(amountOfFloors int) {
 }
 
 // SetStopLight toggles the stop light.
-func (es *ElevatorService) SetStopLight(state LightState) {
-	if state == LightOff {
-		es.io.SetStopLamp(false)
-	} else {
-		es.io.SetStopLamp(true)
-	}
+func (es *ElevatorService) SetStopLight(state bool) {
+	es.io.SetStopLamp(state)
 }
 
 // SetCallLight toggles the light of the corresponding button.

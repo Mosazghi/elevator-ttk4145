@@ -150,9 +150,8 @@ func TestMerge_FloorTransitions_ShouldSucceed(t *testing.T) {
 		ID:           wv2ID,
 		CurrentFloor: 2,
 		Direction:    elevio.MotorDirectionUp,
-		DoorState:    elevator.DoorClosed,
 		CabCalls:     []bool{false, false, false, true},
-		Behavior:     elevator.BMoving,
+		Behavior:     elevator.BehaviorMoving,
 		LastSeenAt:   time.Now(),
 		NumFloors:    4,
 	}
@@ -290,9 +289,8 @@ func TestSetLocalElevator(t *testing.T) {
 		ID:           1,
 		CurrentFloor: 2,
 		Direction:    elevio.MotorDirectionUp,
-		DoorState:    elevator.DoorOpen,
 		CabCalls:     []bool{false, false, false, false},
-		Behavior:     elevator.BMoving,
+		Behavior:     elevator.BehaviorMoving,
 		LastSeenAt:   time.Now(),
 	}
 
@@ -525,7 +523,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 0; i < 50; i++ {
 			_ = wv.GetAllHallCalls()
-			_ = wv.GetRemoteElevatorStates()
+			_ = wv.GetRemoteElevatorState()
 			time.Sleep(8 * time.Millisecond)
 		}
 		done <- true

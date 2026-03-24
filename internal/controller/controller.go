@@ -23,7 +23,7 @@ import (
 // Actions are strictly passed though actionChan, while the other channels (execpt doorTimerChan) are used
 // to dictate when to use the Controller
 type Controller struct {
-	wv              *statesync.Worldview
+	worldview       *statesync.Worldview
 	actionChan      chan any
 	triggerChan     chan ControllerTriggerSrc
 	orderUpdateChan chan statesync.Order
@@ -34,7 +34,7 @@ type Controller struct {
 // NewController creates a new instance of a Controller
 func NewController(worldView *statesync.Worldview, actionChan chan any, ctrlTrigger chan ControllerTriggerSrc, orderUpdateChan chan statesync.Order) *Controller {
 	return &Controller{
-		wv:              worldView,
+		worldview:       worldView,
 		actionChan:      actionChan,
 		triggerChan:     ctrlTrigger,
 		orderUpdateChan: orderUpdateChan,
@@ -48,7 +48,7 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 	if order.Empty() {
 		return nil
 	}
-	ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BDoorOpen}
+	ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BehaviorDoorOpen}
 	ctrl.actionChan <- elevator.DoorAction{Open: true}
 
 	return ctrl.clearOrderAtFloor(order)
@@ -56,7 +56,7 @@ func (ctrl *Controller) OnFloorArrival(order CurrentOrder) error {
 
 // clearOrderAtFloor completes the currently handled order
 func (ctrl *Controller) clearOrderAtFloor(order CurrentOrder) error {
-	err := order.Complete(ctrl.wv)
+	err := order.Complete(ctrl.worldview)
 	if err != nil {
 		return err
 	}
@@ -76,42 +76,42 @@ func (ctrl *Controller) StartHandlingRequests() {
 		case order := <-ctrl.orderUpdateChan:
 			ctrl.actionChan <- elevator.LightAction{ButtonType: order.Type, Floor: order.Floor, State: !order.Completed}
 		case <-ctrl.doorTimerChan:
-			elev := ctrl.wv.GetRemoteElevatorStates()
+			elev := ctrl.worldview.GetRemoteElevatorState()
 
 			if elev.IsObstructed {
 				ctrl.doorTimerChan = time.After(ctrl.doorDuration)
 			} else {
 				ctrl.doorTimerChan = nil
-				ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BIdle}
+				ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BehaviorIdle}
 				ctrl.actionChan <- elevator.DoorAction{Open: false}
 			}
 		case triggerSrc := <-ctrl.triggerChan:
-			elev := ctrl.wv.GetRemoteElevatorStates()
-			closestOrder := FetchClosestOrder(ctrl.wv)
+			elev := ctrl.worldview.GetRemoteElevatorState()
+			closestOrder := FetchClosestOrder(ctrl.worldview)
 
 			switch elev.Behavior {
 
-			case elevator.BDoorOpen:
+			case elevator.BehaviorDoorOpen:
 				if closestOrder.AtFloor(elev.CurrentFloor) {
 					err := ctrl.clearOrderAtFloor(closestOrder)
 					if err != nil {
 						slog.Error("error clearing at floor", "err", err)
 					}
 				}
-			case elevator.BMoving:
+			case elevator.BehaviorMoving:
 				if closestOrder.Empty() || closestOrder.OppositeDirection(elev.Direction) {
-					ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BIdle}
+					ctrl.actionChan <- elevator.StopAction{Behavior: elevator.BehaviorIdle}
 					continue
 				}
 
-				if triggerSrc == CTSOrderUpdate {
-					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+				if triggerSrc == ControllerTriggerSrcOrderUpdate {
+					ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorMoving, Direction: closestOrder.MotorDirection}
 				}
 
-				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == CTSFArrivalFloor {
+				if closestOrder.AtFloor(elev.CurrentFloor) && triggerSrc == ControllerTriggerSrcArrivalFloor {
 					ctrl.OnFloorArrival(closestOrder)
 				}
-			case elevator.BIdle:
+			case elevator.BehaviorIdle:
 				if closestOrder.Empty() {
 					continue
 				}
@@ -121,7 +121,7 @@ func (ctrl *Controller) StartHandlingRequests() {
 					continue
 				}
 
-				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BMoving, Direction: closestOrder.MotorDirection}
+				ctrl.actionChan <- elevator.MoveAction{Behavior: elevator.BehaviorMoving, Direction: closestOrder.MotorDirection}
 			}
 		}
 	}
@@ -154,11 +154,11 @@ func FetchClosestOrder(worldView *statesync.Worldview) CurrentOrder {
 //
 // This function calculates the cost of arriving at said cab call, by factoring in
 // the direction and distance of the order.
-func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
+func FindClosestCabCall(worldview *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
-	localElevator := wv.GetRemoteElevatorStates()
+	localElevator := worldview.GetRemoteElevatorState()
 	closestOrder := NewOrder()
-	bestCost := math.MaxInt
+	lowestCost := math.MaxInt
 
 	for floor, found := range localElevator.CabCalls {
 		cost := 0
@@ -182,27 +182,27 @@ func FindClosestCabCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 		cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
-		if cost < bestCost {
-			bestCost = cost
+		if cost < lowestCost {
+			lowestCost = cost
 			closestOrder.Update(floor, elevio.Cab, motorDirection, statesync.HallCallDirectionDown) // choose arbritaty hall call direction
 		}
 	}
-	return closestOrder, bestCost
+	return closestOrder, lowestCost
 }
 
 // FindClosestHallCall Searches for the closest hall call to the local elevator.
 //
 // This function uses the distance, relative direction and hall call direction
 // to determine the closest hall call.
-func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
+func FindClosestHallCall(worldview *statesync.Worldview) (CurrentOrder, int) {
 	var motorDirection elevio.MotorDirection
 	var orderType elevio.ButtonType
 	var hallCallDirection statesync.HallCallDirection
-	localElevator := wv.GetRemoteElevatorStates()
+	localElevator := worldview.GetRemoteElevatorState()
 	closestOrder := NewOrder()
-	bestCost := math.MaxInt
+	lowestCost := math.MaxInt
 
-	for floor, hallCall := range wv.GetAllHallCalls() {
+	for floor, hallCall := range worldview.GetAllHallCalls() {
 		for direction := range hallCall {
 			cost := 0
 
@@ -234,12 +234,12 @@ func FindClosestHallCall(wv *statesync.Worldview) (CurrentOrder, int) {
 
 			cost += int(math.Abs(float64(floor - localElevator.CurrentFloor)))
 
-			if cost < bestCost {
-				bestCost = cost
+			if cost < lowestCost {
+				lowestCost = cost
 				closestOrder.Update(floor, orderType, motorDirection, hallCallDirection)
 			}
 		}
 	}
 
-	return closestOrder, bestCost
+	return closestOrder, lowestCost
 }

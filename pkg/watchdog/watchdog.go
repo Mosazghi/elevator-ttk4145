@@ -2,7 +2,6 @@
 package watchdog
 
 import (
-	"log/slog"
 	"time"
 
 	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
@@ -10,65 +9,64 @@ import (
 
 // WatchDog implements a simple watchdog timer.
 type WatchDog struct {
-	pingChan chan Empty
-	stopChan chan Empty
-	done     chan Empty
-	Timeout  chan Empty
-	duration time.Duration
+	pingChan    chan Empty
+	stopChan    chan Empty
+	doneChan    chan Empty
+	TimeoutChan chan Empty
+	duration    time.Duration
 }
 
 // New creates a watchdog with the given timeout duration.
 func New(duration time.Duration) *WatchDog {
 	return &WatchDog{
-		pingChan: make(chan Empty, 1),
-		stopChan: make(chan Empty),
-		done:     make(chan Empty),
-		Timeout:  make(chan Empty, 1),
-		duration: duration,
+		pingChan:    make(chan Empty, 1),
+		stopChan:    make(chan Empty),
+		doneChan:    make(chan Empty),
+		TimeoutChan: make(chan Empty, 1),
+		duration:    duration,
 	}
 }
 
 // Start runs the timer loop until timeout or explicit stop.
-func (wd *WatchDog) Start() {
-	timer := time.NewTimer(wd.duration)
+func (watchdog *WatchDog) Start() {
+	timer := time.NewTimer(watchdog.duration)
 	defer timer.Stop()
-	defer close(wd.done)
+	defer close(watchdog.doneChan)
 
 	for {
 		select {
 		case <-timer.C:
-			slog.Warn("timed out")
-			wd.Timeout <- Empty{}
+			watchdog.TimeoutChan <- Empty{}
 			return
 
-		case <-wd.pingChan:
+		case <-watchdog.pingChan:
 			if !timer.Stop() {
 				<-timer.C
 			}
-			timer.Reset(wd.duration)
+			timer.Reset(watchdog.duration)
 
-		case <-wd.stopChan:
-			slog.Info("timer Stopped")
+		case <-watchdog.stopChan:
 			return
 		}
 	}
 }
 
 // Stop terminates the timer loop and waits for shutdown completion.
-func (wd *WatchDog) Stop() {
+func (watchdog *WatchDog) Stop() {
 	select {
-	case <-wd.done:
+	case <-watchdog.doneChan:
 		return
 	default:
-		close(wd.stopChan)
-		<-wd.done
+		close(watchdog.stopChan)
+		<-watchdog.doneChan
 	}
 }
 
-// Ping requests a timer reset; extra pings are coalesced.
-func (wd *WatchDog) Ping() {
+// Ping requests a timer reset.
+// Uses non-blocking send to avoid deadlocks if the watchdog is already stopped or timed out.
+func (watchdog *WatchDog) Ping() {
 	select {
-	case wd.pingChan <- Empty{}:
+	case watchdog.pingChan <- Empty{}:
 	default:
 	}
 }
