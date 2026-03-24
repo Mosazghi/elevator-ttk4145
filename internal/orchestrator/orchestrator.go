@@ -8,7 +8,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/controller"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/reinit"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/watchdog"

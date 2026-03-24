@@ -10,7 +10,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/checksum"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/stretchr/testify/assert"

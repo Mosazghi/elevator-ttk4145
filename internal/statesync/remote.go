@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
 const UndefinedFloor = -1
@@ -21,7 +21,7 @@ type RemoteElevatorState struct {
 	LastSeenAt   time.Time             `json:"last_seen_at"`
 	NumFloors    int                   `json:"num_floors"`
 	Alive        bool                  `json:"alive"`
-	TimedOutAt	 time.Time			   `json:"timed_out_at"`
+	TimedOutAt   time.Time             `json:"timed_out_at"`
 }
 
 // NewRemoteElevatorState creates a new instance of  RemoteElevatorState
@@ -47,7 +47,7 @@ func (res *RemoteElevatorState) String() string {
 
 func (res *RemoteElevatorState) AllowedToServe() bool {
 	return (res.Alive && !res.IsObstructed) &&
-	time.Since(res.TimedOutAt) > BlockNewOrderDuration 
+		time.Since(res.TimedOutAt) > BlockNewOrderDuration
 }
 
 func (res *RemoteElevatorState) IsOppositeHallCallDirection(hallCallDirection HallCallDir) bool {

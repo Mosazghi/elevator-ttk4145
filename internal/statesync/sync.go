@@ -9,7 +9,7 @@ import (
 
 	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
 	"github.com/Mosazghi/elevator-ttk4145/pkg/checksum"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/vmihailenco/msgpack/v5"
 )

@@ -1,8 +1,10 @@
 package elevio
 
 type (
+	// MotorDirection is the commanded elevator travel direction.
 	MotorDirection int
-	ButtonType     int
+	// ButtonType identifies hall up/down and cab buttons.
+	ButtonType int
 )
 
 const (
@@ -15,6 +17,7 @@ const (
 	Cab      ButtonType = 2
 )
 
+// String returns a readable direction name.
 func (md MotorDirection) String() string {
 	switch md {
 	case MDUp:
@@ -28,6 +31,7 @@ func (md MotorDirection) String() string {
 	}
 }
 
+// ButtonEvent represents one detected button press.
 type ButtonEvent struct {
 	Floor  int
 	Button ButtonType
