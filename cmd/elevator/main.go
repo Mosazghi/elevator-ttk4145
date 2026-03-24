@@ -13,7 +13,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/orchestrator"
 	"github.com/Mosazghi/elevator-ttk4145/internal/order_handler"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/lmittmann/tint"
 )

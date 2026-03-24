@@ -9,7 +9,7 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/internal/config"
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
 )
 
 // A Controller dictate which elevator action is needed to be performed for serving an order.
