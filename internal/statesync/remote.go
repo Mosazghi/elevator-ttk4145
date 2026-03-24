@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 )
-
-const UndefinedFloor = -1
 
 type RemoteElevatorState struct {
 	ID           int                   `json:"id"`
@@ -71,5 +70,5 @@ func (res *RemoteElevatorState) IsOppositeMotorDirection(direction elevio.MotorD
 
 // UndefinedState checks if the elevator is out of bounds.
 func (res *RemoteElevatorState) UndefinedState() bool {
-	return res.CurrentFloor == UndefinedFloor && res.Direction != elevio.MotorDirectionStop
+	return res.CurrentFloor == shared.UndefinedFloor && res.Direction != elevio.MDStop
 }

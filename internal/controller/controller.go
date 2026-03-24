@@ -1,4 +1,10 @@
-// Package controller provides elevator actions and completing orders
+// Package controller makes decisions for the local elevator state machine.
+//
+// Controller observes world state via statesync.Worldview and responds to triggers
+// from orchestrator by emitting elevator actions (move/stop/light/door) on an action
+// channel. It also handles order completion, light updates, and the door timer.
+//
+// The controller works inside a single goroutine through StartHandlingRequests.
 package controller
 
 import (

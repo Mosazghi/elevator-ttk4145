@@ -1,3 +1,11 @@
+// Package orchestrator coordinates elevator input, local state, controller decisions,
+// and hardware actions for a single elevator node in the distributed system.
+//
+// Orchestrator reads driver events (buttons, floor sensors, obstruction, stop),
+// maintains a local watchdog, updates the shared world view, and forwards
+// control triggers and action commands between the controller and elevator hardware.
+//
+// It also handles recovery of pending cab calls from state sync and restarts on watchdog timeout.
 package orchestrator
 
 import (
@@ -14,6 +22,10 @@ import (
 	"github.com/Mosazghi/elevator-ttk4145/pkg/watchdog"
 )
 
+// An Orchestrator maintains the flow of the program. It takes the input channels and internal channels
+// to both regiser and complete orders.
+//
+// It has an internal watchdog timer to ensure that the system is working properly.
 type Orchestrator struct {
 	// Input channels
 	drvButtons chan elevio.ButtonEvent
@@ -31,6 +43,7 @@ type Orchestrator struct {
 	watchdog *watchdog.WatchDog
 }
 
+// NewOrchestrator creates a new instance of an initialized Orchestrator
 func NewOrchestrator(
 	drvButtons chan elevio.ButtonEvent,
 	drvFloors chan int,
@@ -56,6 +69,15 @@ func NewOrchestrator(
 	}
 }
 
+// Run is the main loop for orchestrator operation.
+//
+// It processes:
+//   - driver input events coming from hw channels,
+//   - controller action results,
+//   - recovered cab call notifications,
+//   - watchdog pings/timeouts.
+//
+// On watchdog timeout, it calls reinit.Reinitialize().
 func (sm *Orchestrator) Run() {
 	go sm.watchdog.Start()
 	defer sm.watchdog.Stop()
@@ -166,6 +188,7 @@ func (sm *Orchestrator) Run() {
 	}
 }
 
+// makeNewOrder creates a new order and updates the world view
 func (sm *Orchestrator) makeNewOrder(order elevio.ButtonEvent) error {
 	var err error
 	switch order.Button {
