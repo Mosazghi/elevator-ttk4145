@@ -1,5 +1,7 @@
 package statesync
 
+import elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+
 type (
 	HallCallState int
 	HallCallDir   int
@@ -50,8 +52,8 @@ type HallCallPairState struct {
 }
 
 type Order struct {
+	Type      elevio.ButtonType
 	Floor     int
-	Direction HallCallDir
 	Completed bool
 }
 

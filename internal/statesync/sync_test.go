@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/Mosazghi/elevator-ttk4145/internal/elevator"
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	network "github.com/Mosazghi/elevator-ttk4145/internal/network"
-	"github.com/Mosazghi/elevator-ttk4145/shared"
-	"github.com/Mosazghi/elevator-ttk4145/shared/checksum"
+	"github.com/Mosazghi/elevator-ttk4145/pkg/checksum"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
@@ -18,7 +18,7 @@ import (
 
 // Easier to create test worldviews with this helper function
 func NewTestWorldView(t *testing.T, localID, numFloors int) *Worldview {
-	return NewWorldView(localID, numFloors, make(chan Order, 10), make(chan shared.Empty, 10))
+	return NewWorldView(localID, numFloors, make(chan Order, 10), make(chan Empty, 10))
 }
 
 // Merge with different number of floors should fail
@@ -612,6 +612,31 @@ func TestStartSyncing_NetworkErrors(t *testing.T) {
 	wv.mutex.Unlock()
 
 	assert.True(t, exists, "should continue operating after network error")
+}
+
+func TestNewHallCall_WhenRecentlyDisconnected_ShouldReturnError(t *testing.T) {
+	wv := NewTestWorldView(t, 1, 4)
+
+	wv.mu.Lock()
+	wv.lastNetworkError = time.Now()
+	wv.mu.Unlock()
+
+	err := wv.NewHallCall(1, HDUp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network is disconnected")
+	assert.Equal(t, HallCallStateNone, wv.HallCalls[1][HDUp].State)
+}
+
+func TestNewHallCall_WhenNoRecentDisconnection_ShouldSucceed(t *testing.T) {
+	wv := NewTestWorldView(t, 1, 4)
+
+	wv.mu.Lock()
+	wv.lastNetworkError = time.Now().Add(-100 * time.Millisecond)
+	wv.mu.Unlock()
+
+	err := wv.NewHallCall(1, HDUp)
+	require.NoError(t, err)
+	assert.Equal(t, HallCallStateConfirmed, wv.HallCalls[1][HDUp].State)
 }
 
 // TestStartSyncing_ConfirmationMerging verifies ConfirmedBy lists are properly merged

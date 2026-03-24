@@ -3,9 +3,9 @@ package orders
 import (
 	"testing"
 
-	elevio "github.com/Mosazghi/elevator-ttk4145/internal/hw"
 	"github.com/Mosazghi/elevator-ttk4145/internal/statesync"
-	. "github.com/Mosazghi/elevator-ttk4145/shared"
+	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/hw"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,24 +96,4 @@ func TestCalculateCost_WrongDirectionPenalty(t *testing.T) {
 	winner := CalculateCost(&wv, 2, statesync.HDUp)
 
 	assert.Equal(t, 2, winner.id, "idle elevator should beat one going the wrong way")
-}
-
-// TestCalculateCost_TieBrokenByLowerID – equal cost → lower ID wins.
-func TestCalculateCost_TieBrokenByLowerID(t *testing.T) {
-	// skip for now due to migration to hall request assinger...
-	t.Skip()
-	e1 := statesync.NewRemoteElevatorState(1, numFloors)
-	e1.CurrentFloor = 1
-
-	e2 := statesync.NewRemoteElevatorState(2, numFloors)
-	e2.CurrentFloor = 1
-
-	wv := buildWV(t, 1, map[int]*statesync.RemoteElevatorState{1: e1, 2: e2})
-	err := wv.NewHallCall(1, statesync.HDUp)
-	require.NoError(t, err)
-	err = wv.ProcessHallCall(1, statesync.HDUp)
-	require.NoError(t, err)
-	winner := CalculateCost(&wv, 1, statesync.HDUp)
-
-	assert.Equal(t, 1, winner.id, "lower ID should win on equal cost")
 }

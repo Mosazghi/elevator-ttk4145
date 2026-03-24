@@ -1,7 +1,7 @@
 package network
 
 const (
-	BroadcastIP      = "255.255.255.255"
-	BroadcastPort    = 30000
-	NetChanBufferLen = 20
+	BroadcastIP      = "255.255.255.255" // Broadcast address for sending messages to all machines on the local network
+	BroadcastPort    = 30000             // Default port for UDP communication
+	NetChanBufferLen = 20                // Buffer length for network channels
 )
