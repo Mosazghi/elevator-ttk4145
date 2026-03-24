@@ -64,7 +64,7 @@ func (sm *Orchestrator) Run() {
 	defer watchdogTicker.Stop()
 
 	for {
-		localElvevator := sm.wv.GetRemoteElevator()
+		localElvevator := sm.wv.GetRemoteElevatorStates()
 
 		select {
 		case <-watchdogTicker.C:
@@ -88,7 +88,7 @@ func (sm *Orchestrator) Run() {
 
 		case floor := <-sm.drvFloors:
 			localElvevator.CurrentFloor = floor
-			err := sm.wv.SetLocalElevator(&localElvevator)
+			err := sm.wv.SetLocalElevatorStates(&localElvevator)
 			if err != nil {
 				slog.Error("SetLocalElevator", "error", err)
 			}
@@ -96,7 +96,7 @@ func (sm *Orchestrator) Run() {
 			sm.ctrlTriggerChan <- controller.CTSFArrivalFloor
 
 		case <-sm.recoveredCabCallChan:
-			localElev := sm.wv.GetRemoteElevator()
+			localElev := sm.wv.GetRemoteElevatorStates()
 			sm.elev.SetCabCallLights(sm.wv.NumFloors, localElev.CabCalls)
 
 			sm.ctrlTriggerChan <- controller.CTSOrderUpdate
@@ -104,7 +104,7 @@ func (sm *Orchestrator) Run() {
 		case action := <-sm.ctrlActionChan:
 			switch action := action.(type) {
 			case elevator.MoveAction:
-				err := sm.elev.MoveDirection(action.Direction)
+				err := sm.elev.SetMoveDirection(action.Direction)
 				if err != nil {
 					slog.Error("failed to set action", "err", err)
 				}
@@ -112,16 +112,16 @@ func (sm *Orchestrator) Run() {
 				localElvevator.Behavior = action.Behavior
 				localElvevator.Direction = action.Direction
 
-				sm.wv.SetLocalElevator(&localElvevator)
+				sm.wv.SetLocalElevatorStates(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
 				}
 
 			case elevator.StopAction:
-				sm.elev.Stop()
+				sm.elev.StopMotor()
 
 				localElvevator.Behavior = action.Behavior
-				err := sm.wv.SetLocalElevator(&localElvevator)
+				err := sm.wv.SetLocalElevatorStates(&localElvevator)
 				if err != nil {
 					slog.Error("SetLocalElevator", "err", err)
 				}
@@ -134,7 +134,7 @@ func (sm *Orchestrator) Run() {
 				if !action.Open {
 					sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 				}
-				sm.elev.SetDoor(action.Open)
+				sm.elev.SetDoorState(action.Open)
 			default:
 				slog.Warn("Received unknown action type in state machine", "type", fmt.Sprintf("%T", action))
 			}
@@ -142,20 +142,20 @@ func (sm *Orchestrator) Run() {
 		case isObstructed := <-sm.drvObst:
 			localElvevator.IsObstructed = isObstructed
 
-			err := sm.wv.SetLocalElevator(&localElvevator)
+			err := sm.wv.SetLocalElevatorStates(&localElvevator)
 			if err != nil {
 				slog.Error("SetLocalElevator", "error", err)
 			}
 
 			if isObstructed && localElvevator.Behavior == elevator.BDoorOpen {
-				sm.elev.Stop()
+				sm.elev.StopMotor()
 			} else {
 				sm.ctrlTriggerChan <- controller.CTSOrderUpdate
 			}
 
 		case shouldStop := <-sm.drvStop:
 			if shouldStop {
-				sm.elev.Stop()
+				sm.elev.StopMotor()
 				sm.elev.SetStopLight(elevator.LightOn)
 			} else {
 				sm.elev.SetStopLight(elevator.LightOff)

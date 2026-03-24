@@ -282,7 +282,7 @@ func TestSetLocalElevator(t *testing.T) {
 
 	validState := NewRemoteElevatorState(1, 4)
 
-	err := wv.SetLocalElevator(validState)
+	err := wv.SetLocalElevatorStates(validState)
 
 	assert.NoError(t, err, "should be able to set valid local elevator state")
 
@@ -296,7 +296,7 @@ func TestSetLocalElevator(t *testing.T) {
 		LastSeenAt:   time.Now(),
 	}
 
-	err = wv.SetLocalElevator(&invalidState)
+	err = wv.SetLocalElevatorStates(&invalidState)
 
 	assert.Error(t, err, "should not be able to set invalid local elevator state")
 }
@@ -525,7 +525,7 @@ func TestStartSyncing_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 0; i < 50; i++ {
 			_ = wv.GetAllHallCalls()
-			_ = wv.GetRemoteElevator()
+			_ = wv.GetRemoteElevatorStates()
 			time.Sleep(8 * time.Millisecond)
 		}
 		done <- true

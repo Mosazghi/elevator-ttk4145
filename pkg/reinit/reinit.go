@@ -1,3 +1,5 @@
+// Package reinit provides reinitialization functionality to be used 
+// in the event where the program needs to be restarted without manual intervention.
 package reinit
 
 import (
