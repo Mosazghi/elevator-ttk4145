@@ -63,7 +63,7 @@ func NewOrchestrator(
 		recoveredCabCallChan: recoveredCabCallChan,
 		elevatorService:      elev,
 		worldview:            wv,
-		watchdog:             watchdog.New(WatchdogTimeout),
+		watchdog:             watchdog.New(watchdogTimeout),
 	}
 }
 
@@ -80,7 +80,7 @@ func (orchestrator *Orchestrator) Start() {
 	go orchestrator.watchdog.Start()
 	defer orchestrator.watchdog.Stop()
 
-	watchdogTicker := time.NewTicker(WatchdogInterval)
+	watchdogTicker := time.NewTicker(watchdogInterval)
 	defer watchdogTicker.Stop()
 
 	for {

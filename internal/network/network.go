@@ -22,16 +22,16 @@ type Network struct {
 
 // NewNetwork creates a new network
 func NewNetwork() (*Network, error) {
-	socket, err := CreateSocket(BroadcastPort)
+	socket, err := CreateSocket(broadcastPort)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Network{
 		socket:       socket,
-		receiveChan:  make(chan DataPacket, NetworkChannelBufferLength),
-		transmitChan: make(chan DataPacket, NetworkChannelBufferLength),
-		errorChan:    make(chan error, NetworkChannelBufferLength),
+		receiveChan:  make(chan DataPacket, networkChannelBufferLength),
+		transmitChan: make(chan DataPacket, networkChannelBufferLength),
+		errorChan:    make(chan error, networkChannelBufferLength),
 	}, nil
 }
 
@@ -98,8 +98,8 @@ func (n *Network) receive() {
 // broadcast transmits packets from txChan to the broadcast address.
 func (n *Network) broadcast() {
 	addr := &net.UDPAddr{
-		IP:   net.ParseIP(BroadcastIP),
-		Port: BroadcastPort,
+		IP:   net.ParseIP(broadcastIP),
+		Port: broadcastPort,
 	}
 
 	for data := range n.transmitChan {

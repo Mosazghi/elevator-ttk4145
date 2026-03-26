@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
+	. "github.com/Mosazghi/elevator-ttk4145/pkg/shared"
 )
 
 // HallRequestAssignerElevatorState is the per-elevator JSON shape expected by
@@ -36,10 +37,10 @@ func CalculateCost(worldview *statesync.Worldview, floor int, direction statesyn
 	hallRequestAssingerInput := BuildHallRequestAssignerInput(worldview)
 
 	if len(hallRequestAssingerInput.States) == 0 {
-		return statesync.UnassignedID, fmt.Errorf("no elevators available to assign")
+		return UnassignedID, fmt.Errorf("no elevators available to assign")
 	}
 
-	winnerID := statesync.UnassignedID
+	winnerID := UnassignedID
 
 	inputJson, err := json.Marshal(hallRequestAssingerInput)
 	if err != nil {

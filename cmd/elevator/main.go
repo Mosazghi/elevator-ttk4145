@@ -23,7 +23,7 @@ func main() {
 
 	SetupLogger(cfg.LogLevel)
 
-	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.Floors, "env", os.Getenv("ENV"))
+	slog.Info("Elevator started with", "id", cfg.Id, "port", cfg.Port, "floors", cfg.NumFloors, "env", os.Getenv("ENV"))
 
 	drvButtons := make(chan elevio.ButtonEvent)
 	drvFloors := make(chan int)
@@ -31,7 +31,7 @@ func main() {
 	drvStop := make(chan bool)
 
 	eIOAddr := fmt.Sprintf("localhost:%d", cfg.Port)
-	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, cfg.Floors)
+	elevIoDriver := elevio.NewElevIoDriver(eIOAddr, cfg.NumFloors)
 
 	go elevIoDriver.PollButtons(drvButtons)
 	go elevIoDriver.PollFloorSensor(drvFloors)
@@ -53,12 +53,12 @@ func main() {
 	txChan := network.GetTransmitChannel()
 	rxChan := network.GetReceiveChannel()
 
-	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.Floors)
+	triggerAction := make(chan controller.ControllerTriggerSrc, 3*cfg.NumFloors)
 	orderUpdateChan := make(chan statesync.Order, 10)
 	actionChan := make(chan any, 10)
 	recoveredCabCallChan := make(chan Empty, 5)
 
-	wv := statesync.NewWorldView(cfg.Id, cfg.Floors, orderUpdateChan, recoveredCabCallChan)
+	wv := statesync.NewWorldView(cfg.Id, cfg.NumFloors, orderUpdateChan, recoveredCabCallChan)
 	controller := controller.NewController(wv, actionChan, triggerAction, orderUpdateChan)
 	orderHandler := order_handler.NewOrderHandler(wv, triggerAction, actionChan)
 
