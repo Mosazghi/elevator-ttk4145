@@ -97,7 +97,7 @@ func (worldview Worldview) String() string {
 // Incoming data from peers is synchronized and merged upon reception.
 // Current states are passed along after successful merging.
 func (worldview *Worldview) StartSyncing(txChan chan<- network.DataPacket, rxChan <-chan network.DataPacket, netErrChan <-chan error) {
-	ticker := time.NewTicker(BroadcastInterval)
+	ticker := time.NewTicker(broadcastInterval)
 	defer ticker.Stop()
 	localID := worldview.LocalID
 
@@ -186,7 +186,7 @@ func (worldview *Worldview) releaseAnyOrders() {
 			continue
 		}
 
-		if time.Since(state.LastSeenAt) > NodeLostTimeout && worldview.ElevatorStates[id].Alive {
+		if time.Since(state.LastSeenAt) > nodeLostTimeout && worldview.ElevatorStates[id].Alive {
 			slog.Warn("Lost peer", "id", id, "lastSeen", state.LastSeenAt.Format(time.RFC3339))
 			worldview.ElevatorStates[id].Alive = false
 		}
@@ -200,7 +200,7 @@ func (worldview *Worldview) releaseAnyOrders() {
 			isNodeLost := exist && !assignedNode.Alive
 
 			hasOrderTimedout := hallCall.State == HallCallStateProcessing && hallCall.Timestamp != 0 &&
-				time.Since(time.UnixMilli(hallCall.Timestamp)) > OrderProcessingTimeout
+				time.Since(time.UnixMilli(hallCall.Timestamp)) > orderProcessingTimeout
 
 			if isNodeLost || hasOrderTimedout {
 				reason := "unknown"
@@ -230,7 +230,7 @@ func (worldview *Worldview) releaseAnyOrders() {
 // isDisconnected returns true if the local node is
 // considered disconnected from the network, false otherwise
 func (worldview *Worldview) isDisconnected() bool {
-	return time.Since(worldview.lastNetworkError) <= time.Duration(DisconnectedTimeout)
+	return time.Since(worldview.lastNetworkError) <= time.Duration(disconnectedTimeout)
 }
 
 // setHallCall tries to change the given floor's Up/Down state based on direction.

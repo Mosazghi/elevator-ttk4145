@@ -48,7 +48,7 @@ func (res *RemoteElevatorState) String() string {
 // IsAllowedToServe checks if an elevator is eligible to accept new hall calls.
 func (res *RemoteElevatorState) IsAllowedToServe() bool {
 	return (res.Alive && !res.IsObstructed) &&
-		time.Since(res.TimedOutAt) > BlockNewOrderDuration
+		time.Since(res.TimedOutAt) > blockNewOrderDuration
 }
 
 // IsOppositeHallCallDirection returns the direction opposite of travel.

@@ -321,7 +321,7 @@ func TestStartSyncing_BroadcastsOwnState(t *testing.T) {
 		require.NoError(t, err, "broadcast data should be valid msgpack")
 		assert.Equal(t, wv.LocalID, received.Worldview.LocalID, "broadcast should contain local ID")
 
-	case <-time.After(BroadcastInterval * 2):
+	case <-time.After(broadcastInterval * 2):
 		t.Fatal("no broadcast received within expected time")
 	}
 }
@@ -410,14 +410,14 @@ func TestStartSyncing_DetectsLostPeers(t *testing.T) {
 	wv1.mutex.Lock()
 	peer, exists := wv1.ElevatorStates[2]
 	if exists {
-		peer.LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+		peer.LastSeenAt = time.Now().Add(-nodeLostTimeout - time.Second)
 	}
 	wv1.mutex.Unlock()
 
 	assert.True(t, exists, "peer should be added")
 
 	// Wait for timeout detection
-	time.Sleep(BroadcastInterval + 200*time.Millisecond)
+	time.Sleep(broadcastInterval + 200*time.Millisecond)
 
 	// Copy state safely
 	wv1.mutex.RLock()
@@ -547,7 +547,7 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	lostID := 2
 	wv.ElevatorStates[lostID] = NewRemoteElevatorState(lostID, 4)
 	// Simulate node timeout
-	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+	wv.ElevatorStates[lostID].LastSeenAt = time.Now().Add(-nodeLostTimeout - time.Second)
 	wv.HallCalls[1][HallCallDirectionUp] = HallCallPairState{
 		State:      HallCallStateProcessing,
 		AssignedBy: lostID,
@@ -569,7 +569,7 @@ func TestLostNode_ReleasesPendingOrders(t *testing.T) {
 	wv.HallCalls[3][HallCallDirectionUp] = HallCallPairState{
 		State:      HallCallStateProcessing,
 		AssignedBy: processingID,
-		Timestamp:  time.Now().Add(-OrderProcessingTimeout - time.Second).UnixMilli(),
+		Timestamp:  time.Now().Add(-orderProcessingTimeout - time.Second).UnixMilli(),
 	}
 
 	wv.mutex.Lock()
@@ -745,7 +745,7 @@ func TestElevatorReconnectRecoversCabCalls(t *testing.T) {
 
 	// --- Step 4: Simulate B marking A as timed out ---
 	B.ElevatorStates[A.LocalID].Alive = false
-	B.ElevatorStates[A.LocalID].LastSeenAt = time.Now().Add(-NodeLostTimeout - time.Second)
+	B.ElevatorStates[A.LocalID].LastSeenAt = time.Now().Add(-nodeLostTimeout - time.Second)
 
 	// Calculate checksum for worldview exchange
 	cs, err := checksum.CalculateChecksum(B)
