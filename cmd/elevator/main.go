@@ -116,9 +116,8 @@ func SetupLogger(level slog.Leveler) {
 	w := os.Stderr
 	slog.SetDefault(slog.New(
 		tint.NewHandler(w, &tint.Options{
-			Level:      level,
-			TimeFormat: time.DateTime,
-			AddSource:  true,
+			Level:     level,
+			AddSource: true,
 		}),
 	))
 }

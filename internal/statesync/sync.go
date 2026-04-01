@@ -435,6 +435,19 @@ func (worldview *Worldview) Merge(other *Worldview, otherChecksum uint64) error 
 
 					worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
 				}
+
+				if ourHallCall.State == HallCallStateConfirmed {
+
+					slog.Info("EDGE CASE order completed", "by", ourHallCall.AssignedBy, "floor", floor, "dir", dir, "prevState", ourHallCall.State)
+
+					worldview.HallCalls[floor][dir] = HallCallPairState{
+						State:      HallCallStateNone,
+						AssignedBy: UnassignedID,
+						Timestamp:  time.Now().UnixMilli(), // keep timestamp on None to mark "just completed"
+					}
+
+					worldview.orderUpdateChan <- Order{Type: HallDirToButtonType(dir), Floor: floor, Completed: true}
+				}
 			case HallCallStateUnconfirmed:
 				if ourHallCall.State == HallCallStateNone {
 					slog.Info("new uncofirmed order", "by", otherHallCall.AssignedBy, "floor", floor, "dir", dir)
@@ -448,8 +461,7 @@ func (worldview *Worldview) Merge(other *Worldview, otherChecksum uint64) error 
 					worldview.HallCalls[floor][dir].State = HallCallStateConfirmed
 				}
 			case HallCallStateConfirmed:
-				if ourHallCall.State == HallCallStateNone || ourHallCall.State == HallCallStateUnconfirmed {
-					// Peer already promoted,  accept it
+				if ourHallCall.State == HallCallStateUnconfirmed {
 					worldview.HallCalls[floor][dir].State = HallCallStateConfirmed
 
 					if ourHallCall.State == HallCallStateNone {

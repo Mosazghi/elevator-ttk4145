@@ -2,7 +2,6 @@ package controller
 
 import (
 	"log/slog"
-	"time"
 
 	statesync "github.com/Mosazghi/elevator-ttk4145/internal/statesync"
 	elevio "github.com/Mosazghi/elevator-ttk4145/pkg/elevio"
@@ -40,7 +39,6 @@ func (order *CurrentOrder) Complete(worldView *statesync.Worldview) error {
 	if order.Type == elevio.Cab {
 		err = worldView.SetCabCall(order.Floor, false)
 	} else {
-		time.Sleep(500 * time.Millisecond) // Ensure other nodes have time to process the hall call before completing it
 		err = worldView.CompleteHallCall(order.Floor, order.HallCallDirection)
 	}
 

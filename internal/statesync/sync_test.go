@@ -65,7 +65,7 @@ func TestMerge_ValidInput_ShouldSucceed(t *testing.T) {
 
 	require.NoError(t, err)
 	fmt.Println("ID: ", wv1.HallCalls[1][HallCallDirectionUp].AssignedBy)
-	assert.Equal(t, wv1.HallCalls[1][HallCallDirectionUp].State, HallCallStateConfirmed, "hall call from wv2 should be merged into wv1")
+	assert.Equal(t, wv1.HallCalls[1][HallCallDirectionUp].State, HallCallStateNone, "hall call from wv2 should be merged into wv1")
 	assert.Equal(t, wv1.HallCalls[1][HallCallDirectionUp].AssignedBy, -1, "hall call from wv2 should be merged into wv1")
 }
 
@@ -668,7 +668,7 @@ func TestStartSyncing_ConfirmationMerging(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	wv1.mutex.Lock()
-	assert.Equal(t, HallCallStateConfirmed, wv1.HallCalls[1][HallCallDirectionUp].State, "state should be Confirmed")
+	assert.Equal(t, HallCallStateNone, wv1.HallCalls[1][HallCallDirectionUp].State, "state should be Confirmed")
 	wv1.ElevatorStates[4] = NewRemoteElevatorState(4, 4) // Add another elevator to wv1 to test merging new confirmation
 	wv1.mutex.Unlock()
 
